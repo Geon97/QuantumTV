@@ -19,10 +19,12 @@ jobs:
             args: '--target aarch64-apple-darwin'
           - platform: macos-latest
             args: '--target x86_64-apple-darwin'
-          - platform: linux-latest
+          - platform: ubuntu-22.04
             args: ''
-          - platform: linux-arm
+            label: linux-x86
+          - platform: ubuntu-24.04-arm
             args: ''
+            label: linux-arm
           - platform: windows-latest
             args: ''
 
@@ -33,7 +35,7 @@ jobs:
 
       # Linux deps
       - name: Install Linux dependencies
-        if: startsWith(matrix.platform, 'linux')
+        if: startsWith(matrix.platform, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install -y \
