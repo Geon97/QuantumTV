@@ -9,16 +9,29 @@
 
 > 🎬 **QuantumTV** 是一个开箱即用的、跨平台的本地影视聚合播放器，支持 **Windows、macOS 和 Linux**。它基于 **Next.js** + **Tauri** 构建，让你可以在桌面端便捷地管理与播放用户自行配置的影视资源。**支持多源搜索、在线播放、播放记录、本地无数据库零隐私泄露、CMS 全量代理、隐私纵深防御等企业级特性。**
 
-<div align="center">
-[![rust](https://img.shields.io/badge/rust-1.90-24C8E0?logo=rust)](https://rust-lang.org/)
-[![Next.js](https://img.shields.io/badge/Next.js-16-000?logo=nextdotjs)](https://nextjs.org/)
-[![Tauri](https://img.shields.io/badge/Tauri-2.x-24C8E0?logo=tauri)](https://tauri.app/)
-[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev/)
-[![TailwindCSS](https://img.shields.io/badge/TailwindCSS-4-38bdf8?logo=tailwindcss)](https://tailwindcss.com/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?logo=typescript)](https://www.typescriptlang.org/)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-
-</div>
+<p align="center">
+  <a href="https://rust-lang.org/">
+    <img src="https://img.shields.io/badge/rust-1.90-24C8E0?logo=rust" alt="rust" />
+  </a>
+  <a href="https://nextjs.org/">
+    <img src="https://img.shields.io/badge/Next.js-16-000?logo=nextdotjs" alt="Next.js" />
+  </a>
+  <a href="https://tauri.app/">
+    <img src="https://img.shields.io/badge/Tauri-2.x-24C8E0?logo=tauri" alt="Tauri" />
+  </a>
+  <a href="https://react.dev/">
+    <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react" alt="React" />
+  </a>
+  <a href="https://tailwindcss.com/">
+    <img src="https://img.shields.io/badge/TailwindCSS-4-38bdf8?logo=tailwindcss" alt="TailwindCSS" />
+  </a>
+  <a href="https://www.typescriptlang.org/">
+    <img src="https://img.shields.io/badge/TypeScript-5.x-3178c6?logo=typescript" alt="TypeScript" />
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-MIT-green" alt="License" />
+  </a>
+</p>
 
 ---
 
@@ -26,7 +39,7 @@
 
 > **注意**：部署后项目为**空壳项目**，无内置播放源或直播源，所有内容资源需用户自行收集与配置。  
 > **免责声明**：请不要在 B 站、小红书、微信公众号、抖音、今日头条或其他中国大陆社交平台发布视频或文章宣传本项目，不授权任何"科技周刊/月刊"类项目或站点收录本项目。  
-> **学习用途声明**：本项目主要用于 Rust / Tauri / 现代 Web 技术的学习、研究与技术实践，不以内容分发或商业使用为目的。
+> **学习用途声明**：本项目主要用于 Rust / Tauri / 现代 Web 技术的学习、研究与技术实践，不以内容分发或商业使用为目的。  
 > **责任边界声明**：用户因自行配置第三方资源、使用或传播本项目所产生的任何法律风险与后果，均由用户本人承担，项目作者及贡献者不承担任何责任。  
 > **隐私保护声明**：项目无账号体系、不上传播放行为，本地模式下用户数据仅保存在本地环境中。
 
@@ -101,7 +114,7 @@ QuantumTV 采用现代化的混合应用架构，在一个代码仓库中管理�
 
 ## 🙏 致谢
 
-- [DecoTV](https://github.com/Decohererk/DecoTV) — 本项目的二次开发基础，为 QuantumTV 提供了重要的架构与功能参考。
+- [DecoTV](https://github.com/Decohererk/DecoTV/releases/tag/v1.1.0) — 本项目的二次开发基础，为 QuantumTV 提供了重要的架构与功能参考。
 - [ArtPlayer](https://github.com/zhw2590582/ArtPlayer), [HLS.js](https://github.com/video-dev/hls.js) — 核心播放器
 - [Zwei](https://github.com/bestzwei), [CMLiussss](https://github.com/cmliu) — 豆瓣数据服务
 - 以及所有为学习与研究目的提供公开数据接口的站点与社区！
