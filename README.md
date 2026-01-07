@@ -121,7 +121,7 @@ QuantumTV 采用现代化的混合应用架构，在一个代码仓库中管理�
 
 ## 📈 Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Geon97/QuantumTV&type=Date#gh-light-mode-only)](https://star-history.com/#Geon97/QuantumTV&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Geon97/QuantumTV&type=date&legend=top-left)](https://www.star-history.com/#Geon97/QuantumTV&type=date&legend=top-left)
 
 ---
 
