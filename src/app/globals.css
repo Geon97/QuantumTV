@@ -1,0 +1,1057 @@
+@import 'tailwindcss';
+
+/* Tailwind 4 Dark Mode Configuration - 使用 class 选择器而非媒体查询 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tailwind 4 Theme Configuration */
+@theme {
+  /* Font Family */
+  --font-primary:
+    'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+    'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+
+  /* Primary Colors */
+  --color-primary-50: #f0f9ff;
+  --color-primary-100: #e0f2fe;
+  --color-primary-200: #bae6fd;
+  --color-primary-300: #7dd3fc;
+  --color-primary-400: #38bdf8;
+  --color-primary-500: #0ea5e9;
+  --color-primary-600: #0284c7;
+  --color-primary-700: #0369a1;
+  --color-primary-800: #075985;
+  --color-primary-900: #0c4a6e;
+  --color-dark: #222222;
+
+  /* 修复 Tailwind 4 亮色模式下灰色过淡的问题，恢复高对比度灰色 */
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f3f4f6;
+  --color-gray-200: #e5e7eb;
+  --color-gray-300: #d1d5db;
+  --color-gray-400: #9ca3af;
+  --color-gray-500: #6b7280;
+  --color-gray-600: #4b5563;
+  --color-gray-700: #374151;
+  --color-gray-800: #1f2937;
+  --color-gray-900: #111827;
+  --color-gray-950: #030712;
+
+  /* Custom Animations */
+  --animate-flicker: flicker 3s linear infinite;
+  --animate-shimmer: shimmer 1.3s linear infinite;
+  --animate-fade-in: fadeIn 0.3s ease-in-out;
+  --animate-slide-up: slideUp 0.3s ease-in-out;
+  --animate-slide-down: slideDown 0.3s ease-in-out;
+  --animate-slide-in-from-right: slideInFromRight 0.3s ease-out;
+}
+
+/* Mobile Landscape Media Query - 自定义断点需要直接使用 */
+@custom-media --mobile-landscape (orientation: landscape) and (max-height: 700px);
+
+/* Custom Keyframes */
+@keyframes flicker {
+  0%,
+  19.999%,
+  22%,
+  62.999%,
+  64%,
+  64.999%,
+  70%,
+  100% {
+    opacity: 0.99;
+    filter: drop-shadow(0 0 1px rgba(252, 211, 77))
+      drop-shadow(0 0 15px rgba(245, 158, 11))
+      drop-shadow(0 0 1px rgba(252, 211, 77));
+  }
+  20%,
+  21.999%,
+  63%,
+  63.999%,
+  65%,
+  69.999% {
+    opacity: 0.4;
+    filter: none;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -700px 0;
+  }
+  100% {
+    background-position: 700px 0;
+  }
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  0% {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideDown {
+  0% {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideInFromRight {
+  0% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none; /* Chrome, Safari and Opera */
+  }
+}
+
+:root {
+  --foreground-rgb: 255, 255, 255;
+}
+
+html,
+body {
+  height: 100%;
+  overflow-x: hidden;
+  /* 阻止 iOS Safari 拉动回弹 */
+  overscroll-behavior: none;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+}
+
+/* Enhanced Neon text effect for brand */
+.neon-text {
+  position: relative;
+  background: linear-gradient(
+    45deg,
+    #8b5cf6 0%,
+    #a78bfa 25%,
+    #c084fc 50%,
+    #f0abfc 75%,
+    #fbbf24 100%
+  );
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow:
+    0 0 5px rgba(139, 92, 246, 0.5),
+    0 0 10px rgba(167, 139, 250, 0.4),
+    0 0 15px rgba(192, 132, 252, 0.3),
+    0 0 20px rgba(240, 171, 252, 0.2);
+  animation: neonGradientShift 4s ease-in-out infinite;
+}
+
+/* Gradient animation for neon text */
+@keyframes neonGradientShift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+/* New QuantumTV Brand Style */
+.deco-brand {
+  background: linear-gradient(
+    135deg,
+    #3b82f6 0%,
+    #8b5cf6 25%,
+    #d946ef 50%,
+    #f43f5e 75%,
+    #f59e0b 100%
+  );
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: brandGradient 8s ease infinite;
+  position: relative;
+}
+
+@keyframes brandGradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Glass chip */
+.glass-chip {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.3),
+    rgba(255, 255, 255, 0.15)
+  );
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 10px 30px -15px rgba(99, 102, 241, 0.5);
+  backdrop-filter: blur(16px);
+}
+
+/* Chip subtle glow animation */
+.chip-glow {
+  position: relative;
+}
+.chip-glow::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 9999px;
+  background: radial-gradient(
+    60% 60% at 50% 50%,
+    rgba(16, 185, 129, 0.25),
+    rgba(99, 102, 241, 0.15) 60%,
+    transparent 100%
+  );
+  z-index: -1;
+  filter: blur(8px);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.chip-glow:hover::after {
+  opacity: 1;
+}
+
+/* Enhanced smooth neon flicker with breathing effect */
+@keyframes neonFlicker {
+  0% {
+    filter: drop-shadow(0 0 5px rgba(139, 92, 246, 0.8))
+      drop-shadow(0 0 10px rgba(167, 139, 250, 0.6))
+      drop-shadow(0 0 15px rgba(192, 132, 252, 0.4));
+    transform: scale(1);
+  }
+
+  25% {
+    filter: drop-shadow(0 0 8px rgba(236, 72, 153, 0.9))
+      drop-shadow(0 0 16px rgba(59, 130, 246, 0.7))
+      drop-shadow(0 0 24px rgba(16, 185, 129, 0.5));
+    transform: scale(1.02);
+  }
+
+  50% {
+    filter: drop-shadow(0 0 12px rgba(251, 191, 36, 0.9))
+      drop-shadow(0 0 20px rgba(245, 101, 101, 0.7))
+      drop-shadow(0 0 30px rgba(139, 92, 246, 0.5));
+    transform: scale(1.03);
+  }
+
+  75% {
+    filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.9))
+      drop-shadow(0 0 18px rgba(59, 130, 246, 0.7))
+      drop-shadow(0 0 25px rgba(236, 72, 153, 0.5));
+    transform: scale(1.01);
+  }
+
+  100% {
+    filter: drop-shadow(0 0 5px rgba(139, 92, 246, 0.8))
+      drop-shadow(0 0 10px rgba(167, 139, 250, 0.6))
+      drop-shadow(0 0 15px rgba(192, 132, 252, 0.4));
+    transform: scale(1);
+  }
+}
+
+/* Subtle pulsing flicker for buttons and interactive elements */
+@keyframes neonPulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 5px rgba(139, 92, 246, 0.5),
+      0 0 10px rgba(139, 92, 246, 0.3),
+      0 0 15px rgba(139, 92, 246, 0.1);
+  }
+
+  50% {
+    box-shadow:
+      0 0 10px rgba(139, 92, 246, 0.8),
+      0 0 20px rgba(139, 92, 246, 0.6),
+      0 0 30px rgba(139, 92, 246, 0.4);
+  }
+}
+
+.neon-flicker {
+  animation: neonFlicker 6s ease-in-out infinite;
+}
+
+.neon-pulse {
+  animation: neonPulse 2s ease-in-out infinite;
+}
+
+/* Login page specific animations */
+@keyframes gradientShift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px) translateX(0px);
+  }
+  33% {
+    transform: translateY(-10px) translateX(5px);
+  }
+  66% {
+    transform: translateY(5px) translateX(-5px);
+  }
+}
+
+@keyframes floatSlow {
+  0%,
+  100% {
+    transform: translateY(0px) translateX(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-15px) translateX(10px) scale(1.1);
+  }
+}
+
+@keyframes floatSlower {
+  0%,
+  100% {
+    transform: translateY(0px) translateX(0px) rotate(0deg);
+  }
+  33% {
+    transform: translateY(-8px) translateX(-8px) rotate(120deg);
+  }
+  66% {
+    transform: translateY(8px) translateX(8px) rotate(240deg);
+  }
+}
+
+@keyframes cardGlow {
+  0%,
+  100% {
+    box-shadow:
+      0 20px 40px -15px rgba(139, 92, 246, 0.1),
+      0 0 0 1px rgba(255, 255, 255, 0.1);
+  }
+  50% {
+    box-shadow:
+      0 20px 40px -15px rgba(139, 92, 246, 0.2),
+      0 0 0 1px rgba(255, 255, 255, 0.2),
+      0 0 20px rgba(139, 92, 246, 0.1);
+  }
+}
+
+.login-bg {
+  background: radial-gradient(
+    ellipse at center,
+    rgba(139, 92, 246, 0.1) 0%,
+    transparent 70%
+  );
+}
+
+.animate-gradient-shift {
+  background-size: 400% 400%;
+  animation: gradientShift 8s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-float-slow {
+  animation: floatSlow 8s ease-in-out infinite;
+}
+
+.animate-float-slower {
+  animation: floatSlower 10s linear infinite;
+}
+
+.login-card {
+  animation: cardGlow 4s ease-in-out infinite;
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.login-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.login-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
+  transition: left 0.5s;
+}
+
+.login-button:hover::before {
+  left: 100%;
+}
+
+.login-input {
+  position: relative;
+}
+
+.login-input:focus {
+  transform: translateY(-1px);
+}
+
+.login-input::placeholder {
+  transition: color 0.3s ease;
+}
+
+.login-input:focus::placeholder {
+  color: rgba(139, 92, 246, 0.7);
+}
+
+/* 分类专属渐变与光晕 */
+.chip-theme {
+  position: relative;
+  isolation: isolate;
+  /* 亮色模式下使用深色文字 */
+  color: #374151;
+}
+
+/* 暗色模式下使用浅色文字 */
+:is(.dark .chip-theme) {
+  color: #f3f4f6;
+}
+
+.chip-theme::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  z-index: -1;
+  opacity: 0.85;
+  transition:
+    opacity 0.35s ease,
+    transform 0.35s ease;
+}
+.chip-theme:hover::before {
+  opacity: 1;
+  transform: scale(1.02);
+}
+
+/* 首页 */
+.chip-home {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.28),
+    rgba(255, 255, 255, 0.14)
+  );
+  border-color: rgba(59, 130, 246, 0.35);
+}
+.chip-home::before {
+  background: radial-gradient(
+    70% 70% at 50% 50%,
+    rgba(59, 130, 246, 0.35),
+    transparent 70%
+  );
+}
+
+/* 搜索 */
+.chip-search {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.28),
+    rgba(255, 255, 255, 0.14)
+  );
+  border-color: rgba(99, 102, 241, 0.35);
+}
+.chip-search::before {
+  background: radial-gradient(
+    70% 70% at 50% 50%,
+    rgba(99, 102, 241, 0.35),
+    transparent 70%
+  );
+}
+
+/* 电影：粉橙霓虹 */
+.chip-movie {
+  background: linear-gradient(
+    90deg,
+    rgba(244, 114, 182, 0.35),
+    rgba(251, 146, 60, 0.35)
+  );
+  border-color: rgba(244, 114, 182, 0.45);
+}
+.chip-movie::before {
+  background: radial-gradient(
+    70% 70% at 50% 50%,
+    rgba(251, 146, 60, 0.45),
+    rgba(244, 114, 182, 0.45) 60%,
+    transparent 85%
+  );
+}
+
+/* 剧集：紫蓝霓虹 */
+.chip-tv {
+  background: linear-gradient(
+    90deg,
+    rgba(168, 85, 247, 0.35),
+    rgba(59, 130, 246, 0.35)
+  );
+  border-color: rgba(168, 85, 247, 0.45);
+}
+.chip-tv::before {
+  background: radial-gradient(
+    70% 70% at 50% 50%,
+    rgba(59, 130, 246, 0.45),
+    rgba(168, 85, 247, 0.45) 60%,
+    transparent 85%
+  );
+}
+
+/* 动漫：青绿霓虹 */
+.chip-anime {
+  background: linear-gradient(
+    90deg,
+    rgba(20, 184, 166, 0.35),
+    rgba(16, 185, 129, 0.35)
+  );
+  border-color: rgba(16, 185, 129, 0.45);
+}
+.chip-anime::before {
+  background: radial-gradient(
+    70% 70% at 50% 50%,
+    rgba(20, 184, 166, 0.45),
+    rgba(16, 185, 129, 0.45) 60%,
+    transparent 85%
+  );
+}
+
+/* 综艺：金柠霓虹 */
+.chip-show {
+  background: linear-gradient(
+    90deg,
+    rgba(250, 204, 21, 0.35),
+    rgba(251, 191, 36, 0.35)
+  );
+  border-color: rgba(251, 191, 36, 0.5);
+}
+.chip-show::before {
+  background: radial-gradient(
+    70% 70% at 50% 50%,
+    rgba(250, 204, 21, 0.45),
+    rgba(251, 191, 36, 0.45) 60%,
+    transparent 85%
+  );
+}
+
+/* 直播：品红霓虹 */
+.chip-live {
+  background: linear-gradient(
+    90deg,
+    rgba(236, 72, 153, 0.35),
+    rgba(244, 63, 94, 0.35)
+  );
+  border-color: rgba(236, 72, 153, 0.5);
+}
+.chip-live::before {
+  background: radial-gradient(
+    70% 70% at 50% 50%,
+    rgba(244, 63, 94, 0.45),
+    rgba(236, 72, 153, 0.45) 60%,
+    transparent 85%
+  );
+}
+
+/* 移动端底部导航霓虹主题 */
+.mbnav {
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.mbnav-item {
+  position: relative;
+  transition:
+    transform 0.25s ease,
+    color 0.25s ease;
+}
+.mbnav-item::after {
+  content: '';
+  position: absolute;
+  inset: auto 15% 6px 15%;
+  height: 6px;
+  border-radius: 9999px;
+  background: radial-gradient(
+    50% 100% at 50% 100%,
+    currentColor,
+    transparent 70%
+  );
+  opacity: 0;
+  filter: blur(6px);
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+.mbnav-item:hover {
+  transform: translateY(-2px);
+}
+.mbnav-item:hover::after {
+  opacity: 0.55;
+  transform: translateY(2px);
+}
+.mbnav-item-active {
+  text-shadow: 0 0 8px currentColor;
+}
+
+/* 底部导航分类色系（与桌面一致） */
+.mb-home {
+  color: #3b82f6;
+}
+.mb-search {
+  color: #6366f1;
+}
+.mb-movie {
+  color: #f59e0b;
+}
+.mb-tv {
+  color: #a855f7;
+}
+.mb-anime {
+  color: #10b981;
+}
+.mb-show {
+  color: #facc15;
+}
+.mb-live {
+  color: #ec4899;
+}
+
+/* 按钮/卡片悬停高光轨迹 */
+/* 移除 sweeping 高光轨迹效果（保留占位，避免类名报错） */
+.hover-beam {
+  position: relative;
+}
+.hover-beam::before {
+  content: none;
+}
+
+/* 过场加强：淡入上滑组合 */
+@keyframes superFadeSlide {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.99);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+.enter-animate {
+  animation: superFadeSlide 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+html:not(.dark) body {
+  background: linear-gradient(
+    180deg,
+    #e6f3fb 0%,
+    #eaf3f7 18%,
+    #f7f7f3 38%,
+    #e9ecef 60%,
+    #dbe3ea 80%,
+    #d3dde6 100%
+  );
+  background-attachment: fixed;
+}
+
+/* 亮色模式文字颜色强制覆盖 - 修复 Tailwind 4 OKLCH 灰色过淡问题 */
+html:not(.dark) {
+  /* 覆盖 Tailwind 4 OKLCH 灰色，使用传统高对比度 HEX 值 */
+  --tw-text-opacity: 1;
+}
+
+/* 强制使用深色文字 - 确保亮色模式下可读性 */
+html:not(.dark) .text-gray-900 {
+  color: #111827 !important;
+}
+
+html:not(.dark) .text-gray-800 {
+  color: #1f2937 !important;
+}
+
+html:not(.dark) .text-gray-700 {
+  color: #374151 !important;
+}
+
+html:not(.dark) .text-gray-600 {
+  color: #4b5563 !important;
+}
+
+html:not(.dark) .text-gray-500 {
+  color: #6b7280 !important;
+}
+
+html:not(.dark) .text-slate-900 {
+  color: #0f172a !important;
+}
+
+html:not(.dark) .text-slate-800 {
+  color: #1e293b !important;
+}
+
+html:not(.dark) .text-slate-700 {
+  color: #334155 !important;
+}
+
+html:not(.dark) .text-slate-600 {
+  color: #475569 !important;
+}
+
+html:not(.dark) .text-slate-500 {
+  color: #64748b !important;
+}
+
+/* 亮色模式背景颜色强制覆盖 */
+html:not(.dark) .bg-slate-50 {
+  background-color: #f8fafc !important;
+}
+
+html:not(.dark) .bg-slate-100 {
+  background-color: #f1f5f9 !important;
+}
+
+html:not(.dark) .border-slate-200 {
+  border-color: #e2e8f0 !important;
+}
+
+html:not(.dark) .from-slate-50 {
+  --tw-gradient-from: #f8fafc !important;
+}
+
+html:not(.dark) .to-slate-100 {
+  --tw-gradient-to: #f1f5f9 !important;
+}
+
+html:not(.dark) .hover\:bg-slate-100:hover {
+  background-color: #f1f5f9 !important;
+}
+
+html:not(.dark) .hover\:bg-slate-50:hover {
+  background-color: #f8fafc !important;
+}
+
+/* 动态渐变闪烁背景粒子层（轻量） */
+.bg-animated-gradient::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(
+      800px 800px at 10% 10%,
+      rgba(99, 102, 241, 0.08),
+      transparent 60%
+    ),
+    radial-gradient(
+      800px 800px at 90% 20%,
+      rgba(16, 185, 129, 0.08),
+      transparent 60%
+    ),
+    radial-gradient(
+      800px 800px at 50% 90%,
+      rgba(236, 72, 153, 0.08),
+      transparent 60%
+    );
+  pointer-events: none;
+  /* 降低动态背景的动画强度，避免强烈高光划过体验 */
+  animation: bgFloat 24s ease-in-out infinite alternate;
+}
+
+@keyframes bgFloat {
+  0% {
+    transform: translateY(-10px) scale(1);
+    filter: hue-rotate(0deg);
+  }
+  100% {
+    transform: translateY(10px) scale(1.02);
+    filter: hue-rotate(20deg);
+  }
+}
+
+/* Card base glassmorphism */
+.glass-card {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  box-shadow:
+    0 8px 30px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(20px);
+  border-radius: 1rem;
+}
+
+html.dark .glass-card {
+  background: rgba(17, 24, 39, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* 自定义滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(31, 41, 55, 0.1);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 114, 128, 0.5);
+}
+
+/* 视频卡片悬停效果 */
+.video-card-hover {
+  transition: transform 0.3s ease;
+}
+
+.video-card-hover:hover {
+  transform: scale(1.05);
+}
+
+/* 渐变遮罩 */
+.gradient-overlay {
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(0, 0, 0, 0.8) 100%
+  );
+}
+
+/* 隐藏移动端（<768px）垂直滚动条 */
+@media (max-width: 767px) {
+  html,
+  body {
+    -ms-overflow-style: none; /* IE & Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar {
+    display: none; /* Chrome Safari */
+  }
+}
+
+/* 隐藏所有滚动条（兼容 WebKit、Firefox、IE/Edge） */
+* {
+  -ms-overflow-style: none; /* IE & Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+*::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+/* View Transitions API 动画 */
+@keyframes slide-from-top {
+  from {
+    clip-path: polygon(0 0, 100% 0, 100% 0, 0 0);
+  }
+  to {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
+}
+
+@keyframes slide-from-bottom {
+  from {
+    clip-path: polygon(0 100%, 100% 100%, 100% 100%, 0 100%);
+  }
+  to {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.8s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  animation-fill-mode: both;
+}
+
+/*
+  切换时，旧的视图不应该有动画，它应该在下面，等待被新的视图覆盖。
+  这可以防止在动画完成前，页面底部提前变色。
+*/
+::view-transition-old(root) {
+  animation: none;
+}
+
+/* 从浅色到深色：新内容（深色）从顶部滑入 */
+html.dark::view-transition-new(root) {
+  animation-name: slide-from-top;
+}
+
+/* 从深色到浅色：新内容（浅色）从底部滑入 */
+html:not(.dark)::view-transition-new(root) {
+  animation-name: slide-from-bottom;
+}
+
+/* 强制播放器内部的 video 元素高度为 100%，并保持内容完整显示 */
+div[data-media-provider] video {
+  height: 100%;
+  object-fit: contain;
+}
+
+.art-poster {
+  background-size: contain !important; /* 使图片完整展示 */
+  background-position: center center !important; /* 居中显示 */
+  background-repeat: no-repeat !important; /* 防止重复 */
+  background-color: #000 !important; /* 其余区域填充为黑色 */
+}
+
+/* 隐藏移动端竖屏时的 pip 按钮 */
+@media (max-width: 768px) {
+  .art-control-pip {
+    display: none !important;
+  }
+
+  .art-control-fullscreenWeb {
+    display: none !important;
+  }
+
+  .art-control-volume {
+    display: none !important;
+  }
+}
+
+/* QuantumTV 炫酷动画效果 */
+@keyframes blob {
+  0%,
+  100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  33% {
+    transform: translate(30px, -50px) scale(1.1);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+}
+
+@keyframes neon-pulse {
+  0%,
+  100% {
+    text-shadow:
+      0 0 5px currentColor,
+      0 0 10px currentColor,
+      0 0 15px currentColor,
+      0 0 20px currentColor;
+  }
+  50% {
+    text-shadow:
+      0 0 2px currentColor,
+      0 0 5px currentColor,
+      0 0 8px currentColor,
+      0 0 12px currentColor;
+  }
+}
+
+.animate-blob {
+  animation: blob 7s infinite;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+.animation-delay-4000 {
+  animation-delay: 4s;
+}
+
+.animation-delay-1000 {
+  animation-delay: 1s;
+}
+
+.animation-delay-200 {
+  animation-delay: 0.2s;
+}
+
+.animation-delay-400 {
+  animation-delay: 0.4s;
+}
+
+.animation-delay-600 {
+  animation-delay: 0.6s;
+}
+
+/* 霓虹灯渐变文字效果增强 */
+.neon-gradient-text {
+  background: linear-gradient(
+    90deg,
+    #00f5ff,
+    #8a2be2,
+    #ff1493,
+    #ffd700,
+    #00f5ff
+  );
+  background-size: 400% 400%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation:
+    neon-gradient 3s ease-in-out infinite,
+    neon-pulse 2s ease-in-out infinite alternate;
+}
+
+@keyframes neon-gradient {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}

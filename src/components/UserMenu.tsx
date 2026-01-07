@@ -1,0 +1,1009 @@
+/* eslint-disable no-console,@typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion */
+
+'use client';
+
+import {
+  Check,
+  ChevronDown,
+  ExternalLink,
+  Settings,
+  Shield,
+  User,
+  X,
+} from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+
+import { CURRENT_VERSION } from '@/lib/version';
+import { checkForUpdates, UpdateStatus } from '@/lib/version_check';
+
+import { VersionPanel } from './VersionPanel';
+
+export const UserMenu: React.FC = () => {
+  const router = useRouter();
+  const [isOpen, setIsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isVersionPanelOpen, setIsVersionPanelOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Body 滚动锁定 - 使用 overflow 方式避免布局问题
+  useEffect(() => {
+    if (isSettingsOpen) {
+      const body = document.body;
+      const html = document.documentElement;
+
+      // 保存原始样式
+      const originalBodyOverflow = body.style.overflow;
+      const originalHtmlOverflow = html.style.overflow;
+
+      // 只设置 overflow 来阻止滚动
+      body.style.overflow = 'hidden';
+      html.style.overflow = 'hidden';
+
+      return () => {
+        // 恢复所有原始样式
+        body.style.overflow = originalBodyOverflow;
+        html.style.overflow = originalHtmlOverflow;
+      };
+    }
+  }, [isSettingsOpen]);
+
+  // 设置相关状态
+  const [defaultAggregateSearch, setDefaultAggregateSearch] = useState(true);
+  const [doubanProxyUrl, setDoubanProxyUrl] = useState('');
+  const [enableOptimization, setEnableOptimization] = useState(true);
+  const [fluidSearch, setFluidSearch] = useState(true);
+  const [liveDirectConnect, setLiveDirectConnect] = useState(false);
+  const [playerBufferMode, setPlayerBufferMode] = useState<
+    'standard' | 'enhanced' | 'max'
+  >('standard');
+  const [doubanDataSource, setDoubanDataSource] = useState(
+    'cmliussss-cdn-tencent',
+  );
+  const [doubanImageProxyType, setDoubanImageProxyType] = useState(
+    'cmliussss-cdn-tencent',
+  );
+  const [doubanImageProxyUrl, setDoubanImageProxyUrl] = useState('');
+  const [isDoubanDropdownOpen, setIsDoubanDropdownOpen] = useState(false);
+  const [isDoubanImageProxyDropdownOpen, setIsDoubanImageProxyDropdownOpen] =
+    useState(false);
+
+  // 播放缓冲模式选项
+  const bufferModeOptions = [
+    {
+      value: 'standard' as const,
+      label: '默认模式',
+      description: '标准缓冲设置，适合网络稳定的环境',
+      icon: '🎯',
+      color: 'green',
+    },
+    {
+      value: 'enhanced' as const,
+      label: '增强模式',
+      description: '1.5倍缓冲，适合偶尔卡顿的网络环境',
+      icon: '⚡',
+      color: 'blue',
+    },
+    {
+      value: 'max' as const,
+      label: '强力模式',
+      description: '3倍大缓冲，起播稍慢但播放更流畅',
+      icon: '🚀',
+      color: 'purple',
+    },
+  ];
+
+  // 豆瓣数据源选项
+  const doubanDataSourceOptions = [
+    { value: 'direct', label: '直连（服务器直接请求豆瓣）' },
+    { value: 'cors-proxy-zwei', label: 'Cors Proxy By Zwei' },
+    {
+      value: 'cmliussss-cdn-tencent',
+      label: '豆瓣 CDN By CMLiussss（腾讯云）',
+    },
+    { value: 'cmliussss-cdn-ali', label: '豆瓣 CDN By CMLiussss（阿里云）' },
+    { value: 'custom', label: '自定义代理' },
+  ];
+
+  // 豆瓣图片代理选项
+  const doubanImageProxyTypeOptions = [
+    { value: 'direct', label: '直连（浏览器直接请求豆瓣）' },
+    {
+      value: 'cmliussss-cdn-tencent',
+      label: '豆瓣 CDN By CMLiussss（腾讯云）',
+    },
+    { value: 'cmliussss-cdn-ali', label: '豆瓣 CDN By CMLiussss（阿里云）' },
+    { value: 'custom', label: '自定义代理' },
+  ];
+
+  // 版本检查相关状态
+  const [updateStatus, setUpdateStatus] = useState<{
+    status: UpdateStatus;
+    currentTimestamp?: string;
+    remoteTimestamp?: string;
+  } | null>(null);
+  const [isChecking, setIsChecking] = useState(true);
+
+  // 确保组件已挂载
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // 从 localStorage 读取设置
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedAggregateSearch = localStorage.getItem(
+        'defaultAggregateSearch',
+      );
+      if (savedAggregateSearch !== null) {
+        setDefaultAggregateSearch(JSON.parse(savedAggregateSearch));
+      }
+
+      const savedDoubanDataSource = localStorage.getItem('doubanDataSource');
+      const defaultDoubanProxyType =
+        (window as any).RUNTIME_CONFIG?.DOUBAN_PROXY_TYPE ||
+        'cmliussss-cdn-tencent';
+      if (savedDoubanDataSource !== null) {
+        setDoubanDataSource(savedDoubanDataSource);
+      } else if (defaultDoubanProxyType) {
+        setDoubanDataSource(defaultDoubanProxyType);
+      }
+
+      const savedDoubanProxyUrl = localStorage.getItem('doubanProxyUrl');
+      const defaultDoubanProxy =
+        (window as any).RUNTIME_CONFIG?.DOUBAN_PROXY || '';
+      if (savedDoubanProxyUrl !== null) {
+        setDoubanProxyUrl(savedDoubanProxyUrl);
+      } else if (defaultDoubanProxy) {
+        setDoubanProxyUrl(defaultDoubanProxy);
+      }
+
+      const savedDoubanImageProxyType = localStorage.getItem(
+        'doubanImageProxyType',
+      );
+      const defaultDoubanImageProxyType =
+        (window as any).RUNTIME_CONFIG?.DOUBAN_IMAGE_PROXY_TYPE ||
+        'cmliussss-cdn-tencent';
+      if (savedDoubanImageProxyType !== null) {
+        setDoubanImageProxyType(savedDoubanImageProxyType);
+      } else if (defaultDoubanImageProxyType) {
+        setDoubanImageProxyType(defaultDoubanImageProxyType);
+      }
+
+      const savedDoubanImageProxyUrl = localStorage.getItem(
+        'doubanImageProxyUrl',
+      );
+      const defaultDoubanImageProxyUrl =
+        (window as any).RUNTIME_CONFIG?.DOUBAN_IMAGE_PROXY || '';
+      if (savedDoubanImageProxyUrl !== null) {
+        setDoubanImageProxyUrl(savedDoubanImageProxyUrl);
+      } else if (defaultDoubanImageProxyUrl) {
+        setDoubanImageProxyUrl(defaultDoubanImageProxyUrl);
+      }
+
+      const savedEnableOptimization =
+        localStorage.getItem('enableOptimization');
+      if (savedEnableOptimization !== null) {
+        setEnableOptimization(JSON.parse(savedEnableOptimization));
+      }
+
+      const savedFluidSearch = localStorage.getItem('fluidSearch');
+      const defaultFluidSearch =
+        (window as any).RUNTIME_CONFIG?.FLUID_SEARCH !== false;
+      if (savedFluidSearch !== null) {
+        setFluidSearch(JSON.parse(savedFluidSearch));
+      } else if (defaultFluidSearch !== undefined) {
+        setFluidSearch(defaultFluidSearch);
+      }
+
+      const savedLiveDirectConnect = localStorage.getItem('liveDirectConnect');
+      if (savedLiveDirectConnect !== null) {
+        setLiveDirectConnect(JSON.parse(savedLiveDirectConnect));
+      }
+
+      // 读取播放缓冲模式
+      const savedBufferMode = localStorage.getItem('playerBufferMode');
+      if (
+        savedBufferMode === 'standard' ||
+        savedBufferMode === 'enhanced' ||
+        savedBufferMode === 'max'
+      ) {
+        setPlayerBufferMode(savedBufferMode);
+      }
+    }
+  }, []);
+
+  // 版本检查
+  useEffect(() => {
+    const checkUpdate = async () => {
+      try {
+        const status = await checkForUpdates();
+        setUpdateStatus(status);
+      } catch (error) {
+        console.warn('版本检查失败:', error);
+      } finally {
+        setIsChecking(false);
+      }
+    };
+
+    checkUpdate();
+  }, []);
+
+  // 点击外部区域关闭下拉框
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isDoubanDropdownOpen) {
+        const target = event.target as Element;
+        if (!target.closest('[data-dropdown="douban-datasource"]')) {
+          setIsDoubanDropdownOpen(false);
+        }
+      }
+    };
+
+    if (isDoubanDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () =>
+        document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isDoubanDropdownOpen]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isDoubanImageProxyDropdownOpen) {
+        const target = event.target as Element;
+        if (!target.closest('[data-dropdown="douban-image-proxy"]')) {
+          setIsDoubanImageProxyDropdownOpen(false);
+        }
+      }
+    };
+
+    if (isDoubanImageProxyDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () =>
+        document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isDoubanImageProxyDropdownOpen]);
+
+  const handleMenuClick = () => {
+    setIsOpen(!isOpen);
+  };
+
+  const handleCloseMenu = () => {
+    setIsOpen(false);
+  };
+
+  const handleAdminPanel = () => {
+    router.push('/admin');
+  };
+
+  const handleSettings = () => {
+    setIsOpen(false);
+    setIsSettingsOpen(true);
+  };
+
+  const handleCloseSettings = () => {
+    setIsSettingsOpen(false);
+  };
+
+  // 设置相关的处理函数
+  const handleAggregateToggle = (value: boolean) => {
+    setDefaultAggregateSearch(value);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('defaultAggregateSearch', JSON.stringify(value));
+    }
+  };
+
+  const handleDoubanProxyUrlChange = (value: string) => {
+    setDoubanProxyUrl(value);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('doubanProxyUrl', value);
+    }
+  };
+
+  const handleOptimizationToggle = (value: boolean) => {
+    setEnableOptimization(value);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('enableOptimization', JSON.stringify(value));
+    }
+  };
+
+  const handleFluidSearchToggle = (value: boolean) => {
+    setFluidSearch(value);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('fluidSearch', JSON.stringify(value));
+    }
+  };
+
+  const handleLiveDirectConnectToggle = (value: boolean) => {
+    setLiveDirectConnect(value);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('liveDirectConnect', JSON.stringify(value));
+    }
+  };
+
+  const handleBufferModeChange = (value: 'standard' | 'enhanced' | 'max') => {
+    setPlayerBufferMode(value);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('playerBufferMode', value);
+    }
+  };
+
+  const handleDoubanDataSourceChange = (value: string) => {
+    setDoubanDataSource(value);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('doubanDataSource', value);
+    }
+  };
+
+  const handleDoubanImageProxyTypeChange = (value: string) => {
+    setDoubanImageProxyType(value);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('doubanImageProxyType', value);
+    }
+  };
+
+  const handleDoubanImageProxyUrlChange = (value: string) => {
+    setDoubanImageProxyUrl(value);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('doubanImageProxyUrl', value);
+    }
+  };
+
+  // 获取感谢信息
+  const getThanksInfo = (dataSource: string) => {
+    switch (dataSource) {
+      case 'cors-proxy-zwei':
+        return {
+          text: 'Thanks to @Zwei',
+          url: 'https://github.com/bestzwei',
+        };
+      case 'cmliussss-cdn-tencent':
+      case 'cmliussss-cdn-ali':
+        return {
+          text: 'Thanks to @CMLiussss',
+          url: 'https://github.com/cmliu',
+        };
+      default:
+        return null;
+    }
+  };
+
+  const handleResetSettings = () => {
+    const defaultDoubanProxyType =
+      (window as any).RUNTIME_CONFIG?.DOUBAN_PROXY_TYPE ||
+      'cmliussss-cdn-tencent';
+    const defaultDoubanProxy =
+      (window as any).RUNTIME_CONFIG?.DOUBAN_PROXY || '';
+    const defaultDoubanImageProxyType =
+      (window as any).RUNTIME_CONFIG?.DOUBAN_IMAGE_PROXY_TYPE ||
+      'cmliussss-cdn-tencent';
+    const defaultDoubanImageProxyUrl =
+      (window as any).RUNTIME_CONFIG?.DOUBAN_IMAGE_PROXY || '';
+    const defaultFluidSearch =
+      (window as any).RUNTIME_CONFIG?.FLUID_SEARCH !== false;
+
+    setDefaultAggregateSearch(true);
+    setEnableOptimization(true);
+    setFluidSearch(defaultFluidSearch);
+    setLiveDirectConnect(false);
+    setDoubanProxyUrl(defaultDoubanProxy);
+    setDoubanDataSource(defaultDoubanProxyType);
+    setDoubanImageProxyType(defaultDoubanImageProxyType);
+    setDoubanImageProxyUrl(defaultDoubanImageProxyUrl);
+    setPlayerBufferMode('standard');
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
+      localStorage.setItem('enableOptimization', JSON.stringify(true));
+      localStorage.setItem('fluidSearch', JSON.stringify(defaultFluidSearch));
+      localStorage.setItem('liveDirectConnect', JSON.stringify(false));
+      localStorage.setItem('doubanProxyUrl', defaultDoubanProxy);
+      localStorage.setItem('doubanDataSource', defaultDoubanProxyType);
+      localStorage.setItem('doubanImageProxyType', defaultDoubanImageProxyType);
+      localStorage.setItem('doubanImageProxyUrl', defaultDoubanImageProxyUrl);
+      localStorage.setItem('playerBufferMode', 'standard');
+    }
+  };
+
+  // 菜单面板内容
+  const menuPanel = (
+    <>
+      {/* 背景遮罩 - 普通菜单无需模糊 */}
+      <div
+        className='fixed inset-0 bg-transparent z-1000'
+        onClick={handleCloseMenu}
+      />
+
+      {/* 菜单面板 - 固定到视口右上角，使位置稳定且美观 */}
+      <div className='fixed top-2 right-2 w-56 bg-white dark:bg-gray-900 rounded-lg shadow-2xl z-1001 border border-slate-200 dark:border-gray-700/50 overflow-hidden select-none'>
+        {/* 菜单项 */}
+        <div className='py-1'>
+          {/* 设置按钮 */}
+          <button
+            onClick={handleSettings}
+            className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800 transition-colors text-sm'
+          >
+            <Settings className='w-4 h-4 text-slate-500 dark:text-gray-400' />
+            <span className='font-medium'>设置</span>
+          </button>
+
+          {/* 管理面板按钮 */}
+          <button
+            onClick={handleAdminPanel}
+            className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800 transition-colors text-sm'
+          >
+            <Shield className='w-4 h-4 text-slate-500 dark:text-gray-400' />
+            <span className='font-medium'>管理面板</span>
+          </button>
+
+          {/* 分割线 */}
+          <div className='my-1 border-t border-slate-200 dark:border-gray-700'></div>
+
+          {/* 版本信息 */}
+          <button
+            onClick={() => {
+              setIsVersionPanelOpen(true);
+              handleCloseMenu();
+            }}
+            className='w-full px-3 py-2 text-center flex items-center justify-center text-slate-600 dark:text-gray-400 hover:bg-slate-50 dark:hover:bg-gray-800/50 transition-colors text-xs'
+          >
+            <div className='flex items-center gap-1'>
+              <span className='font-mono'>v{CURRENT_VERSION}</span>
+              {!isChecking &&
+                updateStatus &&
+                updateStatus.status !== UpdateStatus.FETCH_FAILED && (
+                  <div
+                    className={`w-2 h-2 rounded-full -translate-y-2 ${
+                      updateStatus.status === UpdateStatus.HAS_UPDATE
+                        ? 'bg-yellow-500'
+                        : updateStatus.status === UpdateStatus.NO_UPDATE
+                          ? 'bg-green-400'
+                          : ''
+                    }`}
+                  ></div>
+                )}
+            </div>
+          </button>
+        </div>
+      </div>
+    </>
+  );
+
+  // 设置面板内容
+  const settingsPanel = (
+    <>
+      {/* 背景遮罩 */}
+      <div
+        className='fixed inset-0 bg-black/50 backdrop-blur-sm z-1000'
+        onClick={handleCloseSettings}
+        onTouchMove={(e) => {
+          // 只阻止滚动，允许其他触摸事件
+          e.preventDefault();
+        }}
+        onWheel={(e) => {
+          // 阻止滚轮滚动
+          e.preventDefault();
+        }}
+        style={{
+          touchAction: 'none',
+        }}
+      />
+
+      {/* 设置面板 */}
+      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-xl max-h-[90vh] bg-white dark:bg-gray-900 rounded-xl shadow-xl z-1001 flex flex-col'>
+        {/* 内容容器 - 独立的滚动区域 */}
+        <div
+          className='flex-1 p-6 overflow-y-auto'
+          data-panel-content
+          style={{
+            touchAction: 'pan-y', // 只允许垂直滚动
+            overscrollBehavior: 'contain', // 防止滚动冒泡
+          }}
+        >
+          {/* 标题栏 */}
+          <div className='flex items-center justify-between mb-6'>
+            <div className='flex items-center gap-3'>
+              <h3 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
+                本地设置
+              </h3>
+              <button
+                onClick={handleResetSettings}
+                className='px-2 py-1 text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 border border-red-200 hover:border-red-300 dark:border-red-800 dark:hover:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors'
+                title='重置为默认设置'
+              >
+                恢复默认
+              </button>
+            </div>
+            <button
+              onClick={handleCloseSettings}
+              className='w-8 h-8 p-1 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'
+              aria-label='Close'
+            >
+              <X className='w-full h-full' />
+            </button>
+          </div>
+
+          {/* 设置项 */}
+          <div className='space-y-6'>
+            {/* 豆瓣数据源选择 */}
+            <div className='space-y-3'>
+              <div>
+                <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                  豆瓣数据代理
+                </h4>
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                  选择获取豆瓣数据的方式
+                </p>
+              </div>
+              <div className='relative' data-dropdown='douban-datasource'>
+                {/* 自定义下拉选择框 */}
+                <button
+                  type='button'
+                  onClick={() => setIsDoubanDropdownOpen(!isDoubanDropdownOpen)}
+                  className='w-full px-3 py-2.5 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm hover:border-gray-400 dark:hover:border-gray-500 text-left'
+                >
+                  {
+                    doubanDataSourceOptions.find(
+                      (option) => option.value === doubanDataSource,
+                    )?.label
+                  }
+                </button>
+
+                {/* 下拉箭头 */}
+                <div className='absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none'>
+                  <ChevronDown
+                    className={`w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform duration-200 ${
+                      isDoubanDropdownOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                </div>
+
+                {/* 下拉选项列表 */}
+                {isDoubanDropdownOpen && (
+                  <div className='absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-auto'>
+                    {doubanDataSourceOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type='button'
+                        onClick={() => {
+                          handleDoubanDataSourceChange(option.value);
+                          setIsDoubanDropdownOpen(false);
+                        }}
+                        className={`w-full px-3 py-2.5 text-left text-sm transition-colors duration-150 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 ${
+                          doubanDataSource === option.value
+                            ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
+                            : 'text-gray-900 dark:text-gray-100'
+                        }`}
+                      >
+                        <span className='truncate'>{option.label}</span>
+                        {doubanDataSource === option.value && (
+                          <Check className='w-4 h-4 text-green-600 dark:text-green-400 shrink-0 ml-2' />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 感谢信息 */}
+              {getThanksInfo(doubanDataSource) && (
+                <div className='mt-3'>
+                  <button
+                    type='button'
+                    onClick={() =>
+                      window.open(
+                        getThanksInfo(doubanDataSource)!.url,
+                        '_blank',
+                      )
+                    }
+                    className='flex items-center justify-center gap-1.5 w-full px-3 text-xs text-gray-500 dark:text-gray-400 cursor-pointer'
+                  >
+                    <span className='font-medium'>
+                      {getThanksInfo(doubanDataSource)!.text}
+                    </span>
+                    <ExternalLink className='w-3.5 opacity-70' />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 豆瓣代理地址设置 - 仅在选择自定义代理时显示 */}
+            {doubanDataSource === 'custom' && (
+              <div className='space-y-3'>
+                <div>
+                  <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                    豆瓣代理地址
+                  </h4>
+                  <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                    自定义代理服务器地址
+                  </p>
+                </div>
+                <input
+                  type='text'
+                  className='w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 shadow-sm hover:border-gray-400 dark:hover:border-gray-500'
+                  placeholder='例如: https://proxy.example.com/fetch?url='
+                  value={doubanProxyUrl}
+                  onChange={(e) => handleDoubanProxyUrlChange(e.target.value)}
+                />
+              </div>
+            )}
+
+            {/* 分割线 */}
+            <div className='border-t border-gray-200 dark:border-gray-700'></div>
+
+            {/* 豆瓣图片代理设置 */}
+            <div className='space-y-3'>
+              <div>
+                <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                  豆瓣图片代理
+                </h4>
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                  选择获取豆瓣图片的方式
+                </p>
+              </div>
+              <div className='relative' data-dropdown='douban-image-proxy'>
+                {/* 自定义下拉选择框 */}
+                <button
+                  type='button'
+                  onClick={() =>
+                    setIsDoubanImageProxyDropdownOpen(
+                      !isDoubanImageProxyDropdownOpen,
+                    )
+                  }
+                  className='w-full px-3 py-2.5 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm hover:border-gray-400 dark:hover:border-gray-500 text-left'
+                >
+                  {
+                    doubanImageProxyTypeOptions.find(
+                      (option) => option.value === doubanImageProxyType,
+                    )?.label
+                  }
+                </button>
+
+                {/* 下拉箭头 */}
+                <div className='absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none'>
+                  <ChevronDown
+                    className={`w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform duration-200 ${
+                      isDoubanDropdownOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                </div>
+
+                {/* 下拉选项列表 */}
+                {isDoubanImageProxyDropdownOpen && (
+                  <div className='absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-auto'>
+                    {doubanImageProxyTypeOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type='button'
+                        onClick={() => {
+                          handleDoubanImageProxyTypeChange(option.value);
+                          setIsDoubanImageProxyDropdownOpen(false);
+                        }}
+                        className={`w-full px-3 py-2.5 text-left text-sm transition-colors duration-150 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 ${
+                          doubanImageProxyType === option.value
+                            ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
+                            : 'text-gray-900 dark:text-gray-100'
+                        }`}
+                      >
+                        <span className='truncate'>{option.label}</span>
+                        {doubanImageProxyType === option.value && (
+                          <Check className='w-4 h-4 text-green-600 dark:text-green-400 shrink-0 ml-2' />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 感谢信息 */}
+              {getThanksInfo(doubanImageProxyType) && (
+                <div className='mt-3'>
+                  <button
+                    type='button'
+                    onClick={() =>
+                      window.open(
+                        getThanksInfo(doubanImageProxyType)!.url,
+                        '_blank',
+                      )
+                    }
+                    className='flex items-center justify-center gap-1.5 w-full px-3 text-xs text-gray-500 dark:text-gray-400 cursor-pointer'
+                  >
+                    <span className='font-medium'>
+                      {getThanksInfo(doubanImageProxyType)!.text}
+                    </span>
+                    <ExternalLink className='w-3.5 opacity-70' />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 豆瓣图片代理地址设置 - 仅在选择自定义代理时显示 */}
+            {doubanImageProxyType === 'custom' && (
+              <div className='space-y-3'>
+                <div>
+                  <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                    豆瓣图片代理地址
+                  </h4>
+                  <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                    自定义图片代理服务器地址
+                  </p>
+                </div>
+                <input
+                  type='text'
+                  className='w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 shadow-sm hover:border-gray-400 dark:hover:border-gray-500'
+                  placeholder='例如: https://proxy.example.com/fetch?url='
+                  value={doubanImageProxyUrl}
+                  onChange={(e) =>
+                    handleDoubanImageProxyUrlChange(e.target.value)
+                  }
+                />
+              </div>
+            )}
+
+            {/* 分割线 */}
+            <div className='border-t border-gray-200 dark:border-gray-700'></div>
+
+            {/* 默认聚合搜索结果 */}
+            <div className='flex items-center justify-between'>
+              <div>
+                <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                  默认聚合搜索结果
+                </h4>
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                  搜索时默认按标题和年份聚合显示结果
+                </p>
+              </div>
+              <label className='flex items-center cursor-pointer'>
+                <div className='relative'>
+                  <input
+                    type='checkbox'
+                    className='sr-only peer'
+                    checked={defaultAggregateSearch}
+                    onChange={(e) => handleAggregateToggle(e.target.checked)}
+                  />
+                  <div className='w-11 h-6 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600'></div>
+                  <div className='absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform peer-checked:translate-x-5'></div>
+                </div>
+              </label>
+            </div>
+
+            {/* 优选和测速 */}
+            <div className='flex items-center justify-between'>
+              <div>
+                <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                  优选和测速
+                </h4>
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                  如出现播放器劫持问题可关闭
+                </p>
+              </div>
+              <label className='flex items-center cursor-pointer'>
+                <div className='relative'>
+                  <input
+                    type='checkbox'
+                    className='sr-only peer'
+                    checked={enableOptimization}
+                    onChange={(e) => handleOptimizationToggle(e.target.checked)}
+                  />
+                  <div className='w-11 h-6 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600'></div>
+                  <div className='absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform peer-checked:translate-x-5'></div>
+                </div>
+              </label>
+            </div>
+
+            {/* 流式搜索 */}
+            <div className='flex items-center justify-between'>
+              <div>
+                <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                  流式搜索输出
+                </h4>
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                  启用搜索结果实时流式输出，关闭后使用传统一次性搜索
+                </p>
+              </div>
+              <label className='flex items-center cursor-pointer'>
+                <div className='relative'>
+                  <input
+                    type='checkbox'
+                    className='sr-only peer'
+                    checked={fluidSearch}
+                    onChange={(e) => handleFluidSearchToggle(e.target.checked)}
+                  />
+                  <div className='w-11 h-6 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600'></div>
+                  <div className='absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform peer-checked:translate-x-5'></div>
+                </div>
+              </label>
+            </div>
+
+            {/* 直播视频浏览器直连 */}
+            <div className='flex items-center justify-between'>
+              <div>
+                <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                  IPTV 视频浏览器直连
+                </h4>
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                  开启 IPTV 视频浏览器直连时，需要自备 Allow CORS 插件
+                </p>
+              </div>
+              <label className='flex items-center cursor-pointer'>
+                <div className='relative'>
+                  <input
+                    type='checkbox'
+                    className='sr-only peer'
+                    checked={liveDirectConnect}
+                    onChange={(e) =>
+                      handleLiveDirectConnectToggle(e.target.checked)
+                    }
+                  />
+                  <div className='w-11 h-6 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600'></div>
+                  <div className='absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform peer-checked:translate-x-5'></div>
+                </div>
+              </label>
+            </div>
+
+            {/* 分割线 */}
+            <div className='border-t border-gray-200 dark:border-gray-700'></div>
+
+            {/* 播放缓冲优化 - 卡片式选择器 */}
+            <div className='space-y-3'>
+              <div>
+                <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                  播放缓冲优化
+                </h4>
+                <p className='text-xs text-gray-400 dark:text-gray-500 mt-1'>
+                  根据网络环境选择合适的缓冲模式，减少播放卡顿
+                </p>
+              </div>
+
+              {/* 模式选择卡片 */}
+              <div className='space-y-2'>
+                {bufferModeOptions.map((option) => {
+                  const isSelected = playerBufferMode === option.value;
+                  const colorClasses = {
+                    green: {
+                      selected:
+                        'border-transparent bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 ring-2 ring-green-400/60 dark:ring-green-500/50 shadow-[0_0_15px_-3px_rgba(34,197,94,0.4)] dark:shadow-[0_0_15px_-3px_rgba(34,197,94,0.3)]',
+                      icon: 'bg-gradient-to-br from-green-100 to-emerald-100 dark:from-green-800/50 dark:to-emerald-800/50',
+                      check: 'text-green-500',
+                      label: 'text-green-700 dark:text-green-300',
+                    },
+                    blue: {
+                      selected:
+                        'border-transparent bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 ring-2 ring-blue-400/60 dark:ring-blue-500/50 shadow-[0_0_15px_-3px_rgba(59,130,246,0.4)] dark:shadow-[0_0_15px_-3px_rgba(59,130,246,0.3)]',
+                      icon: 'bg-gradient-to-br from-blue-100 to-cyan-100 dark:from-blue-800/50 dark:to-cyan-800/50',
+                      check: 'text-blue-500',
+                      label: 'text-blue-700 dark:text-blue-300',
+                    },
+                    purple: {
+                      selected:
+                        'border-transparent bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 ring-2 ring-purple-400/60 dark:ring-purple-500/50 shadow-[0_0_15px_-3px_rgba(168,85,247,0.4)] dark:shadow-[0_0_15px_-3px_rgba(168,85,247,0.3)]',
+                      icon: 'bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-800/50 dark:to-pink-800/50',
+                      check: 'text-purple-500',
+                      label: 'text-purple-700 dark:text-purple-300',
+                    },
+                  } as const;
+                  const colors =
+                    colorClasses[option.color as keyof typeof colorClasses];
+
+                  return (
+                    <button
+                      key={option.value}
+                      type='button'
+                      onClick={() => handleBufferModeChange(option.value)}
+                      className={`w-full p-3 rounded-xl border-2 transition-all duration-300 text-left flex items-center gap-3 ${
+                        isSelected
+                          ? colors.selected
+                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-sm bg-white dark:bg-gray-800'
+                      }`}
+                    >
+                      {/* 图标 */}
+                      <div
+                        className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl transition-all duration-300 ${
+                          isSelected
+                            ? colors.icon
+                            : 'bg-gray-100 dark:bg-gray-700'
+                        }`}
+                      >
+                        {option.icon}
+                      </div>
+
+                      {/* 文字内容 */}
+                      <div className='flex-1 min-w-0'>
+                        <div className='flex items-center gap-2'>
+                          <span
+                            className={`font-medium transition-colors duration-300 ${
+                              isSelected
+                                ? colors.label
+                                : 'text-gray-900 dark:text-gray-100'
+                            }`}
+                          >
+                            {option.label}
+                          </span>
+                        </div>
+                        <p className='text-xs text-gray-400 dark:text-gray-500 mt-0.5 line-clamp-1'>
+                          {option.description}
+                        </p>
+                      </div>
+
+                      {/* 选中标记 */}
+                      <div
+                        className={`w-5 h-5 rounded-full flex items-center justify-center transition-all duration-300 ${
+                          isSelected
+                            ? `${colors.check} scale-100`
+                            : 'text-transparent scale-75'
+                        }`}
+                      >
+                        <svg
+                          className='w-5 h-5'
+                          fill='currentColor'
+                          viewBox='0 0 20 20'
+                        >
+                          <path
+                            fillRule='evenodd'
+                            d='M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z'
+                            clipRule='evenodd'
+                          />
+                        </svg>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* 底部说明 */}
+          <div className='mt-6 pt-4 border-t border-gray-200 dark:border-gray-700'>
+            <p className='text-xs text-gray-500 dark:text-gray-400 text-center'>
+              这些设置保存在本地浏览器中
+            </p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+
+  return (
+    <>
+      <div className='relative'>
+        <button
+          onClick={handleMenuClick}
+          className='w-10 h-10 p-2 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-200/50 dark:text-gray-300 dark:hover:bg-gray-700/50 transition-colors'
+          aria-label='User Menu'
+        >
+          <User className='w-full h-full' />
+        </button>
+        {/* 版本状态光点指示器 */}
+        {!isChecking && updateStatus && (
+          <span className='absolute top-0 right-0 flex h-2.5 w-2.5'>
+            {updateStatus.status === UpdateStatus.HAS_UPDATE && (
+              <>
+                <span className='animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75'></span>
+                <span className='relative inline-flex rounded-full h-2.5 w-2.5 bg-orange-500'></span>
+              </>
+            )}
+            {updateStatus.status === UpdateStatus.NO_UPDATE && (
+              <>
+                <span className='animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75'></span>
+                <span className='relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500'></span>
+              </>
+            )}
+          </span>
+        )}
+      </div>
+
+      {/* 使用 Portal 将菜单面板渲染到 document.body */}
+      {isOpen && mounted && createPortal(menuPanel, document.body)}
+
+      {/* 使用 Portal 将设置面板渲染到 document.body */}
+      {isSettingsOpen && mounted && createPortal(settingsPanel, document.body)}
+
+      {/* 版本面板 */}
+      <VersionPanel
+        isOpen={isVersionPanelOpen}
+        onClose={() => setIsVersionPanelOpen(false)}
+      />
+    </>
+  );
+};
