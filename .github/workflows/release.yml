@@ -32,7 +32,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - name: Clean previous build artifacts
+      - name: Clean previous build artifacts (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Remove-Item -Recurse -Force out
+          Remove-Item -Recurse -Force src-tauri/target
+          Remove-Item -Recurse -Force .next
+
+      - name: Clean previous build artifacts (Linux/macOS)
+        if: runner.os != 'Windows'
         run: |
           rm -rf out
           rm -rf src-tauri/target
