@@ -1,6 +1,6 @@
 <!-- markdownlint-disable MD033 MD026 MD034 -->
 
-> ⚖️ 本项目为开源、本地优先的软件，仅用于学习与技术研究，不提供任何影视内容。
+> ⚖️ 本项目为开源、本地优先的软件，仅用于学习 Rust / Tauri / 现代 Web 技术与技术研究，不提供任何影视内容。
 
 <div align="center">
   <img src="public/logo.png" alt="QuantumTV Logo" width="120" max-width="150" height="auto">
@@ -121,15 +121,7 @@ QuantumTV 采用现代化的混合应用架构，在一个代码仓库中管理�
 
 ## 📈 Star History
 
-<div align="center">
-  <a href="https://star-history.com/#Geon97/QuantumTV&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Geon97/QuantumTV&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Geon97/QuantumTV&type=Date" />
-      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Geon97/QuantumTV&type=Date" />
-    </picture>
-  </a>
-</div>
+[![Star History Chart](https://api.star-history.com/svg?repos=Geon97/QuantumTV&type=Date#gh-light-mode-only)](https://star-history.com/#Geon97/QuantumTV&Date)
 
 ---
 
