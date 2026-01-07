@@ -32,7 +32,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
+      - name: Clean previous build artifacts
+        run: |
+          rm -rf out
+          rm -rf src-tauri/target
+          rm -rf .next
       # Linux deps
       - name: Install Linux dependencies
         if: startsWith(matrix.platform, 'ubuntu')
@@ -80,7 +84,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'Antigravity Tools ${{ github.ref_name }}'
+          releaseName: 'QuantumTV ${{ github.ref_name }}'
           releaseBody: 'See the assets to download this version.'
           releaseDraft: true
           args: ${{ matrix.args }}
