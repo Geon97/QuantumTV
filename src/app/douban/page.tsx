@@ -733,7 +733,6 @@ function DoubanPageClient() {
           ? `${source.api}?ac=videolist&t=${category.type_id}&pg=1`
           : `${source.api}/?ac=videolist&t=${category.type_id}&pg=1`;
 
-        console.log('🔥 [fetchSourceCategoryData] Fetching:', originalApiUrl);
 
         let data: any;
 
@@ -778,7 +777,6 @@ function DoubanPageClient() {
           throw new Error('请通过 Tauri 应用访问此功能');
         }
         const items = data.list || [];
-        console.log('✅ [fetchSourceCategoryData] Got', items.length, 'items');
 
         // 转换为 DoubanItem 格式
         const convertedItems: DoubanItem[] = items.map((item: any) => ({
@@ -858,7 +856,6 @@ function DoubanPageClient() {
           return;
         }
 
-        console.log('🔥 [Debug] Selected Source:', source.name, source.api);
 
         try {
           // 构建分类 API URL
@@ -866,7 +863,6 @@ function DoubanPageClient() {
             ? `${source.api}?ac=class`
             : `${source.api}/?ac=class`;
 
-          console.log('🔥 [Debug] Original API URL:', originalApiUrl);
 
           let data: any;
 
@@ -878,12 +874,10 @@ function DoubanPageClient() {
 
           if (isTauriEnv) {
             // Tauri 环境：使用 fetch_url 命令绕过 CORS
-            console.log('🔥 [Debug] Using Tauri fetch_url command');
             const result = await tauri.core.invoke('fetch_url', {
               url: originalApiUrl,
               method: 'GET',
             });
-            console.log('🔥 [Debug] Tauri response status:', result.status);
             if (result.status !== 200) {
               throw new Error(`获取分类列表失败: ${result.status}`);
             }
@@ -895,21 +889,12 @@ function DoubanPageClient() {
               originalApiUrl.startsWith('https://');
             const proxyUrl = `/api/proxy/cms?url=${encodeURIComponent(originalApiUrl)}`;
             const fetchUrl = isExternalUrl ? proxyUrl : originalApiUrl;
-
-            console.log('🔥 [Debug] Using proxy:', isExternalUrl);
-            console.log('🔥 [Debug] Fetch URL:', fetchUrl);
-
             const response = await fetch(fetchUrl, {
               headers: {
                 Accept: 'application/json',
               },
             });
 
-            console.log(
-              '🔥 [Debug] Response status:',
-              response.status,
-              response.ok,
-            );
 
             if (!response.ok) {
               const errorText = await response.text().catch(() => '');
@@ -923,18 +908,8 @@ function DoubanPageClient() {
             console.warn('🔥 [Debug] Tauri 环境未就绪，无法获取外部数据');
             throw new Error('请通过 Tauri 应用访问此功能');
           }
-          console.log('🔥 [Debug] Raw API Response:', data);
-          console.log('✅ [Proxy Fetch Success] Data keys:', Object.keys(data));
 
           const allCategories: SourceCategory[] = data.class || [];
-          console.log(
-            '🔥 [Debug] Parsed categories count:',
-            allCategories.length,
-          );
-          console.log(
-            '🔥 [Debug] First 5 categories:',
-            allCategories.slice(0, 5),
-          );
 
           // ========================================
           // 🚀 绝对直通模式 - 移除所有过滤逻辑
@@ -950,18 +925,10 @@ function DoubanPageClient() {
           }
 
           // 【绝对直通】直接使用原始分类，不过滤
-          console.log(
-            '🔥 [Debug] Setting categories (NO FILTER):',
-            allCategories.length,
-          );
           setFilteredSourceCategories(allCategories);
 
           // 【强制自动选中】立即选中第一个分类
           const firstCategory = allCategories[0];
-          console.log(
-            '🔥 [Debug] Auto-selecting first category:',
-            firstCategory,
-          );
           setSelectedSourceCategory(firstCategory);
 
           // 立即触发数据加载（不等待用户点击）
