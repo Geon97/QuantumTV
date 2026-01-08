@@ -45,7 +45,6 @@ import { createPortal } from 'react-dom';
 
 import { AdminConfig } from '@/lib/admin.types';
 
-import DataMigration from '@/components/DataMigration';
 import PageLayout from '@/components/PageLayout';
 
 // 配置导入/导出弹窗组件
@@ -1556,7 +1555,6 @@ function AdminPageContent() {
     videoSource: false,
     categoryConfig: false,
     liveSource: false,
-    dataMigration: false,
   });
   const [alertModal, setAlertModal] = useState({
     isOpen: false,
@@ -1733,15 +1731,6 @@ function AdminPageContent() {
           <LiveConfig config={config} onSave={saveConfig} showAlert={showAlert} />
         </CollapsibleTab>
 
-        {/* 数据迁移 */}
-        <CollapsibleTab
-          title='数据迁移'
-          icon={<Database className='w-5 h-5 text-orange-500' />}
-          isExpanded={expandedTabs.dataMigration}
-          onToggle={() => toggleTab('dataMigration')}
-        >
-          <DataMigration />
-        </CollapsibleTab>
       </div>
 
       {/* 弹窗 */}
