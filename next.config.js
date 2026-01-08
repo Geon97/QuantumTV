@@ -4,9 +4,8 @@ const isProd = process.env.NODE_ENV === 'production';
 const internalHost = process.env.TAURI_DEV_HOST || 'localhost';
 
 const nextConfig = {
-  // 根据环境自动选择输出模式：Vercel自动处理，Docker使用standalone，静态导出使用export
   // 本地开发时不使用 standalone 避免 Windows 符号链接权限问题
-  output: process.env.NEXT_PUBLIC_STATIC_EXPORT ? 'export' : 'standalone',
+  output: 'export',
 
   reactStrictMode: false,
 

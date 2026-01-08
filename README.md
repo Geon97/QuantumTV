@@ -53,6 +53,9 @@
 - 🌐 **更自由的网络能力**：桌面端不受浏览器限制，配合 CMS 全量代理彻底解决 CORS 与 Mixed Content。
 - 🛡️ **隐私纵深防御**：无账号体系、不上传播放行为，本地模式下隐私暴露面极低。
 - 🔌 **去中心化架构**：项目本身不提供内容，只是一个可高度自定义的播放器引擎。
+<div align="center">
+  <img src="public/photo.jpg" alt="rust" width="100%" max-width="150" height="auto">
+</div>
 
 ## 🏛️ 项目架构
 
