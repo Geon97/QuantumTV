@@ -23,7 +23,6 @@ import { DoubanItem } from '@/lib/types';
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
 import PageLayout from '@/components/PageLayout';
-import QuantumTVFooterCard from '@/components/QuantumTVFooterCard';
 import ScrollableRow from '@/components/ScrollableRow';
 import { useSite } from '@/components/SiteProvider';
 import VideoCard from '@/components/VideoCard';
@@ -170,36 +169,6 @@ function HomeClient() {
 
   return (
     <PageLayout>
-      {/* Hero Section */}
-      <div className='relative pt-20 pb-10 sm:pt-32 sm:pb-16 overflow-hidden'>
-        {/* Background Ambient Light */}
-        <div className='absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-75 h-75 sm:w-150 sm:h-150 bg-purple-500/20 rounded-full blur-[80px] sm:blur-[120px] -z-10 pointer-events-none animate-pulse'></div>
-
-        <div className='flex flex-col items-center justify-center text-center px-4'>
-          <div className='relative group cursor-default'>
-            <h1 className='text-6xl sm:text-8xl font-black tracking-tighter deco-brand drop-shadow-2xl select-none transition-transform duration-500 group-hover:scale-105'>
-              {siteName || 'QuantumTV'}
-            </h1>
-            <div className='absolute -inset-8 bg-linear-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20 blur-2xl -z-10 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500'></div>
-          </div>
-
-          <div className='mt-8 animate-fade-in-up'>
-            <div className='inline-flex items-center gap-3 px-6 py-2.5 rounded-full bg-white/50 dark:bg-black/30 backdrop-blur-md border border-white/20 dark:border-white/10 shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-0.5'>
-              <span className='text-base sm:text-lg font-medium bg-linear-to-r from-gray-800 to-gray-600 dark:from-gray-100 dark:to-gray-300 bg-clip-text text-transparent'>
-                发现
-              </span>
-              <span className='w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600'></span>
-              <span className='text-base sm:text-lg font-medium bg-linear-to-r from-gray-800 to-gray-600 dark:from-gray-100 dark:to-gray-300 bg-clip-text text-transparent'>
-                收藏
-              </span>
-              <span className='w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600'></span>
-              <span className='text-base sm:text-lg font-medium bg-linear-to-r from-gray-800 to-gray-600 dark:from-gray-100 dark:to-gray-300 bg-clip-text text-transparent'>
-                继续观看
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
 
       <div className='px-2 sm:px-10 py-4 sm:py-8 overflow-visible'>
         {/* 顶部 Tab 切换 */}
@@ -484,7 +453,7 @@ function HomeClient() {
           )}
 
           {/* QuantumTV 底部炫酷卡片 */}
-          <QuantumTVFooterCard />
+          {/* <QuantumTVFooterCard /> */}
         </div>
       </div>
       {announcement && showAnnouncement && (

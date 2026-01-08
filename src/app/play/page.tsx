@@ -2226,7 +2226,7 @@ function PlayPageClient() {
                     />
 
                     {/* 豆瓣链接按钮 */}
-                    {videoDoubanId !== 0 && (
+                    {/* {videoDoubanId !== 0 && (
                       <a
                         href={`https://movie.douban.com/subject/${videoDoubanId.toString()}`}
                         target='_blank'
@@ -2249,7 +2249,7 @@ function PlayPageClient() {
                           </svg>
                         </div>
                       </a>
-                    )}
+                    )} */}
                   </>
                 ) : (
                   <span className='text-gray-600 dark:text-gray-400'>
