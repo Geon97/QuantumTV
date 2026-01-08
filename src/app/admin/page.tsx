@@ -84,7 +84,147 @@ const ConfigImportExportModal = ({
   const handleImport = () => {
     try {
       const parsed = JSON.parse(importText);
-      onImport(parsed);
+
+      // 智能识别和转换配置格式
+      let finalConfig: AdminConfig;
+
+      // 情况1: 完整的 AdminConfig 格式
+      if (parsed.SourceConfig !== undefined || parsed.ConfigSubscribtion !== undefined || parsed.SiteConfig !== undefined) {
+        // 合并到默认配置，确保所有字段都存在
+        const defaultConfig = getDefaultConfig();
+        finalConfig = {
+          ...defaultConfig,
+          ...parsed,
+          ConfigSubscribtion: { ...defaultConfig.ConfigSubscribtion, ...parsed.ConfigSubscribtion },
+          SiteConfig: { ...defaultConfig.SiteConfig, ...parsed.SiteConfig },
+          UserConfig: parsed.UserConfig || defaultConfig.UserConfig,
+          SourceConfig: Array.isArray(parsed.SourceConfig)
+            ? parsed.SourceConfig.map((s: any) => ({ ...s, from: s.from || 'custom' }))
+            : defaultConfig.SourceConfig,
+          CustomCategories: Array.isArray(parsed.CustomCategories)
+            ? parsed.CustomCategories.map((c: any) => ({ ...c, from: c.from || 'custom' }))
+            : defaultConfig.CustomCategories,
+          LiveConfig: Array.isArray(parsed.LiveConfig)
+            ? parsed.LiveConfig.map((l: any) => ({ ...l, from: l.from || 'custom' }))
+            : defaultConfig.LiveConfig,
+        };
+
+        // 如果 SourceConfig 为空但 ConfigFile 有内容，尝试从 ConfigFile 中解析
+        if ((!finalConfig.SourceConfig || finalConfig.SourceConfig.length === 0) && parsed.ConfigFile) {
+          try {
+            const configFileContent = JSON.parse(parsed.ConfigFile);
+            // 处理 api_site 对象格式
+            if (configFileContent.api_site && typeof configFileContent.api_site === 'object') {
+              finalConfig.SourceConfig = Object.entries(configFileContent.api_site).map(([key, value]: [string, any]) => ({
+                key: key,
+                name: value.name || key,
+                api: value.api,
+                detail: value.detail || '',
+                from: 'config' as const,
+                disabled: value.disabled || false,
+                is_adult: value.is_adult || false,
+              }));
+            }
+            // 处理 sites 数组格式
+            else if (configFileContent.sites && Array.isArray(configFileContent.sites)) {
+              finalConfig.SourceConfig = configFileContent.sites.map((s: any) => ({
+                key: s.key || s.name?.toLowerCase().replace(/\s+/g, '_') || `source_${Date.now()}`,
+                name: s.name || '未命名源',
+                api: s.api,
+                detail: s.detail || '',
+                from: 'config' as const,
+                disabled: s.disabled || false,
+                is_adult: s.is_adult || false,
+              }));
+            }
+            // 处理 SourceConfig 数组格式
+            else if (configFileContent.SourceConfig && Array.isArray(configFileContent.SourceConfig)) {
+              finalConfig.SourceConfig = configFileContent.SourceConfig.map((s: any) => ({
+                ...s,
+                from: s.from || 'config',
+              }));
+            }
+          } catch {
+            console.warn('无法解析 ConfigFile 内容');
+          }
+        }
+      }
+      // 情况2: 纯数组格式 - 作为 SourceConfig 处理
+      else if (Array.isArray(parsed)) {
+        const defaultConfig = getDefaultConfig();
+        // 检查是否为视频源数组 (包含 api 字段)
+        if (parsed.length > 0 && parsed[0].api) {
+          finalConfig = {
+            ...defaultConfig,
+            SourceConfig: parsed.map((s: any) => ({
+              key: s.key || s.name?.toLowerCase().replace(/\s+/g, '_') || `source_${Date.now()}`,
+              name: s.name || '未命名源',
+              api: s.api,
+              detail: s.detail || '',
+              from: 'custom' as const,
+              disabled: s.disabled || false,
+              is_adult: s.is_adult || false,
+            })),
+          };
+        }
+        // 检查是否为直播源数组 (包含 url 字段且为 m3u)
+        else if (parsed.length > 0 && parsed[0].url) {
+          finalConfig = {
+            ...defaultConfig,
+            LiveConfig: parsed.map((l: any) => ({
+              key: l.key || l.name?.toLowerCase().replace(/\s+/g, '_') || `live_${Date.now()}`,
+              name: l.name || '未命名直播源',
+              url: l.url,
+              ua: l.ua || '',
+              epg: l.epg || '',
+              from: 'custom' as const,
+              disabled: l.disabled || false,
+            })),
+          };
+        } else {
+          alert('无法识别的数组格式，请检查配置内容');
+          return;
+        }
+      }
+      // 情况3: 包含 sites 字段的格式 (常见的订阅配置格式)
+      else if (parsed.sites && Array.isArray(parsed.sites)) {
+        const defaultConfig = getDefaultConfig();
+        finalConfig = {
+          ...defaultConfig,
+          SourceConfig: parsed.sites.map((s: any) => ({
+            key: s.key || s.name?.toLowerCase().replace(/\s+/g, '_') || `source_${Date.now()}`,
+            name: s.name || '未命名源',
+            api: s.api,
+            detail: s.detail || '',
+            from: 'config' as const,
+            disabled: s.disabled || false,
+            is_adult: s.is_adult || false,
+          })),
+        };
+      }
+      // 情况4: 包含 api_site 对象格式 (键值对形式)
+      else if (parsed.api_site && typeof parsed.api_site === 'object') {
+        const defaultConfig = getDefaultConfig();
+        finalConfig = {
+          ...defaultConfig,
+          SourceConfig: Object.entries(parsed.api_site).map(([key, value]: [string, any]) => ({
+            key: key,
+            name: value.name || key,
+            api: value.api,
+            detail: value.detail || '',
+            from: 'config' as const,
+            disabled: value.disabled || false,
+            is_adult: value.is_adult || false,
+          })),
+        };
+      }
+      // 情况5: 无法识别的格式
+      else {
+        alert('无法识别的配置格式，请确保包含 SourceConfig、sites 或 api_site 字段');
+        return;
+      }
+
+      onImport(finalConfig);
       setImportText('');
       onClose();
     } catch {
@@ -449,10 +589,10 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
   );
 
   useEffect(() => {
-    if (config?.SourceConfig) {
-      setSources([...config.SourceConfig]);
-    }
-  }, [config]);
+    // 确保当 config 变化时始终同步 sources 状态
+    const sourceConfig = config?.SourceConfig || [];
+    setSources([...sourceConfig]);
+  }, [config?.SourceConfig]);
 
   const handleDragEnd = (event: any) => {
     const { active, over } = event;
@@ -723,10 +863,10 @@ const CategoryConfig = ({ config, onSave, showAlert }: CategoryConfigProps) => {
   const [newCategory, setNewCategory] = useState({ name: '', query: '', type: 'movie' as 'movie' | 'tv' });
 
   useEffect(() => {
-    if (config?.CustomCategories) {
-      setCategories([...config.CustomCategories]);
-    }
-  }, [config]);
+    // 确保当 config 变化时始终同步 categories 状态
+    const customCategories = config?.CustomCategories || [];
+    setCategories([...customCategories]);
+  }, [config?.CustomCategories]);
 
   const saveChanges = (newCategories: any[]) => {
     if (!config) return;
@@ -906,10 +1046,10 @@ const LiveConfig = ({ config, onSave, showAlert }: LiveConfigProps) => {
   const [newLive, setNewLive] = useState({ key: '', name: '', url: '', ua: '', epg: '' });
 
   useEffect(() => {
-    if (config?.LiveConfig) {
-      setLives([...config.LiveConfig]);
-    }
-  }, [config]);
+    // 确保当 config 变化时始终同步 lives 状态
+    const liveConfig = config?.LiveConfig || [];
+    setLives([...liveConfig]);
+  }, [config?.LiveConfig]);
 
   const saveChanges = (newLives: any[]) => {
     if (!config) return;
@@ -1183,11 +1323,53 @@ const ConfigSubscription = ({ config, onSave, showAlert }: ConfigSubscriptionPro
           },
         };
 
-        // 如果解析的内容包含 SourceConfig，合并进去
+        // 智能识别配置格式
+        // 情况1: 标准 AdminConfig 格式 (包含 SourceConfig 字段)
         if (parsedContent.SourceConfig && Array.isArray(parsedContent.SourceConfig)) {
           newConfig.SourceConfig = parsedContent.SourceConfig.map((s: any) => ({
-            ...s,
+            key: s.key || s.name?.toLowerCase().replace(/\s+/g, '_') || `source_${Date.now()}`,
+            name: s.name || '未命名源',
+            api: s.api,
+            detail: s.detail || '',
             from: 'config' as const,
+            disabled: s.disabled || false,
+            is_adult: s.is_adult || false,
+          }));
+        }
+        // 情况2: 包含 sites 字段的格式 (常见的订阅配置格式)
+        else if (parsedContent.sites && Array.isArray(parsedContent.sites)) {
+          newConfig.SourceConfig = parsedContent.sites.map((s: any) => ({
+            key: s.key || s.name?.toLowerCase().replace(/\s+/g, '_') || `source_${Date.now()}`,
+            name: s.name || '未命名源',
+            api: s.api,
+            detail: s.detail || '',
+            from: 'config' as const,
+            disabled: s.disabled || false,
+            is_adult: s.is_adult || false,
+          }));
+        }
+        // 情况3: 纯数组格式 - 作为视频源处理
+        else if (Array.isArray(parsedContent) && parsedContent.length > 0 && parsedContent[0].api) {
+          newConfig.SourceConfig = parsedContent.map((s: any) => ({
+            key: s.key || s.name?.toLowerCase().replace(/\s+/g, '_') || `source_${Date.now()}`,
+            name: s.name || '未命名源',
+            api: s.api,
+            detail: s.detail || '',
+            from: 'config' as const,
+            disabled: s.disabled || false,
+            is_adult: s.is_adult || false,
+          }));
+        }
+        // 情况4: api_site 对象格式 (键值对形式)
+        else if (parsedContent.api_site && typeof parsedContent.api_site === 'object') {
+          newConfig.SourceConfig = Object.entries(parsedContent.api_site).map(([key, value]: [string, any]) => ({
+            key: key,
+            name: value.name || key,
+            api: value.api,
+            detail: value.detail || '',
+            from: 'config' as const,
+            disabled: value.disabled || false,
+            is_adult: value.is_adult || false,
           }));
         }
 
@@ -1206,9 +1388,21 @@ const ConfigSubscription = ({ config, onSave, showAlert }: ConfigSubscriptionPro
             from: 'config' as const,
           }));
         }
+        // 处理 lives 字段 (常见的订阅配置格式)
+        else if (parsedContent.lives && Array.isArray(parsedContent.lives)) {
+          newConfig.LiveConfig = parsedContent.lives.map((l: any) => ({
+            key: l.key || l.name?.toLowerCase().replace(/\s+/g, '_') || `live_${Date.now()}`,
+            name: l.name || '未命名直播源',
+            url: l.url,
+            ua: l.ua || '',
+            epg: l.epg || '',
+            from: 'config' as const,
+            disabled: l.disabled || false,
+          }));
+        }
 
         onSave(newConfig);
-        showAlert('success', '保存成功');
+        showAlert('success', '保存成功', `已解析 ${newConfig.SourceConfig?.length || 0} 个视频源`);
       }
     } catch (error) {
       console.error('保存配置失败:', error);
@@ -1377,12 +1571,39 @@ function AdminPageContent() {
     loadConfig();
   }, []);
 
-  const loadConfig = () => {
+  const loadConfig = async () => {
     setIsLoading(true);
     try {
+      let configToUse: AdminConfig | null = null;
+
+      // 尝试从 localStorage 读取
       const stored = localStorage.getItem(LOCAL_CONFIG_KEY);
       if (stored) {
-        setConfig(JSON.parse(stored));
+        configToUse = JSON.parse(stored);
+      }
+
+      // 检查 Tauri 环境，尝试从 Tauri 后端加载
+      const tauri = (window as any).__TAURI__;
+      if (tauri?.core?.invoke) {
+        try {
+          const tauriData = await tauri.core.invoke('get_config');
+          // 如果 Tauri 后端有配置且有 SourceConfig
+          if (tauriData && tauriData.SourceConfig && tauriData.SourceConfig.length > 0) {
+            configToUse = tauriData;
+            // 同步到 localStorage
+            localStorage.setItem(LOCAL_CONFIG_KEY, JSON.stringify(tauriData));
+          } else if (configToUse) {
+            // 如果 localStorage 有配置但 Tauri 后端没有，同步到 Tauri 后端
+            await tauri.core.invoke('save_config', { config: configToUse });
+            console.log('配置已从 localStorage 同步到 Tauri 后端');
+          }
+        } catch (tauriError) {
+          console.warn('从 Tauri 后端加载配置失败:', tauriError);
+        }
+      }
+
+      if (configToUse) {
+        setConfig(configToUse);
       } else {
         const defaultConfig = getDefaultConfig();
         setConfig(defaultConfig);
@@ -1397,10 +1618,22 @@ function AdminPageContent() {
     }
   };
 
-  const saveConfig = useCallback((newConfig: AdminConfig) => {
+  const saveConfig = useCallback(async (newConfig: AdminConfig) => {
     try {
+      // 保存到 localStorage
       localStorage.setItem(LOCAL_CONFIG_KEY, JSON.stringify(newConfig));
       setConfig(newConfig);
+
+      // 同步到 Tauri 后端
+      const tauri = (window as any).__TAURI__;
+      if (tauri?.core?.invoke) {
+        try {
+          await tauri.core.invoke('save_config', { config: newConfig });
+          console.log('配置已同步到 Tauri 后端');
+        } catch (tauriError) {
+          console.warn('同步到 Tauri 后端失败:', tauriError);
+        }
+      }
     } catch (error) {
       console.error('保存配置失败:', error);
       showAlert('error', '保存失败', '请检查浏览器存储空间');

@@ -41,6 +41,7 @@ impl StorageManager {
             fs::create_dir_all(&app_dir).expect("failed to create app data dir");
         }
         let data_path = app_dir.join("data.json");
+        println!("data.json app dir: {:?}", app_dir);
         let data = if data_path.exists() {
             let content = fs::read_to_string(&data_path).expect("failed to read storage file");
             serde_json::from_str(&content).unwrap_or_default()
