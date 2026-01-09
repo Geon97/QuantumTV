@@ -125,16 +125,17 @@ jobs:
         run: |
           sdkmanager "ndk;26.1.10909125"
 
-          echo "Cleaning up incompatible NDK versions..."
-          sudo rm -rf $ANDROID_HOME/ndk/28*
-          sudo rm -rf $ANDROID_HOME/ndk/29*
+          NDK_ROOT="$ANDROID_HOME/ndk"
 
-          # 验证当前只剩下 26
-          ls -al $ANDROID_HOME/ndk/
+          echo "Cleaning up ALL incompatible NDK versions..."
+          cd "$NDK_ROOT"
+          ls -1 | grep -v "26.1.10909125" | xargs sudo rm -rf
 
-          # 设置环境变量
-          echo "NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
+          echo "Remaining NDK versions:"
+          ls -al "$NDK_ROOT"
+
+          echo "NDK_HOME=$NDK_ROOT/26.1.10909125" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$NDK_ROOT/26.1.10909125" >> $GITHUB_ENV
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -172,13 +173,12 @@ jobs:
         env:
           NEXT_PUBLIC_STATIC_EXPORT: '1'
 
-      # 3. 构建 APK (使用 npx tauri 替代 cargo tauri)
       - name: Build Android APK
         env:
           CMAKE_GENERATOR: 'Ninja'
-          # NDK_HOME 已在上方全局设置
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
         run: |
-          # 赋予 Gradle 执行权限
           chmod +x src-tauri/gen/android/gradlew
           npx tauri android build --target aarch64
 
