@@ -1681,16 +1681,6 @@ function AdminPageContent() {
           </button>
         </div>
 
-        {/* 版本信息 */}
-        {/* <CollapsibleTab
-          title='版本信息'
-          icon={<CheckCircle className='w-5 h-5 text-green-500' />}
-          isExpanded={expandedTabs.version}
-          onToggle={() => toggleTab('version')}
-        >
-          <VersionChecker />
-        </CollapsibleTab> */}
-
         {/* 配置订阅 */}
         <CollapsibleTab
           title='配置订阅'

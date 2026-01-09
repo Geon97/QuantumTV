@@ -121,9 +121,17 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # 安装 NDK (使用较新的稳定版，或者根据你本地成功的 26.1.10909125 指定)
-      - name: Install NDK
-        run: sdkmanager "ndk;26.1.10909125"
+      # 本地版本一致
+      - name: Setup NDK
+        run: |
+          sdkmanager "ndk;26.1.10909125"
+
+          if [ -d "$ANDROID_HOME/ndk/29.0.14206865" ]; then
+            echo "Removing pre-installed NDK 29 to avoid conflicts..."
+            sudo rm -rf $ANDROID_HOME/ndk/29.0.14206865
+          fi
+          echo "NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -138,7 +146,6 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # 关键步骤：从 GitHub Secrets 恢复签名文件
       - name: Decode Keystore and Create Properties
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -146,10 +153,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
-          # 1. 解码 .jks 文件
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > src-tauri/gen/android/release.jks
-
-          # 2. 创建 key.properties 文件 (Gradle 读取这个文件进行签名)
           cat <<EOF > src-tauri/gen/android/key.properties
           keyAlias=$ANDROID_KEY_ALIAS
           keyPassword=$ANDROID_KEY_PASSWORD
@@ -165,18 +169,19 @@ jobs:
         env:
           NEXT_PUBLIC_STATIC_EXPORT: '1'
 
-      # 构建 Android APK
-      # 设置环境变量以解决 aws-lc-sys 编译问题
       - name: Build Android APK
         env:
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
-          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
           CMAKE_GENERATOR: 'Ninja'
-        run: npx tauri android build --target aarch64
+        run: |
+          # 赋予 gradlew 可执行权限
+          chmod +x src-tauri/gen/android/gradlew
 
-      # 重命名 APK
+          # 使用 npx tauri 确保使用项目依赖的 CLI 版本
+          npx tauri android build --target aarch64
+
       - name: Rename APK
-        run: mv src-tauri/gen/android/app/build/outputs/apk/release/app-release.apk src-tauri/gen/android/app/build/outputs/apk/release/QuantumTV-${{ github.ref_name }}-android-arm64.apk
+        run: |
+          mv src-tauri/gen/android/app/build/outputs/apk/release/app-release.apk src-tauri/gen/android/app/build/outputs/apk/release/QuantumTV-${{ github.ref_name }}-android-arm64.apk
 
       - name: Upload APK to Release
         uses: softprops/action-gh-release@v2
