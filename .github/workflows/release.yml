@@ -107,10 +107,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies (Ninja & JDK)
+      - name: Install dependencies (Ninja & JDK & Clang)
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build
+          sudo apt-get install -y ninja-build libclang-dev
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -124,15 +124,13 @@ jobs:
       - name: Setup NDK
         run: |
           sdkmanager "ndk;26.1.10909125"
-
           NDK_ROOT="$ANDROID_HOME/ndk"
 
-          echo "Cleaning up ALL incompatible NDK versions..."
-          cd "$NDK_ROOT"
-          ls -1 | grep -v "26.1.10909125" | xargs sudo rm -rf
-
-          echo "Remaining NDK versions:"
-          ls -al "$NDK_ROOT"
+          # 清理非 26 版本，防止冲突
+          if [ -d "$NDK_ROOT" ]; then
+            cd "$NDK_ROOT"
+            ls -1 | grep -v "26.1.10909125" | xargs sudo rm -rf || true
+          fi
 
           echo "NDK_HOME=$NDK_ROOT/26.1.10909125" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$NDK_ROOT/26.1.10909125" >> $GITHUB_ENV
@@ -157,11 +155,14 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
+          # 1. 生成 jks 文件到 src-tauri/gen/android/release.jks
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > src-tauri/gen/android/release.jks
+
+          # 2. 生成配置 (修正路径：同级目录直接用文件名，不要加 ../)
           cat <<EOF > src-tauri/gen/android/key.properties
           keyAlias=$ANDROID_KEY_ALIAS
           keyPassword=$ANDROID_KEY_PASSWORD
-          storeFile=../release.jks
+          storeFile=release.jks
           storePassword=$ANDROID_STORE_PASSWORD
           EOF
 
@@ -172,7 +173,6 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_STATIC_EXPORT: '1'
-
       - name: Build Android APK
         env:
           CMAKE_GENERATOR: 'Ninja'
@@ -180,7 +180,7 @@ jobs:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
         run: |
           chmod +x src-tauri/gen/android/gradlew
-          npx tauri android build --target aarch64
+          npx tauri android build --target aarch64 --verbose
 
       - name: Rename APK
         run: |
