@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "QuantumTV",
+        "title": "QuantumTV 免费开源",
         "width": 1000,
         "height": 800
       }

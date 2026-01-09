@@ -4,12 +4,12 @@
  */
 
 // 版本常量
-const CURRENT_SEMANTIC_VERSION = '0.1.0';
+const CURRENT_SEMANTIC_VERSION = '0.1.1';
 export const CURRENT_VERSION = CURRENT_SEMANTIC_VERSION;
 
 // 硬编码的构建时间戳(每次发布时更新)
 // 这是最后的回退值,确保即使所有文件读取都失败也能有一个基准
-export const BUILD_TIMESTAMP = '20260101172754';
+export const BUILD_TIMESTAMP = '20260109150744';
 
 const DEFAULT_UPDATE_REPO = 'Geon97/QuantumTV';
 const UPDATE_REPO = process.env.NEXT_PUBLIC_UPDATE_REPO || DEFAULT_UPDATE_REPO;

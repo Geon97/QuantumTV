@@ -3,13 +3,9 @@
 'use client';
 
 import {
-  Bug,
   CheckCircle,
-  ChevronDown,
-  ChevronUp,
   Download,
   Loader2,
-  Plus,
   RefreshCw,
   X,
 } from 'lucide-react';
@@ -42,10 +38,8 @@ export const VersionPanel: React.FC<VersionPanelProps> = ({
   onClose,
 }) => {
   const [mounted, setMounted] = useState(false);
-  const [remoteChangelog, setRemoteChangelog] = useState<RemoteChangelogEntry[]>([]);
   const [hasUpdate, setIsHasUpdate] = useState(false);
   const [latestVersion, setLatestVersion] = useState<string>('');
-  const [showRemoteContent, setShowRemoteContent] = useState(false);
   const [versionCheckResult, setVersionCheckResult] =
     useState<VersionCheckResult | null>(null);
   const [isCheckingVersion, setIsCheckingVersion] = useState(false);
@@ -133,7 +127,6 @@ export const VersionPanel: React.FC<VersionPanelProps> = ({
 
       if (content) {
         const parsed = parseChangelog(content);
-        setRemoteChangelog(parsed);
 
         // 设置最新版本号
         if (parsed.length > 0) {
@@ -213,114 +206,6 @@ export const VersionPanel: React.FC<VersionPanelProps> = ({
     return versions;
   };
 
-  // 渲染变更日志条目
-  const renderChangelogEntry = (
-    entry: RemoteChangelogEntry,
-    isCurrentVersion = false,
-    isRemote = false,
-    index = 0,
-  ) => {
-    const isUpdate = isRemote && hasUpdate && entry.version === latestVersion;
-
-    return (
-      <div
-        key={`${entry.version}-${isRemote ? 'remote' : 'local'}-${index}`}
-        className={`p-4 rounded-lg border ${
-          isCurrentVersion
-            ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
-            : isUpdate
-              ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
-              : 'bg-gray-50 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700'
-        }`}
-      >
-        {/* 版本标题 */}
-        <div className='flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3'>
-          <div className='flex flex-wrap items-center gap-2'>
-            <h4 className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
-              v{entry.version}
-            </h4>
-            {isCurrentVersion && (
-              <span className='px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 rounded-full'>
-                当前版本
-              </span>
-            )}
-            {isUpdate && (
-              <span className='px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 rounded-full flex items-center gap-1'>
-                <Download className='w-3 h-3' />
-                可更新
-              </span>
-            )}
-          </div>
-          <div className='flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400'>
-            {entry.date}
-          </div>
-        </div>
-
-        {/* 变更内容 */}
-        <div className='space-y-3'>
-          {entry.added.length > 0 && (
-            <div>
-              <h5 className='text-sm font-medium text-green-700 dark:text-green-400 mb-2 flex items-center gap-1'>
-                <Plus className='w-4 h-4' />
-                新增功能
-              </h5>
-              <ul className='space-y-1'>
-                {entry.added.map((item, index) => (
-                  <li
-                    key={index}
-                    className='text-sm text-gray-700 dark:text-gray-300 flex items-start gap-2'
-                  >
-                    <span className='w-1.5 h-1.5 bg-green-500 rounded-full mt-2 shrink-0'></span>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {entry.changed.length > 0 && (
-            <div>
-              <h5 className='text-sm font-medium text-blue-700 dark:text-blue-400 mb-2 flex items-center gap-1'>
-                <RefreshCw className='w-4 h-4' />
-                功能改进
-              </h5>
-              <ul className='space-y-1'>
-                {entry.changed.map((item, index) => (
-                  <li
-                    key={index}
-                    className='text-sm text-gray-700 dark:text-gray-300 flex items-start gap-2'
-                  >
-                    <span className='w-1.5 h-1.5 bg-blue-500 rounded-full mt-2 shrink-0'></span>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {entry.fixed.length > 0 && (
-            <div>
-              <h5 className='text-sm font-medium text-purple-700 dark:text-purple-400 mb-2 flex items-center gap-1'>
-                <Bug className='w-4 h-4' />
-                问题修复
-              </h5>
-              <ul className='space-y-1'>
-                {entry.fixed.map((item, index) => (
-                  <li
-                    key={index}
-                    className='text-sm text-gray-700 dark:text-gray-300 flex items-start gap-2'
-                  >
-                    <span className='w-1.5 h-1.5 bg-purple-500 rounded-full mt-2 shrink-0'></span>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
 
   // 版本面板内容
   const versionPanelContent = (
@@ -510,128 +395,6 @@ export const VersionPanel: React.FC<VersionPanelProps> = ({
                   </div>
                 </div>
               )}
-
-            {/* 远程可更新内容 */}
-            {!isCheckingVersion && hasUpdate && (
-              <div className='space-y-4'>
-                <div className='flex flex-col sm:flex-row sm:items-center justify-between gap-3'>
-                  <h4 className='text-lg font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2'>
-                    <Download className='w-5 h-5 text-yellow-500' />
-                    远程更新内容
-                  </h4>
-                  <button
-                    onClick={() => setShowRemoteContent(!showRemoteContent)}
-                    className='inline-flex items-center justify-center gap-2 px-3 py-1.5 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 dark:bg-yellow-800/30 dark:hover:bg-yellow-800/50 dark:text-yellow-200 rounded-lg transition-colors text-sm w-full sm:w-auto'
-                  >
-                    {showRemoteContent ? (
-                      <>
-                        <ChevronUp className='w-4 h-4' />
-                        收起
-                      </>
-                    ) : (
-                      <>
-                        <ChevronDown className='w-4 h-4' />
-                        查看更新内容
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {showRemoteContent && remoteChangelog.length > 0 && (
-                  <div className='space-y-4'>
-                    {remoteChangelog
-                      .filter(() => true) // Always include remote changelog entries now that local changelog is removed
-                      .map((entry, index) => (
-                        <div
-                          key={`remote-new-${entry.version}-${index}`}
-                          className={`p-4 rounded-lg border ${
-                            entry.version === latestVersion
-                              ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
-                              : 'bg-gray-50 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700'
-                          }`}
-                        >
-                          <div className='flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3'>
-                            <div className='flex flex-wrap items-center gap-2'>
-                              <h4 className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
-                                v{entry.version}
-                              </h4>
-                              {entry.version === latestVersion && (
-                                <span className='px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 rounded-full flex items-center gap-1'>
-                                  远程最新
-                                </span>
-                              )}
-                            </div>
-                            <div className='flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400'>
-                              {entry.date}
-                            </div>
-                          </div>
-
-                          {entry.added && entry.added.length > 0 && (
-                            <div className='mb-3'>
-                              <h5 className='text-sm font-medium text-green-600 dark:text-green-400 mb-2 flex items-center gap-1'>
-                                <Plus className='w-4 h-4' />
-                                新增功能
-                              </h5>
-                              <ul className='space-y-1'>
-                                {entry.added.map((item, itemIndex) => (
-                                  <li
-                                    key={itemIndex}
-                                    className='text-sm text-gray-700 dark:text-gray-300 flex items-start gap-2'
-                                  >
-                                    <span className='w-1.5 h-1.5 bg-green-400 rounded-full mt-2 shrink-0'></span>
-                                    {item}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-
-                          {entry.changed && entry.changed.length > 0 && (
-                            <div className='mb-3'>
-                              <h5 className='text-sm font-medium text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-1'>
-                                <RefreshCw className='w-4 h-4' />
-                                功能改进
-                              </h5>
-                              <ul className='space-y-1'>
-                                {entry.changed.map((item, itemIndex) => (
-                                  <li
-                                    key={itemIndex}
-                                    className='text-sm text-gray-700 dark:text-gray-300 flex items-start gap-2'
-                                  >
-                                    <span className='w-1.5 h-1.5 bg-blue-400 rounded-full mt-2 shrink-0'></span>
-                                    {item}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-
-                          {entry.fixed && entry.fixed.length > 0 && (
-                            <div>
-                              <h5 className='text-sm font-medium text-purple-700 dark:text-purple-400 mb-2 flex items-center gap-1'>
-                                <Bug className='w-4 h-4' />
-                                问题修复
-                              </h5>
-                              <ul className='space-y-1'>
-                                {entry.fixed.map((item, itemIndex) => (
-                                  <li
-                                    key={itemIndex}
-                                    className='text-sm text-gray-700 dark:text-gray-300 flex items-start gap-2'
-                                  >
-                                    <span className='w-1.5 h-1.5 bg-purple-500 rounded-full mt-2 shrink-0'></span>
-                                    {item}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </div>
-            )}
-
           </div>
         </div>
       </div>
