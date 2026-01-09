@@ -109,7 +109,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libclang-dev pkg-config build-essential clang llvm
+          sudo apt-get install -y ninja-build libclang-dev pkg-config build-essential curl wget clang llvm
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -148,6 +148,10 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install Tauri CLI
+        run: |
+          cargo install tauri-cli --version "^2.0.0" --locked
+
       - name: Decode Keystore and Create Properties
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -175,10 +179,9 @@ jobs:
           CMAKE_GENERATOR: 'Ninja'
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
-          RUST_BACKTRACE: 1
         run: |
           chmod +x src-tauri/gen/android/gradlew
-          npx tauri android build --target aarch64 --verbose -- -vv
+          cargo tauri android build --target aarch64 --verbose
 
       - name: Rename APK
         run: |
