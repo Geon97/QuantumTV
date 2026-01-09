@@ -106,11 +106,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install dependencies (Ninja & JDK & Clang)
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libclang-dev
+          sudo apt-get install -y ninja-build libclang-dev pkg-config build-essential
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -121,12 +120,13 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      # NDK 锁定
       - name: Setup NDK
         run: |
           sdkmanager "ndk;26.1.10909125"
           NDK_ROOT="$ANDROID_HOME/ndk"
 
-          # 清理非 26 版本，防止冲突
+          # 清理其他版本
           if [ -d "$NDK_ROOT" ]; then
             cd "$NDK_ROOT"
             ls -1 | grep -v "26.1.10909125" | xargs sudo rm -rf || true
@@ -155,10 +155,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
-          # 1. 生成 jks 文件到 src-tauri/gen/android/release.jks
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > src-tauri/gen/android/release.jks
-
-          # 2. 生成配置 (修正路径：同级目录直接用文件名，不要加 ../)
           cat <<EOF > src-tauri/gen/android/key.properties
           keyAlias=$ANDROID_KEY_ALIAS
           keyPassword=$ANDROID_KEY_PASSWORD
@@ -178,9 +175,10 @@ jobs:
           CMAKE_GENERATOR: 'Ninja'
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+          RUST_BACKTRACE: 1
         run: |
           chmod +x src-tauri/gen/android/gradlew
-          npx tauri android build --target aarch64 --verbose
+          npx tauri android build --target aarch64 --verbose -- -vv
 
       - name: Rename APK
         run: |
