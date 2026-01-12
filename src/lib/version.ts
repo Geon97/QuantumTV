@@ -4,7 +4,7 @@
  */
 
 // 版本常量
-const CURRENT_SEMANTIC_VERSION = '0.1.1';
+const CURRENT_SEMANTIC_VERSION = '0.1.2';
 export const CURRENT_VERSION = CURRENT_SEMANTIC_VERSION;
 
 // 硬编码的构建时间戳(每次发布时更新)
