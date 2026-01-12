@@ -416,22 +416,24 @@ export const UserMenu: React.FC = () => {
       />
 
       {/* 菜单面板 - 固定到视口右上角，使位置稳定且美观 */}
-      <div className='fixed top-2 right-2 w-56 bg-white dark:bg-gray-900 rounded-lg shadow-2xl z-1001 border border-slate-200 dark:border-gray-700/50 overflow-hidden select-none'>
+      <div className='fixed top-16 right-4 w-56 bg-white dark:bg-gray-900 rounded-lg shadow-2xl z-1001 border border-slate-200 dark:border-gray-700/50 overflow-hidden select-none'>
         {/* 菜单项 */}
-        <div className='py-1'>
+        <div className='py-2'>
           {/* 设置按钮 */}
-          <button
-            onClick={handleSettings}
-            className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800 transition-colors text-sm'
+          <button onClick={() => {
+            handleSettings();
+            handleCloseMenu();
+          }} className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800 transition-colors text-sm'
           >
             <Settings className='w-4 h-4 text-slate-500 dark:text-gray-400' />
             <span className='font-medium'>设置</span>
           </button>
 
           {/* 管理面板按钮 */}
-          <button
-            onClick={handleAdminPanel}
-            className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800 transition-colors text-sm'
+          <button onClick={() => {
+            handleAdminPanel();
+            handleCloseMenu();
+          }} className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800 transition-colors text-sm'
           >
             <Shield className='w-4 h-4 text-slate-500 dark:text-gray-400' />
             <span className='font-medium'>管理面板</span>

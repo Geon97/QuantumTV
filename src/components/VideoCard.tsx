@@ -238,11 +238,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
     );
 
     const handleClick = useCallback(() => {
-      if (origin === 'live' && actualSource && actualId) {
-        // 直播内容跳转到直播页面
-        const url = `/live?source=${actualSource.replace('live_', '')}&id=${actualId.replace('live_', '')}`;
-        router.push(url);
-      } else if (
+      if (
         from === 'douban' ||
         (isAggregate && !actualSource && !actualId)
       ) {
@@ -275,11 +271,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
 
     // 新标签页播放处理函数
     const handlePlayInNewTab = useCallback(() => {
-      if (origin === 'live' && actualSource && actualId) {
-        // 直播内容跳转到直播页面
-        const url = `/live?source=${actualSource.replace('live_', '')}&id=${actualId.replace('live_', '')}`;
-        window.open(url, '_blank');
-      } else if (
+      if (
         from === 'douban' ||
         (isAggregate && !actualSource && !actualId)
       ) {
@@ -552,7 +544,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
     return (
       <>
         <div
-          className='group relative w-full rounded-lg bg-transparent cursor-pointer transition-all duration-300 ease-in-out hover:scale-[1.05] hover:z-500'
+          className='group relative w-full rounded-xl bg-transparent cursor-pointer transition-all duration-300 ease-out hover:scale-[1.03] hover:z-500'
           onClick={handleClick}
           {...longPressProps}
           style={
@@ -594,9 +586,9 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
             return false;
           }}
         >
-          {/* 海报容器 */}
+          {/* 海报容器 - Aurora 风格圆角 */}
           <div
-            className={`relative aspect-2/3 overflow-hidden rounded-lg ${origin === 'live' ? 'ring-1 ring-gray-300/80 dark:ring-gray-600/80' : ''}`}
+            className={`relative aspect-2/3 overflow-hidden rounded-xl shadow-lg group-hover:shadow-xl group-hover:shadow-purple-500/10 dark:group-hover:shadow-purple-500/20 transition-shadow duration-300 ${origin === 'live' ? 'ring-1 ring-gray-300/80 dark:ring-gray-600/80' : ''}`}
             style={
               {
                 WebkitUserSelect: 'none',
@@ -1013,7 +1005,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
 
           {/* 标题与来源 */}
           <div
-            className='mt-2 text-center'
+            className='mt-3 text-center'
             style={
               {
                 WebkitUserSelect: 'none',
@@ -1037,7 +1029,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               }
             >
               <span
-                className='block text-sm font-semibold truncate text-slate-800 dark:text-gray-100 transition-colors duration-300 ease-in-out group-hover:text-green-600 dark:group-hover:text-green-400 peer'
+                className='block text-sm font-semibold truncate text-gray-800 dark:text-gray-100 transition-colors duration-300 ease-out group-hover:text-purple-600 dark:group-hover:text-purple-400 peer'
                 style={
                   {
                     WebkitUserSelect: 'none',
@@ -1082,7 +1074,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
             </div>
             {config.showSourceName && source_name && (
               <span
-                className='block text-xs text-slate-600 dark:text-gray-400 mt-1'
+                className='block text-xs text-gray-500 dark:text-gray-400 mt-1.5'
                 style={
                   {
                     WebkitUserSelect: 'none',
@@ -1096,7 +1088,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                 }}
               >
                 <span
-                  className='inline-block border rounded px-2 py-0.5 border-gray-500/60 dark:border-gray-400/60 transition-all duration-300 ease-in-out group-hover:border-green-500/60 group-hover:text-green-600 dark:group-hover:text-green-400'
+                  className='inline-block border rounded-lg px-2 py-0.5 border-gray-300/60 dark:border-gray-600/60 transition-all duration-300 ease-out group-hover:border-purple-400/60 group-hover:text-purple-600 dark:group-hover:text-purple-400'
                   style={
                     {
                       WebkitUserSelect: 'none',

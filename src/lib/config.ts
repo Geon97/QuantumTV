@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, no-console */
+ 
 
 import { AdminConfig } from './admin.types';
 
@@ -138,40 +138,6 @@ export function refineConfig(adminConfig: AdminConfig): AdminConfig {
 
   adminConfig.CustomCategories = Array.from(currentCustomCategories.values());
 
-  const livesFromFile = Object.entries(fileConfig.lives || []);
-  const currentLives = new Map(
-    (adminConfig.LiveConfig || []).map((l) => [l.key, l]),
-  );
-  livesFromFile.forEach(([key, site]) => {
-    const existingLive = currentLives.get(key);
-    if (existingLive) {
-      existingLive.name = site.name;
-      existingLive.url = site.url;
-      existingLive.ua = site.ua;
-      existingLive.epg = site.epg;
-    } else {
-      currentLives.set(key, {
-        key,
-        name: site.name,
-        url: site.url,
-        ua: site.ua,
-        epg: site.epg,
-        channelNumber: 0,
-        from: 'config',
-        disabled: false,
-      });
-    }
-  });
-
-  const livesFromFileKeys = new Set(livesFromFile.map(([key]) => key));
-  currentLives.forEach((live) => {
-    if (!livesFromFileKeys.has(live.key)) {
-      live.from = 'custom';
-    }
-  });
-
-  adminConfig.LiveConfig = Array.from(currentLives.values());
-
   return adminConfig;
 }
 
@@ -208,8 +174,7 @@ export function getLocalModeConfig(): AdminConfig {
       ],
     },
     SourceConfig: [],
-    CustomCategories: [],
-    LiveConfig: [],
+    CustomCategories: []
   };
   return adminConfig;
 }
@@ -247,9 +212,6 @@ export function configSelfCheck(adminConfig: AdminConfig): AdminConfig {
   ) {
     adminConfig.CustomCategories = [];
   }
-  if (!adminConfig.LiveConfig || !Array.isArray(adminConfig.LiveConfig)) {
-    adminConfig.LiveConfig = [];
-  }
 
   // 采集源去重
   const seenSourceKeys = new Set<string>();
@@ -272,16 +234,6 @@ export function configSelfCheck(adminConfig: AdminConfig): AdminConfig {
       return true;
     },
   );
-
-  // 直播源去重
-  const seenLiveKeys = new Set<string>();
-  adminConfig.LiveConfig = adminConfig.LiveConfig.filter((live) => {
-    if (seenLiveKeys.has(live.key)) {
-      return false;
-    }
-    seenLiveKeys.add(live.key);
-    return true;
-  });
 
   return adminConfig;
 }

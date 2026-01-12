@@ -26,11 +26,13 @@ const PageLayout = ({ children, activePath = '/' }: PageLayoutProps) => {
             </div>
           )}
 
-          {/* 主内容 */}
+          {/* 主内容 - 适配刘海屏/状态栏 */}
           <main
-            className='flex-1 md:min-h-0 mb-14 md:mb-0 md:mt-17 mt-12'
+            className='flex-1 md:min-h-0 mb-14 md:mb-0 md:mt-17'
             style={{
-              paddingBottom: 'calc(3.5rem + env(safe-area-inset-bottom))',
+              // 移动端顶部适配刘海屏: 14 (header) + safe-area
+              marginTop: 'calc(3.5rem + env(safe-area-inset-top))',
+              paddingBottom: 'calc(5rem + env(safe-area-inset-bottom))',
             }}
           >
             {children}

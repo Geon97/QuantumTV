@@ -23,11 +23,8 @@ import {
 } from '@/lib/db.client';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
-import { useDoubanInfo } from '@/hooks/useDoubanInfo';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
-import { MovieMetaInfo } from '@/components/MovieMetaInfo';
-import { MovieReviews } from '@/components/MovieReviews';
 import PageLayout from '@/components/PageLayout';
 import SkipConfigPanel from '@/components/SkipConfigPanel';
 import Toast from '@/components/Toast';
@@ -2260,9 +2257,6 @@ function PlayPageClient() {
             </div>
           </div>
         </div>
-
-        {/* 豆瓣富媒体信息区域 */}
-        <DoubanInfoSection doubanId={videoDoubanId} />
       </div>
 
       {/* 跳过片头片尾设置面板 */}
@@ -2288,43 +2282,6 @@ function PlayPageClient() {
   );
 }
 
-// 豆瓣富媒体信息区域组件
-const DoubanInfoSection = ({ doubanId }: { doubanId: number }) => {
-  const {
-    detail: doubanDetail,
-    comments,
-    detailLoading,
-    commentsLoading,
-    commentsTotal,
-  } = useDoubanInfo(doubanId > 0 ? doubanId : null);
-
-  // 如果没有豆瓣 ID，不渲染
-  if (!doubanId || doubanId === 0) {
-    return null;
-  }
-
-  return (
-    <div className='mt-8 space-y-8 pb-8'>
-      {/* 元信息：演员表、标签、简介 */}
-      <MovieMetaInfo
-        detail={doubanDetail}
-        loading={detailLoading}
-        showCast={true}
-        showSummary={true}
-        showTags={true}
-      />
-
-      {/* 短评列表 */}
-      <MovieReviews
-        comments={comments}
-        loading={commentsLoading}
-        total={commentsTotal}
-        doubanId={doubanId}
-        maxDisplay={6}
-      />
-    </div>
-  );
-};
 
 // FavoriteIcon 组件
 const FavoriteIcon = ({ filled }: { filled: boolean }) => {

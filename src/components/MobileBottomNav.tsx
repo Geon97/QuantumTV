@@ -2,7 +2,7 @@
 
 'use client';
 
-import { Cat, Clover, Film, Home, Radio, Search, Star, Tv } from 'lucide-react';
+import { Cat, Clover, Film, Home, Search, Star, Tv } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -16,12 +16,10 @@ interface NavItem {
   icon: typeof Home;
   label: string;
   href: string;
-  // 选中状态的渐变色配置
+  // 激活状态的渐变色配置
   activeGradient: string;
-  // 选中状态的文字/图标颜色
-  activeTextColor: string;
-  // 悬浮状态的背景色
-  hoverBg: string;
+  // 激活状态的发光色
+  glowColor: string;
 }
 
 interface MobileBottomNavProps {
@@ -32,8 +30,8 @@ interface MobileBottomNavProps {
 }
 
 /**
- * 移动端底部导航栏 - 悬浮胶囊风格
- * 与 PC 端顶部导航保持一致的设计语言
+ * 移动端底部导航栏 - Aurora Design System
+ * 悬浮胶囊风格 + 极光渐变
  */
 const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
   const pathname = usePathname();
@@ -43,63 +41,49 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
   // 当前激活路径：优先使用传入的 activePath，否则回退到浏览器地址
   const currentActive = activePath ?? pathname;
 
-  // 导航项配置 - 包含渐变色映射
+  // 导航项配置 - Aurora 风格渐变色
   const [navItems, setNavItems] = useState<NavItem[]>([
     {
       icon: Home,
       label: '首页',
       href: '/',
-      activeGradient: 'bg-linear-to-r from-violet-500 to-purple-600',
-      activeTextColor: 'text-white',
-      hoverBg: 'hover:bg-violet-500/20',
+      activeGradient: 'from-violet-500 to-purple-600',
+      glowColor: 'shadow-violet-500/40',
     },
     {
       icon: Search,
       label: '搜索',
       href: '/search',
-      activeGradient: 'bg-linear-to-r from-blue-500 to-cyan-500',
-      activeTextColor: 'text-white',
-      hoverBg: 'hover:bg-blue-500/20',
+      activeGradient: 'from-indigo-500 to-blue-500',
+      glowColor: 'shadow-indigo-500/40',
     },
     {
       icon: Film,
       label: '电影',
       href: '/douban?type=movie',
-      activeGradient: 'bg-linear-to-r from-pink-500 to-rose-500',
-      activeTextColor: 'text-white',
-      hoverBg: 'hover:bg-pink-500/20',
+      activeGradient: 'from-fuchsia-500 to-pink-500',
+      glowColor: 'shadow-fuchsia-500/40',
     },
     {
       icon: Tv,
       label: '剧集',
       href: '/douban?type=tv',
-      activeGradient: 'bg-linear-to-r from-purple-500 to-indigo-500',
-      activeTextColor: 'text-white',
-      hoverBg: 'hover:bg-purple-500/20',
+      activeGradient: 'from-purple-500 to-violet-500',
+      glowColor: 'shadow-purple-500/40',
     },
     {
       icon: Cat,
       label: '动漫',
       href: '/douban?type=anime',
-      activeGradient: 'bg-linear-to-r from-emerald-400 to-teal-500',
-      activeTextColor: 'text-white',
-      hoverBg: 'hover:bg-emerald-500/20',
+      activeGradient: 'from-teal-400 to-emerald-500',
+      glowColor: 'shadow-teal-500/40',
     },
     {
       icon: Clover,
       label: '综艺',
       href: '/douban?type=show',
-      activeGradient: 'bg-linear-to-r from-amber-400 to-orange-500',
-      activeTextColor: 'text-white',
-      hoverBg: 'hover:bg-amber-500/20',
-    },
-    {
-      icon: Radio,
-      label: '直播',
-      href: '/live',
-      activeGradient: 'bg-linear-to-r from-red-500 to-pink-500',
-      activeTextColor: 'text-white',
-      hoverBg: 'hover:bg-red-500/20',
+      activeGradient: 'from-amber-400 to-orange-500',
+      glowColor: 'shadow-amber-500/40',
     },
   ]);
 
@@ -116,9 +100,8 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
             icon: Star,
             label: '自定义',
             href: '/douban?type=custom',
-            activeGradient: 'bg-linear-to-r from-yellow-400 to-amber-500',
-            activeTextColor: 'text-white',
-            hoverBg: 'hover:bg-yellow-500/20',
+            activeGradient: 'from-yellow-400 to-amber-500',
+            glowColor: 'shadow-yellow-500/40',
           },
         ];
       });
@@ -141,9 +124,6 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
       // 搜索页特殊处理
       if (href === '/search' && decodedActive.startsWith('/search'))
         return true;
-
-      // 直播页特殊处理
-      if (href === '/live' && decodedActive.startsWith('/live')) return true;
 
       // 豆瓣分类匹配
       if (
@@ -187,26 +167,26 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
         // 悬浮居中定位
         'left-1/2 -translate-x-1/2',
         // 尺寸限制
-        'w-auto max-w-[92vw]',
-        // 外观样式 - 磨砂玻璃胶囊 (亮色/暗色自适应)
-        'rounded-full',
-        'bg-white/80 dark:bg-black/75',
-        'backdrop-blur-xl',
-        'border border-black/5 dark:border-white/10',
-        'shadow-xl shadow-black/5 dark:shadow-2xl dark:shadow-black/40',
+        'w-auto max-w-[94vw]',
       )}
       style={{
         // 距离底部安全区
         bottom: 'calc(1rem + env(safe-area-inset-bottom))',
       }}
     >
+      {/* 背景层 - Aurora 磨砂玻璃 */}
+      <div className='absolute inset-0 rounded-2xl bg-white/70 dark:bg-gray-950/70 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-xl shadow-black/5 dark:shadow-black/30' />
+
+      {/* 顶部微光线 */}
+      <div className='absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-purple-500/30 to-transparent' />
+
       {/* 横向滚动容器 */}
       <div
         ref={scrollContainerRef}
         className={cn(
-          'flex items-center gap-1 px-2 py-2',
+          'relative flex items-center gap-1.5 px-3 py-2.5',
           'overflow-x-auto',
-          'scroll-smooth',
+          'scroll-smooth scrollbar-hide',
         )}
         style={{
           scrollbarWidth: 'none',
@@ -214,13 +194,6 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
           WebkitOverflowScrolling: 'touch',
         }}
       >
-        {/* 隐藏 Webkit 滚动条 */}
-        <style jsx>{`
-          div::-webkit-scrollbar {
-            display: none;
-          }
-        `}</style>
-
         {navItems.map((item, index) => {
           const active = isActive(item.href);
           const Icon = item.icon;
@@ -236,27 +209,26 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
               className={cn(
                 // 基础样式
                 'shrink-0 inline-flex items-center gap-1.5',
-                'rounded-full px-3.5 py-2',
+                'rounded-xl px-4 py-2.5',
                 'text-sm font-medium',
                 'transition-all duration-300 ease-out',
-                'focus:outline-none focus:ring-2 focus:ring-white/30',
+                'focus:outline-none',
                 // 点击反馈
                 'active:scale-95',
-                // 激活状态 (扁平化传入，不使用数组)
-                active && item.activeGradient,
-                active && item.activeTextColor,
-                active && 'shadow-lg',
-                active && 'scale-105',
-                // 非激活状态 (亮色/暗色自适应)
+                // 激活状态
+                active && `bg-gradient-to-r ${item.activeGradient}`,
+                active && 'text-white',
+                active && `shadow-lg ${item.glowColor}`,
+                // 非激活状态
                 !active && 'text-gray-600 dark:text-gray-400',
-                !active && item.hoverBg,
+                !active && 'hover:bg-black/5 dark:hover:bg-white/5',
                 !active && 'hover:text-gray-900 dark:hover:text-white',
               )}
             >
               <Icon
                 className={cn(
                   'w-4 h-4 shrink-0',
-                  'transition-transform duration-300',
+                  'transition-all duration-300',
                   active && 'drop-shadow-sm',
                 )}
               />

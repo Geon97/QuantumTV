@@ -8,7 +8,6 @@ import {
   Film,
   Home,
   Menu,
-  Radio,
   Search,
   Star,
   Tv,
@@ -158,11 +157,6 @@ const SidebarContent = ({ onToggle, activePath = '/' }: SidebarProps) => {
       icon: Clover,
       label: '综艺',
       href: '/douban?type=show',
-    },
-    {
-      icon: Radio,
-      label: '直播',
-      href: '/live',
     },
   ]);
 

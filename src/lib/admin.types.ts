@@ -46,16 +46,6 @@ export interface AdminConfig {
     from: 'config' | 'custom';
     disabled?: boolean;
   }[];
-  LiveConfig?: {
-    key: string;
-    name: string;
-    url: string; // m3u 地址
-    ua?: string;
-    epg?: string; // 节目单
-    from: 'config' | 'custom';
-    channelNumber?: number;
-    disabled?: boolean;
-  }[];
 }
 
 export interface AdminConfigResult {

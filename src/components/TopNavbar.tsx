@@ -1,6 +1,8 @@
 /**
  * TopNavbar - PC 端顶部导航栏
  *
+ * Aurora Design System - 磨砂玻璃 + 极光效果
+ *
  * 性能优化策略：
  * 1. FastLink + useTransitionNav: 路由切换标记为"过渡更新"，不阻塞主线程
  * 2. React.memo: 防止父组件重绘导致不必要的渲染
@@ -10,7 +12,7 @@
 
 'use client';
 
-import { Cat, Clover, Film, Home, Radio, Search, Tv } from 'lucide-react';
+import { Cat, Clover, Film, Home, Search, Sparkles, Tv } from 'lucide-react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { memo, Suspense, useCallback, useMemo } from 'react';
 
@@ -64,13 +66,6 @@ const NAV_ITEMS = [
     type: 'douban',
     doubanType: 'show',
   },
-  {
-    href: '/live',
-    icon: Radio,
-    label: '直播',
-    chip: 'chip-live',
-    type: 'exact',
-  },
 ] as const;
 
 // 内部导航组件，使用 useSearchParams
@@ -104,11 +99,16 @@ function NavItems() {
             key={item.href}
             href={item.href}
             useTransitionNav
-            className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm hover:opacity-90 transition-all glass-chip chip-glow chip-theme ${item.chip} ${
-              active ? 'ring-2 ring-purple-400/60' : ''
-            }`}
+            className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium
+              transition-all duration-300 ease-out
+              glass-chip chip-glow chip-theme ${item.chip}
+              hover:scale-[1.02] active:scale-[0.98]
+              ${active
+                ? 'ring-2 ring-purple-500/40 dark:ring-purple-400/40 shadow-lg shadow-purple-500/20'
+                : 'hover:shadow-md'
+              }`}
           >
-            <Icon className='h-4 w-4' />
+            <Icon className={`h-4 w-4 transition-transform duration-300 ${active ? 'scale-110' : ''}`} />
             <span>{item.label}</span>
           </FastLink>
         );
@@ -129,16 +129,27 @@ function TopNavbar() {
       }}
     >
       <div className='mx-auto max-w-7xl px-4'>
-        {/* PC 端保留 backdrop-blur 磨砂玻璃效果 */}
-        <div className='mt-2 rounded-2xl border border-white/10 bg-white/80 dark:bg-gray-900/80 md:bg-white/30 md:dark:bg-gray-900/40 shadow-[0_0_1px_0_rgba(255,255,255,0.5),0_0_40px_-10px_rgba(99,102,241,0.5)] backdrop-blur-none md:backdrop-blur-xl'>
-          <nav className='flex items-center justify-between h-14 px-3'>
+        {/* Aurora 玻璃导航栏 */}
+        <div className='mt-3 rounded-2xl relative overflow-hidden'>
+          {/* 背景层 */}
+          <div className='absolute inset-0 bg-white/70 dark:bg-gray-950/60 backdrop-blur-2xl rounded-2xl' />
+
+          {/* 边框和阴影 */}
+          <div className='absolute inset-0 rounded-2xl border border-white/30 dark:border-white/10 shadow-xl shadow-purple-500/5 dark:shadow-purple-500/10' />
+
+          {/* 顶部微光线 */}
+          <div className='absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-purple-500/30 to-transparent' />
+
+          {/* 内容 */}
+          <nav className='relative flex items-center justify-between h-16 px-5'>
             {/* Left: Logo */}
             <div className='flex items-center gap-2 min-w-0'>
               <FastLink
                 href='/'
                 useTransitionNav
-                className='shrink-0 select-none hover:opacity-90 transition-opacity'
+                className='shrink-0 select-none flex items-center gap-2 group'
               >
+                <Sparkles className='w-6 h-6 text-purple-500 dark:text-purple-400 group-hover:animate-spin transition-all duration-700' />
                 <span className='text-xl font-black tracking-tight deco-brand'>
                   {siteName || 'QuantumTV'}
                 </span>
@@ -153,7 +164,7 @@ function TopNavbar() {
             </div>
 
             {/* Right: Theme + User */}
-            <div className='flex items-center gap-2'>
+            <div className='flex items-center gap-3'>
               <ThemeToggle />
               <UserMenu />
             </div>

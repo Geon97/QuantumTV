@@ -3,38 +3,47 @@
 /* Tailwind 4 Dark Mode Configuration - 使用 class 选择器而非媒体查询 */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Tailwind 4 Theme Configuration */
+/* Tailwind 4 Theme Configuration - Aurora/Cosmic Design System */
 @theme {
   /* Font Family */
   --font-primary:
     'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
     'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
 
-  /* Primary Colors */
-  --color-primary-50: #f0f9ff;
-  --color-primary-100: #e0f2fe;
-  --color-primary-200: #bae6fd;
-  --color-primary-300: #7dd3fc;
-  --color-primary-400: #38bdf8;
-  --color-primary-500: #0ea5e9;
-  --color-primary-600: #0284c7;
-  --color-primary-700: #0369a1;
-  --color-primary-800: #075985;
-  --color-primary-900: #0c4a6e;
-  --color-dark: #222222;
+  /* Aurora Brand Colors - 极光色系 */
+  --color-aurora-violet: #8b5cf6;
+  --color-aurora-purple: #a855f7;
+  --color-aurora-fuchsia: #d946ef;
+  --color-aurora-pink: #ec4899;
+  --color-aurora-cyan: #06b6d4;
+  --color-aurora-teal: #14b8a6;
+  --color-aurora-emerald: #10b981;
+
+  /* Primary Colors - 紫色主题 */
+  --color-primary-50: #faf5ff;
+  --color-primary-100: #f3e8ff;
+  --color-primary-200: #e9d5ff;
+  --color-primary-300: #d8b4fe;
+  --color-primary-400: #c084fc;
+  --color-primary-500: #a855f7;
+  --color-primary-600: #9333ea;
+  --color-primary-700: #7c3aed;
+  --color-primary-800: #6b21a8;
+  --color-primary-900: #581c87;
+  --color-dark: #0a0a0f;
 
   /* 修复 Tailwind 4 亮色模式下灰色过淡的问题，恢复高对比度灰色 */
-  --color-gray-50: #f9fafb;
-  --color-gray-100: #f3f4f6;
-  --color-gray-200: #e5e7eb;
-  --color-gray-300: #d1d5db;
-  --color-gray-400: #9ca3af;
-  --color-gray-500: #6b7280;
-  --color-gray-600: #4b5563;
-  --color-gray-700: #374151;
-  --color-gray-800: #1f2937;
-  --color-gray-900: #111827;
-  --color-gray-950: #030712;
+  --color-gray-50: #fafafa;
+  --color-gray-100: #f4f4f5;
+  --color-gray-200: #e4e4e7;
+  --color-gray-300: #d4d4d8;
+  --color-gray-400: #a1a1aa;
+  --color-gray-500: #71717a;
+  --color-gray-600: #52525b;
+  --color-gray-700: #3f3f46;
+  --color-gray-800: #27272a;
+  --color-gray-900: #18181b;
+  --color-gray-950: #09090b;
 
   /* Custom Animations */
   --animate-flicker: flicker 3s linear infinite;
@@ -43,10 +52,73 @@
   --animate-slide-up: slideUp 0.3s ease-in-out;
   --animate-slide-down: slideDown 0.3s ease-in-out;
   --animate-slide-in-from-right: slideInFromRight 0.3s ease-out;
+  --animate-aurora: aurora 15s ease infinite;
+  --animate-glow-pulse: glowPulse 3s ease-in-out infinite;
+  --animate-float-gentle: floatGentle 6s ease-in-out infinite;
 }
 
 /* Mobile Landscape Media Query - 自定义断点需要直接使用 */
 @custom-media --mobile-landscape (orientation: landscape) and (max-height: 700px);
+
+/* ========================================
+   Aurora Design System - 核心动画
+   ======================================== */
+
+/* 极光流动动画 */
+@keyframes aurora {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+/* 柔和辉光脉冲 */
+@keyframes glowPulse {
+  0%, 100% {
+    opacity: 0.6;
+    filter: blur(40px);
+  }
+  50% {
+    opacity: 0.8;
+    filter: blur(50px);
+  }
+}
+
+/* 轻柔浮动 */
+@keyframes floatGentle {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-8px) scale(1.02);
+  }
+}
+
+/* 微光呼吸 */
+@keyframes breathe {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.05);
+  }
+}
+
+/* 渐入上滑 */
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 
 /* Custom Keyframes */
 @keyframes flicker {
@@ -134,10 +206,36 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none; /* Chrome, Safari and Opera */
   }
+
+  /* Aurora 动画类 */
+  .animate-aurora {
+    animation: aurora 15s ease infinite;
+    background-size: 400% 400%;
+  }
+
+  .animate-glow-pulse {
+    animation: glowPulse 3s ease-in-out infinite;
+  }
+
+  .animate-float-gentle {
+    animation: floatGentle 6s ease-in-out infinite;
+  }
+
+  .animate-breathe {
+    animation: breathe 4s ease-in-out infinite;
+  }
+
+  .animate-fade-slide-up {
+    animation: fadeSlideUp 0.5s ease-out forwards;
+  }
 }
 
 :root {
-  --foreground-rgb: 255, 255, 255;
+  --foreground-rgb: 24, 24, 27;
+}
+
+html.dark {
+  --foreground-rgb: 244, 244, 245;
 }
 
 html,
@@ -150,6 +248,27 @@ body {
 
 body {
   color: rgb(var(--foreground-rgb));
+}
+
+/* ========================================
+   Aurora Design System - 品牌文字
+   ======================================== */
+
+/* Aurora 品牌渐变文字 */
+.aurora-text {
+  background: linear-gradient(
+    135deg,
+    #8b5cf6 0%,
+    #a855f7 25%,
+    #d946ef 50%,
+    #ec4899 75%,
+    #8b5cf6 100%
+  );
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: aurora 8s ease infinite;
 }
 
 /* Enhanced Neon text effect for brand */
@@ -190,68 +309,82 @@ body {
 .deco-brand {
   background: linear-gradient(
     135deg,
-    #3b82f6 0%,
-    #8b5cf6 25%,
+    #8b5cf6 0%,
+    #a855f7 25%,
     #d946ef 50%,
-    #f43f5e 75%,
-    #f59e0b 100%
+    #ec4899 75%,
+    #8b5cf6 100%
   );
   background-size: 300% 300%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: brandGradient 8s ease infinite;
+  animation: aurora 8s ease infinite;
   position: relative;
 }
 
-@keyframes brandGradient {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
-}
+/* ========================================
+   Aurora Design System - 玻璃态组件
+   ======================================== */
 
-/* Glass chip */
+/* 磨砂玻璃芯片 */
 .glass-chip {
   background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.3),
-    rgba(255, 255, 255, 0.15)
+    135deg,
+    rgba(255, 255, 255, 0.25) 0%,
+    rgba(255, 255, 255, 0.1) 100%
   );
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    0 10px 30px -15px rgba(99, 102, 241, 0.5);
-  backdrop-filter: blur(16px);
+    0 4px 16px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
-/* Chip subtle glow animation */
+html.dark .glass-chip {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.08) 0%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* 悬浮光晕 */
 .chip-glow {
   position: relative;
+  transition: all 0.3s ease;
 }
-.chip-glow::after {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: 9999px;
-  background: radial-gradient(
-    60% 60% at 50% 50%,
-    rgba(16, 185, 129, 0.25),
-    rgba(99, 102, 241, 0.15) 60%,
-    transparent 100%
-  );
-  z-index: -1;
-  filter: blur(8px);
-  opacity: 0;
-  transition: opacity 0.3s ease;
+
+.chip-glow:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 8px 25px -5px rgba(139, 92, 246, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
-.chip-glow:hover::after {
-  opacity: 1;
+
+/* Aurora 玻璃卡片 */
+.glass-card {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-radius: 1.25rem;
+}
+
+html.dark .glass-card {
+  background: rgba(24, 24, 27, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 /* Enhanced smooth neon flicker with breathing effect */
@@ -451,17 +584,21 @@ body {
   color: rgba(139, 92, 246, 0.7);
 }
 
+/* ========================================
+   Aurora Design System - 导航分类主题
+   ======================================== */
+
 /* 分类专属渐变与光晕 */
 .chip-theme {
   position: relative;
   isolation: isolate;
-  /* 亮色模式下使用深色文字 */
   color: #374151;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* 暗色模式下使用浅色文字 */
 :is(.dark .chip-theme) {
-  color: #f3f4f6;
+  color: #f4f4f5;
 }
 
 .chip-theme::before {
@@ -470,201 +607,121 @@ body {
   inset: 0;
   border-radius: 9999px;
   z-index: -1;
-  opacity: 0.85;
-  transition:
-    opacity 0.35s ease,
-    transform 0.35s ease;
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
+
 .chip-theme:hover::before {
   opacity: 1;
-  transform: scale(1.02);
 }
 
-/* 首页 */
+/* 首页 - 紫罗兰 */
 .chip-home {
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.28),
-    rgba(255, 255, 255, 0.14)
-  );
-  border-color: rgba(59, 130, 246, 0.35);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(168, 85, 247, 0.1) 100%);
+  border-color: rgba(139, 92, 246, 0.3);
 }
 .chip-home::before {
-  background: radial-gradient(
-    70% 70% at 50% 50%,
-    rgba(59, 130, 246, 0.35),
-    transparent 70%
-  );
+  background: radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.25), transparent 70%);
 }
 
-/* 搜索 */
+/* 搜索 - 靛蓝 */
 .chip-search {
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.28),
-    rgba(255, 255, 255, 0.14)
-  );
-  border-color: rgba(99, 102, 241, 0.35);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(129, 140, 248, 0.1) 100%);
+  border-color: rgba(99, 102, 241, 0.3);
 }
 .chip-search::before {
-  background: radial-gradient(
-    70% 70% at 50% 50%,
-    rgba(99, 102, 241, 0.35),
-    transparent 70%
-  );
+  background: radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.25), transparent 70%);
 }
 
-/* 电影：粉橙霓虹 */
+/* 电影 - 粉紫 */
 .chip-movie {
-  background: linear-gradient(
-    90deg,
-    rgba(244, 114, 182, 0.35),
-    rgba(251, 146, 60, 0.35)
-  );
-  border-color: rgba(244, 114, 182, 0.45);
+  background: linear-gradient(135deg, rgba(217, 70, 239, 0.15) 0%, rgba(236, 72, 153, 0.1) 100%);
+  border-color: rgba(217, 70, 239, 0.3);
 }
 .chip-movie::before {
-  background: radial-gradient(
-    70% 70% at 50% 50%,
-    rgba(251, 146, 60, 0.45),
-    rgba(244, 114, 182, 0.45) 60%,
-    transparent 85%
-  );
+  background: radial-gradient(circle at 50% 50%, rgba(217, 70, 239, 0.25), transparent 70%);
 }
 
-/* 剧集：紫蓝霓虹 */
+/* 剧集 - 深紫 */
 .chip-tv {
-  background: linear-gradient(
-    90deg,
-    rgba(168, 85, 247, 0.35),
-    rgba(59, 130, 246, 0.35)
-  );
-  border-color: rgba(168, 85, 247, 0.45);
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.15) 0%, rgba(139, 92, 246, 0.1) 100%);
+  border-color: rgba(168, 85, 247, 0.3);
 }
 .chip-tv::before {
-  background: radial-gradient(
-    70% 70% at 50% 50%,
-    rgba(59, 130, 246, 0.45),
-    rgba(168, 85, 247, 0.45) 60%,
-    transparent 85%
-  );
+  background: radial-gradient(circle at 50% 50%, rgba(168, 85, 247, 0.25), transparent 70%);
 }
 
-/* 动漫：青绿霓虹 */
+/* 动漫 - 青绿 */
 .chip-anime {
-  background: linear-gradient(
-    90deg,
-    rgba(20, 184, 166, 0.35),
-    rgba(16, 185, 129, 0.35)
-  );
-  border-color: rgba(16, 185, 129, 0.45);
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.15) 0%, rgba(16, 185, 129, 0.1) 100%);
+  border-color: rgba(20, 184, 166, 0.3);
 }
 .chip-anime::before {
-  background: radial-gradient(
-    70% 70% at 50% 50%,
-    rgba(20, 184, 166, 0.45),
-    rgba(16, 185, 129, 0.45) 60%,
-    transparent 85%
-  );
+  background: radial-gradient(circle at 50% 50%, rgba(20, 184, 166, 0.25), transparent 70%);
 }
 
-/* 综艺：金柠霓虹 */
+/* 综艺 - 琥珀 */
 .chip-show {
-  background: linear-gradient(
-    90deg,
-    rgba(250, 204, 21, 0.35),
-    rgba(251, 191, 36, 0.35)
-  );
-  border-color: rgba(251, 191, 36, 0.5);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(251, 191, 36, 0.1) 100%);
+  border-color: rgba(245, 158, 11, 0.3);
 }
 .chip-show::before {
-  background: radial-gradient(
-    70% 70% at 50% 50%,
-    rgba(250, 204, 21, 0.45),
-    rgba(251, 191, 36, 0.45) 60%,
-    transparent 85%
-  );
+  background: radial-gradient(circle at 50% 50%, rgba(245, 158, 11, 0.25), transparent 70%);
 }
 
-/* 直播：品红霓虹 */
+/* 直播 - 玫红 */
 .chip-live {
-  background: linear-gradient(
-    90deg,
-    rgba(236, 72, 153, 0.35),
-    rgba(244, 63, 94, 0.35)
-  );
-  border-color: rgba(236, 72, 153, 0.5);
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.15) 0%, rgba(244, 63, 94, 0.1) 100%);
+  border-color: rgba(236, 72, 153, 0.3);
 }
 .chip-live::before {
-  background: radial-gradient(
-    70% 70% at 50% 50%,
-    rgba(244, 63, 94, 0.45),
-    rgba(236, 72, 153, 0.45) 60%,
-    transparent 85%
-  );
+  background: radial-gradient(circle at 50% 50%, rgba(236, 72, 153, 0.25), transparent 70%);
 }
 
-/* 移动端底部导航霓虹主题 */
+/* ========================================
+   Aurora Design System - 移动端底部导航
+   ======================================== */
+
+/* 移动端底部导航样式 */
 .mbnav {
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
 }
+
 .mbnav-item {
   position: relative;
-  transition:
-    transform 0.25s ease,
-    color 0.25s ease;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
 .mbnav-item::after {
   content: '';
   position: absolute;
-  inset: auto 15% 6px 15%;
-  height: 6px;
+  inset: auto 20% -2px 20%;
+  height: 3px;
   border-radius: 9999px;
-  background: radial-gradient(
-    50% 100% at 50% 100%,
-    currentColor,
-    transparent 70%
-  );
+  background: currentColor;
   opacity: 0;
-  filter: blur(6px);
-  transition:
-    opacity 0.25s ease,
-    transform 0.25s ease;
+  transform: scaleX(0);
+  transition: all 0.25s ease;
 }
+
 .mbnav-item:hover {
   transform: translateY(-2px);
 }
-.mbnav-item:hover::after {
-  opacity: 0.55;
-  transform: translateY(2px);
-}
-.mbnav-item-active {
-  text-shadow: 0 0 8px currentColor;
+
+.mbnav-item-active::after {
+  opacity: 0.8;
+  transform: scaleX(1);
 }
 
-/* 底部导航分类色系（与桌面一致） */
-.mb-home {
-  color: #3b82f6;
-}
-.mb-search {
-  color: #6366f1;
-}
-.mb-movie {
-  color: #f59e0b;
-}
-.mb-tv {
-  color: #a855f7;
-}
-.mb-anime {
-  color: #10b981;
-}
-.mb-show {
-  color: #facc15;
-}
-.mb-live {
-  color: #ec4899;
-}
+/* 底部导航分类色系 */
+.mb-home { color: #8b5cf6; }
+.mb-search { color: #6366f1; }
+.mb-movie { color: #d946ef; }
+.mb-tv { color: #a855f7; }
+.mb-anime { color: #14b8a6; }
+.mb-show { color: #f59e0b; }
+.mb-live { color: #ec4899; }
 
 /* 按钮/卡片悬停高光轨迹 */
 /* 移除 sweeping 高光轨迹效果（保留占位，避免类名报错） */
@@ -692,149 +749,97 @@ body {
   animation: superFadeSlide 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 
+/* ========================================
+   Aurora Design System - 页面背景
+   ======================================== */
+
+/* 亮色模式背景 - 柔和渐变 */
 html:not(.dark) body {
   background: linear-gradient(
-    180deg,
-    #e6f3fb 0%,
-    #eaf3f7 18%,
-    #f7f7f3 38%,
-    #e9ecef 60%,
-    #dbe3ea 80%,
-    #d3dde6 100%
+    135deg,
+    #faf5ff 0%,
+    #f5f3ff 15%,
+    #ede9fe 30%,
+    #f0fdfa 50%,
+    #ecfeff 70%,
+    #fdf4ff 85%,
+    #faf5ff 100%
   );
   background-attachment: fixed;
 }
 
-/* 亮色模式文字颜色强制覆盖 - 修复 Tailwind 4 OKLCH 灰色过淡问题 */
-html:not(.dark) {
-  /* 覆盖 Tailwind 4 OKLCH 灰色，使用传统高对比度 HEX 值 */
-  --tw-text-opacity: 1;
+/* 暗色模式背景 - 深邃宇宙 */
+html.dark body {
+  background: linear-gradient(
+    135deg,
+    #09090b 0%,
+    #0c0a1d 25%,
+    #0f172a 50%,
+    #0c0a1d 75%,
+    #09090b 100%
+  );
+  background-attachment: fixed;
 }
 
-/* 强制使用深色文字 - 确保亮色模式下可读性 */
-html:not(.dark) .text-gray-900 {
-  color: #111827 !important;
-}
-
-html:not(.dark) .text-gray-800 {
-  color: #1f2937 !important;
-}
-
-html:not(.dark) .text-gray-700 {
-  color: #374151 !important;
-}
-
-html:not(.dark) .text-gray-600 {
-  color: #4b5563 !important;
-}
-
-html:not(.dark) .text-gray-500 {
-  color: #6b7280 !important;
-}
-
-html:not(.dark) .text-slate-900 {
-  color: #0f172a !important;
-}
-
-html:not(.dark) .text-slate-800 {
-  color: #1e293b !important;
-}
-
-html:not(.dark) .text-slate-700 {
-  color: #334155 !important;
-}
-
-html:not(.dark) .text-slate-600 {
-  color: #475569 !important;
-}
-
-html:not(.dark) .text-slate-500 {
-  color: #64748b !important;
-}
-
-/* 亮色模式背景颜色强制覆盖 */
-html:not(.dark) .bg-slate-50 {
-  background-color: #f8fafc !important;
-}
-
-html:not(.dark) .bg-slate-100 {
-  background-color: #f1f5f9 !important;
-}
-
-html:not(.dark) .border-slate-200 {
-  border-color: #e2e8f0 !important;
-}
-
-html:not(.dark) .from-slate-50 {
-  --tw-gradient-from: #f8fafc !important;
-}
-
-html:not(.dark) .to-slate-100 {
-  --tw-gradient-to: #f1f5f9 !important;
-}
-
-html:not(.dark) .hover\:bg-slate-100:hover {
-  background-color: #f1f5f9 !important;
-}
-
-html:not(.dark) .hover\:bg-slate-50:hover {
-  background-color: #f8fafc !important;
-}
-
-/* 动态渐变闪烁背景粒子层（轻量） */
+/* Aurora 动态背景层 */
 .bg-animated-gradient::before {
   content: '';
   position: fixed;
   inset: 0;
   background:
     radial-gradient(
-      800px 800px at 10% 10%,
-      rgba(99, 102, 241, 0.08),
-      transparent 60%
+      ellipse 80% 50% at 20% 30%,
+      rgba(139, 92, 246, 0.08),
+      transparent 50%
     ),
     radial-gradient(
-      800px 800px at 90% 20%,
-      rgba(16, 185, 129, 0.08),
-      transparent 60%
+      ellipse 60% 40% at 80% 20%,
+      rgba(20, 184, 166, 0.06),
+      transparent 50%
     ),
     radial-gradient(
-      800px 800px at 50% 90%,
-      rgba(236, 72, 153, 0.08),
-      transparent 60%
+      ellipse 70% 60% at 50% 80%,
+      rgba(236, 72, 153, 0.06),
+      transparent 50%
     );
   pointer-events: none;
-  /* 降低动态背景的动画强度，避免强烈高光划过体验 */
-  animation: bgFloat 24s ease-in-out infinite alternate;
+  animation: auroraFlow 20s ease-in-out infinite alternate;
+  z-index: -1;
 }
 
-@keyframes bgFloat {
+html.dark .bg-animated-gradient::before {
+  background:
+    radial-gradient(
+      ellipse 80% 50% at 20% 30%,
+      rgba(139, 92, 246, 0.15),
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse 60% 40% at 80% 20%,
+      rgba(20, 184, 166, 0.1),
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse 70% 60% at 50% 80%,
+      rgba(236, 72, 153, 0.1),
+      transparent 50%
+    );
+}
+
+@keyframes auroraFlow {
   0% {
-    transform: translateY(-10px) scale(1);
-    filter: hue-rotate(0deg);
+    opacity: 0.8;
+    transform: translateY(0) scale(1);
   }
   100% {
-    transform: translateY(10px) scale(1.02);
-    filter: hue-rotate(20deg);
+    opacity: 1;
+    transform: translateY(-20px) scale(1.05);
   }
 }
 
-/* Card base glassmorphism */
-.glass-card {
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  box-shadow:
-    0 8px 30px rgba(0, 0, 0, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(20px);
-  border-radius: 1rem;
-}
-
-html.dark .glass-card {
-  background: rgba(17, 24, 39, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-/* 自定义滚动条样式 */
+/* ========================================
+   Aurora Design System - 滚动条
+   ======================================== */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

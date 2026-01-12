@@ -127,11 +127,11 @@ export default async function RootLayout({
         />
       </head>
       <body
-        className={`${inter.className} min-h-screen bg-white text-gray-900 dark:bg-black dark:text-gray-200 bg-animated-gradient`}
+        className={`${inter.className} min-h-screen text-gray-900 dark:text-gray-100 bg-animated-gradient`}
       >
-        {/* 顶部进度条：点击链接瞬间显示，消除"死机感" */}
+        {/* 顶部进度条 - Aurora 紫色主题 */}
         <NextTopLoader
-          color='#ec4899'
+          color='#a855f7'
           initialPosition={0.08}
           crawlSpeed={200}
           height={3}
@@ -139,7 +139,7 @@ export default async function RootLayout({
           showSpinner={false}
           easing='ease'
           speed={200}
-          shadow='0 0 10px #ec4899,0 0 5px #ec4899'
+          shadow='0 0 10px #a855f7,0 0 5px #a855f7'
         />
         <ThemeProvider
           attribute='class'

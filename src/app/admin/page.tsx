@@ -33,7 +33,6 @@ import {
   FolderOpen,
   GripVertical,
   Plus,
-  Radio,
   RefreshCw,
   Settings,
   Trash2,
@@ -103,9 +102,6 @@ const ConfigImportExportModal = ({
           CustomCategories: Array.isArray(parsed.CustomCategories)
             ? parsed.CustomCategories.map((c: any) => ({ ...c, from: c.from || 'custom' }))
             : defaultConfig.CustomCategories,
-          LiveConfig: Array.isArray(parsed.LiveConfig)
-            ? parsed.LiveConfig.map((l: any) => ({ ...l, from: l.from || 'custom' }))
-            : defaultConfig.LiveConfig,
         };
 
         // 如果 SourceConfig 为空但 ConfigFile 有内容，尝试从 ConfigFile 中解析
@@ -166,24 +162,6 @@ const ConfigImportExportModal = ({
             })),
           };
         }
-        // 检查是否为直播源数组 (包含 url 字段且为 m3u)
-        else if (parsed.length > 0 && parsed[0].url) {
-          finalConfig = {
-            ...defaultConfig,
-            LiveConfig: parsed.map((l: any) => ({
-              key: l.key || l.name?.toLowerCase().replace(/\s+/g, '_') || `live_${Date.now()}`,
-              name: l.name || '未命名直播源',
-              url: l.url,
-              ua: l.ua || '',
-              epg: l.epg || '',
-              from: 'custom' as const,
-              disabled: l.disabled || false,
-            })),
-          };
-        } else {
-          alert('无法识别的数组格式，请检查配置内容');
-          return;
-        }
       }
       // 情况3: 包含 sites 字段的格式 (常见的订阅配置格式)
       else if (parsed.sites && Array.isArray(parsed.sites)) {
@@ -223,7 +201,6 @@ const ConfigImportExportModal = ({
         return;
       }
 
-      onImport(finalConfig);
       setImportText('');
       onClose();
     } catch {
@@ -353,7 +330,6 @@ function getDefaultConfig(): AdminConfig {
     },
     SourceConfig: [],
     CustomCategories: [],
-    LiveConfig: [],
   };
 }
 
@@ -1032,199 +1008,6 @@ const CategoryConfig = ({ config, onSave, showAlert }: CategoryConfigProps) => {
   );
 };
 
-// 直播源配置组件
-interface LiveConfigProps {
-  config: AdminConfig | null;
-  onSave: (config: AdminConfig) => void;
-  showAlert: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void;
-}
-
-const LiveConfig = ({ config, onSave, showAlert }: LiveConfigProps) => {
-  const [lives, setLives] = useState<any[]>([]);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [newLive, setNewLive] = useState({ key: '', name: '', url: '', ua: '', epg: '' });
-
-  useEffect(() => {
-    // 确保当 config 变化时始终同步 lives 状态
-    const liveConfig = config?.LiveConfig || [];
-    setLives([...liveConfig]);
-  }, [config?.LiveConfig]);
-
-  const saveChanges = (newLives: any[]) => {
-    if (!config) return;
-    const newConfig = { ...config, LiveConfig: newLives };
-    onSave(newConfig);
-  };
-
-  const handleToggle = (key: string) => {
-    const newLives = lives.map((l) =>
-      l.key === key ? { ...l, disabled: !l.disabled } : l
-    );
-    setLives(newLives);
-    saveChanges(newLives);
-  };
-
-  const handleDelete = (key: string) => {
-    const newLives = lives.filter((l) => l.key !== key);
-    setLives(newLives);
-    saveChanges(newLives);
-    showAlert('success', '删除成功');
-  };
-
-  const handleAdd = () => {
-    if (!newLive.key || !newLive.name || !newLive.url) {
-      showAlert('error', '请填写完整信息');
-      return;
-    }
-    if (lives.some((l) => l.key === newLive.key)) {
-      showAlert('error', '源标识已存在');
-      return;
-    }
-    const newLives = [...lives, { ...newLive, from: 'custom', disabled: false, channelNumber: 0 }];
-    setLives(newLives);
-    saveChanges(newLives);
-    setNewLive({ key: '', name: '', url: '', ua: '', epg: '' });
-    setIsAddModalOpen(false);
-    showAlert('success', '添加成功');
-  };
-
-  return (
-    <div className='space-y-4'>
-      <div className='flex justify-between items-center'>
-        <p className='text-sm text-gray-600 dark:text-gray-400'>
-          共 {lives.length} 个直播源
-        </p>
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          className='flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors'
-        >
-          <Plus className='w-4 h-4' />
-          添加直播源
-        </button>
-      </div>
-
-      <div className='space-y-2'>
-        {lives.map((live) => (
-          <div
-            key={live.key}
-            className='flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg'
-          >
-            <Radio className='w-5 h-5 text-gray-400' />
-            <div className='flex-1 min-w-0'>
-              <span className='font-medium text-gray-900 dark:text-gray-100'>
-                {live.name}
-              </span>
-              <p className='text-xs text-gray-500 dark:text-gray-400 truncate'>
-                {live.url}
-              </p>
-            </div>
-            <button
-              onClick={() => handleToggle(live.key)}
-              className={`relative w-10 h-5 rounded-full transition-colors ${live.disabled ? 'bg-gray-300 dark:bg-gray-600' : 'bg-green-500'}`}
-            >
-              <span
-                className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${live.disabled ? 'left-0.5' : 'left-5'}`}
-              />
-            </button>
-            <button
-              onClick={() => handleDelete(live.key)}
-              className='p-1.5 text-gray-500 hover:text-red-600 dark:hover:text-red-400 transition-colors'
-            >
-              <Trash2 className='w-4 h-4' />
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {lives.length === 0 && (
-        <div className='text-center py-8 text-gray-500 dark:text-gray-400'>
-          <Radio className='w-12 h-12 mx-auto mb-3 opacity-50' />
-          <p>暂无直播源</p>
-        </div>
-      )}
-
-      {/* 添加直播源弹窗 */}
-      {isAddModalOpen && (
-        <div className='fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4'>
-          <div className='bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6'>
-            <div className='flex justify-between items-center mb-4'>
-              <h3 className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
-                添加直播源
-              </h3>
-              <button onClick={() => setIsAddModalOpen(false)}>
-                <X className='w-5 h-5 text-gray-500' />
-              </button>
-            </div>
-            <div className='space-y-4'>
-              <div>
-                <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1'>
-                  源标识 (key)
-                </label>
-                <input
-                  type='text'
-                  value={newLive.key}
-                  onChange={(e) => setNewLive({ ...newLive, key: e.target.value })}
-                  className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-                  placeholder='例如: live1'
-                />
-              </div>
-              <div>
-                <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1'>
-                  名称
-                </label>
-                <input
-                  type='text'
-                  value={newLive.name}
-                  onChange={(e) => setNewLive({ ...newLive, name: e.target.value })}
-                  className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-                  placeholder='例如: IPTV直播'
-                />
-              </div>
-              <div>
-                <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1'>
-                  M3U 地址
-                </label>
-                <input
-                  type='text'
-                  value={newLive.url}
-                  onChange={(e) => setNewLive({ ...newLive, url: e.target.value })}
-                  className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-                  placeholder='https://example.com/live.m3u'
-                />
-              </div>
-              <div>
-                <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1'>
-                  EPG 地址 (可选)
-                </label>
-                <input
-                  type='text'
-                  value={newLive.epg}
-                  onChange={(e) => setNewLive({ ...newLive, epg: e.target.value })}
-                  className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-                  placeholder='https://example.com/epg.xml'
-                />
-              </div>
-            </div>
-            <div className='flex justify-end gap-2 mt-6'>
-              <button
-                onClick={() => setIsAddModalOpen(false)}
-                className='px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors'
-              >
-                取消
-              </button>
-              <button
-                onClick={handleAdd}
-                className='px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors'
-              >
-                添加
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
 
 // 配置订阅组件
 interface ConfigSubscriptionProps {
@@ -1377,26 +1160,6 @@ const ConfigSubscription = ({ config, onSave, showAlert }: ConfigSubscriptionPro
           newConfig.CustomCategories = parsedContent.CustomCategories.map((c: any) => ({
             ...c,
             from: 'config' as const,
-          }));
-        }
-
-        // 如果解析的内容包含 LiveConfig，合并进去
-        if (parsedContent.LiveConfig && Array.isArray(parsedContent.LiveConfig)) {
-          newConfig.LiveConfig = parsedContent.LiveConfig.map((l: any) => ({
-            ...l,
-            from: 'config' as const,
-          }));
-        }
-        // 处理 lives 字段 (常见的订阅配置格式)
-        else if (parsedContent.lives && Array.isArray(parsedContent.lives)) {
-          newConfig.LiveConfig = parsedContent.lives.map((l: any) => ({
-            key: l.key || l.name?.toLowerCase().replace(/\s+/g, '_') || `live_${Date.now()}`,
-            name: l.name || '未命名直播源',
-            url: l.url,
-            ua: l.ua || '',
-            epg: l.epg || '',
-            from: 'config' as const,
-            disabled: l.disabled || false,
           }));
         }
 
@@ -1710,17 +1473,6 @@ function AdminPageContent() {
         >
           <CategoryConfig config={config} onSave={saveConfig} showAlert={showAlert} />
         </CollapsibleTab>
-
-        {/* 直播源配置 */}
-        <CollapsibleTab
-          title='直播源配置'
-          icon={<Radio className='w-5 h-5 text-red-500' />}
-          isExpanded={expandedTabs.liveSource}
-          onToggle={() => toggleTab('liveSource')}
-        >
-          <LiveConfig config={config} onSave={saveConfig} showAlert={showAlert} />
-        </CollapsibleTab>
-
       </div>
 
       {/* 弹窗 */}
