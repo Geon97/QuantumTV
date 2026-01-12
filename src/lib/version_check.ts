@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
 
 'use client';
-
+import { invoke } from '@tauri-apps/api/core';
 /**
  * 版本检测模块 - 混合策略实现
  *
@@ -23,7 +23,10 @@ export enum UpdateStatus {
   NO_UPDATE = 'no_update', // 已是最新版本
   FETCH_FAILED = 'fetch_failed', // 获取失败
 }
-
+interface FetchUrlResult {
+  status: number;
+  body: string;
+}
 // 远程版本源配置
 const UPDATE_REPO = process.env.NEXT_PUBLIC_UPDATE_REPO || 'Geon97/QuantumTV';
 const UPDATE_REF = process.env.NEXT_PUBLIC_UPDATE_REF || 'main';
@@ -224,11 +227,10 @@ async function checkViaApi(): Promise<VersionCheckResult | null> {
  */
 async function fetchRemoteTimestamp(): Promise<string | null> {
   // 检测 Tauri 环境
-  const tauri = (window as any).__TAURI__;
   const runtimeStorageType =
     (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
   const isTauriEnv =
-    runtimeStorageType === 'localstorage' && tauri?.core?.invoke;
+    runtimeStorageType === 'localstorage' && !! invoke;
 
   if (isTauriEnv) {
     // Tauri 环境：使用 invoke 绕过 CORS
@@ -239,7 +241,7 @@ async function fetchRemoteTimestamp(): Promise<string | null> {
           ? `${url}&${cacheBuster}`
           : `${url}?${cacheBuster}`;
 
-        const result = await tauri.core.invoke('fetch_url', {
+        const result = await invoke<FetchUrlResult>('fetch_url', {
           url: urlWithCache,
           method: 'GET',
         });

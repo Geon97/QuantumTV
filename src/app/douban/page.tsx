@@ -1,7 +1,7 @@
 /* eslint-disable no-console,react-hooks/exhaustive-deps,@typescript-eslint/no-explicit-any */
 
 'use client';
-
+import { invoke } from '@tauri-apps/api/core';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
@@ -19,6 +19,12 @@ import DoubanCustomSelector from '@/components/DoubanCustomSelector';
 import DoubanSelector, { SourceCategory } from '@/components/DoubanSelector';
 import PageLayout from '@/components/PageLayout';
 import VideoCard from '@/components/VideoCard';
+
+interface FetchUrlResult {
+  status: number;
+  body: string;
+}
+
 
 function DoubanPageClient() {
   const searchParams = useSearchParams();
@@ -737,14 +743,13 @@ function DoubanPageClient() {
         let data: any;
 
         // 检测 Tauri 环境
-        const tauri = (window as any).__TAURI__;
         const runtimeStorageType =
           (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-        const isTauriEnv = runtimeStorageType === 'localstorage' && tauri?.core?.invoke;
+        const isTauriEnv = runtimeStorageType === 'localstorage' && invoke;
 
         if (isTauriEnv) {
           // Tauri 环境：使用 fetch_url 命令绕过 CORS
-          const result = await tauri.core.invoke('fetch_url', {
+          const result = await invoke<FetchUrlResult>('fetch_url', {
             url: originalApiUrl,
             method: 'GET',
           });
@@ -867,14 +872,13 @@ function DoubanPageClient() {
           let data: any;
 
           // 检测 Tauri 环境
-          const tauri = (window as any).__TAURI__;
           const runtimeStorageType =
             (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-          const isTauriEnv = runtimeStorageType === 'localstorage' && tauri?.core?.invoke;
+          const isTauriEnv = runtimeStorageType === 'localstorage' && invoke;
 
           if (isTauriEnv) {
             // Tauri 环境：使用 fetch_url 命令绕过 CORS
-            const result = await tauri.core.invoke('fetch_url', {
+            const result = await invoke<FetchUrlResult>('fetch_url', {
               url: originalApiUrl,
               method: 'GET',
             });

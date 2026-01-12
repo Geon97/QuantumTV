@@ -21,6 +21,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { invoke } from '@tauri-apps/api/core';
 import {
   AlertCircle,
   AlertTriangle,
@@ -58,7 +59,7 @@ const ConfigImportExportModal = ({
   isOpen,
   onClose,
   config,
-  onImport,
+  // onImport,
 }: ConfigImportExportModalProps) => {
   const [importText, setImportText] = useState('');
   const [activeTab, setActiveTab] = useState<'import' | 'export'>('export');
@@ -1343,24 +1344,21 @@ function AdminPageContent() {
         configToUse = JSON.parse(stored);
       }
 
-      // 检查 Tauri 环境，尝试从 Tauri 后端加载
-      const tauri = (window as any).__TAURI__;
-      if (tauri?.core?.invoke) {
-        try {
-          const tauriData = await tauri.core.invoke('get_config');
-          // 如果 Tauri 后端有配置且有 SourceConfig
-          if (tauriData && tauriData.SourceConfig && tauriData.SourceConfig.length > 0) {
-            configToUse = tauriData;
-            // 同步到 localStorage
-            localStorage.setItem(LOCAL_CONFIG_KEY, JSON.stringify(tauriData));
-          } else if (configToUse) {
-            // 如果 localStorage 有配置但 Tauri 后端没有，同步到 Tauri 后端
-            await tauri.core.invoke('save_config', { config: configToUse });
-            console.log('配置已从 localStorage 同步到 Tauri 后端');
-          }
-        } catch (tauriError) {
-          console.warn('从 Tauri 后端加载配置失败:', tauriError);
+      // 从 Tauri 后端加载
+      try {
+        const tauriData = await invoke<AdminConfig>('get_config');
+        // 如果 Tauri 后端有配置且有 SourceConfig
+        if (tauriData && tauriData.SourceConfig && tauriData.SourceConfig.length > 0) {
+          configToUse = tauriData;
+          // 同步到 localStorage
+          localStorage.setItem(LOCAL_CONFIG_KEY, JSON.stringify(tauriData));
+        } else if (configToUse) {
+          // 如果 localStorage 有配置但 Tauri 后端没有，同步到 Tauri 后端
+          await invoke('save_config', { config: configToUse });
+          console.log('配置已从 localStorage 同步到 Tauri 后端');
         }
+      } catch (tauriError) {
+        console.warn('从 Tauri 后端加载配置失败:', tauriError);
       }
 
       if (configToUse) {
@@ -1386,14 +1384,11 @@ function AdminPageContent() {
       setConfig(newConfig);
 
       // 同步到 Tauri 后端
-      const tauri = (window as any).__TAURI__;
-      if (tauri?.core?.invoke) {
-        try {
-          await tauri.core.invoke('save_config', { config: newConfig });
-          console.log('配置已同步到 Tauri 后端');
-        } catch (tauriError) {
-          console.warn('同步到 Tauri 后端失败:', tauriError);
-        }
+      try {
+        await invoke('save_config', { config: newConfig });
+        console.log('配置已同步到 Tauri 后端');
+      } catch (tauriError) {
+        console.warn('同步到 Tauri 后端失败:', tauriError);
       }
     } catch (error) {
       console.error('保存配置失败:', error);

@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,no-console,no-case-declarations */
+import { invoke } from '@tauri-apps/api/core';
 
 import { DoubanItem, DoubanResult } from './types';
 
@@ -9,7 +10,10 @@ interface DoubanCategoriesParams {
   pageLimit?: number;
   pageStart?: number;
 }
-
+interface FetchUrlResult {
+  status: number;
+  body: string;
+}
 interface DoubanCategoryApiResponse {
   total: number;
   items: Array<{
@@ -54,16 +58,6 @@ interface DoubanRecommendApiResponse {
   }>;
 }
 
-/**
- * 检测是否在 Tauri 环境
- */
-function isTauriEnvironment(): boolean {
-  if (typeof window === 'undefined') return false;
-  const tauri = (window as any).__TAURI__;
-  const runtimeStorageType =
-    (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-  return runtimeStorageType === 'localstorage' && !!tauri?.core?.invoke;
-}
 
 /**
  * 带超时的 fetch 请求
@@ -82,8 +76,6 @@ async function fetchWithTimeout(
         : url;
 
   // Tauri 环境：使用 fetch_url 命令绕过 CORS
-  if (isTauriEnvironment()) {
-    const tauri = (window as any).__TAURI__;
     try {
       // 传递必要的 headers 给 Rust
       const headers: Record<string, string> = {
@@ -93,7 +85,7 @@ async function fetchWithTimeout(
         Accept: 'application/json, text/plain, */*',
       };
 
-      const result = await tauri.core.invoke('fetch_url', {
+      const result = await invoke<FetchUrlResult>('fetch_url', {
         url: finalUrl,
         method: 'GET',
         headersOpt: headers,
@@ -111,30 +103,6 @@ async function fetchWithTimeout(
     } catch (error) {
       throw new Error(`Tauri fetch_url 失败: ${(error as Error).message}`);
     }
-  }
-
-  // 浏览器环境：使用标准 fetch
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
-
-  const fetchOptions: RequestInit = {
-    signal: controller.signal,
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-      Referer: 'https://movie.douban.com/',
-      Accept: 'application/json, text/plain, */*',
-    },
-  };
-
-  try {
-    const response = await fetch(finalUrl, fetchOptions);
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    throw error;
-  }
 }
 
 function getDoubanProxyConfig(): {

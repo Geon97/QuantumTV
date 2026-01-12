@@ -1,5 +1,5 @@
 'use client';
-
+import { invoke } from '@tauri-apps/api/core';
 import { AlertCircle, CheckCircle, Download, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -41,10 +41,9 @@ export default function VersionChecker() {
 
     try {
       // 检测 Tauri 环境
-      const tauri = (window as any).__TAURI__;
       const runtimeStorageType =
         (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-      const isTauriEnv = runtimeStorageType === 'localstorage' && !!tauri?.core?.invoke;
+      const isTauriEnv = runtimeStorageType === 'localstorage' && !! invoke;
 
       if (isTauriEnv || runtimeStorageType === 'localstorage') {
         // Tauri/静态模式：使用客户端版本检查

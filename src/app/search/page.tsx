@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-explicit-any,@typescript-eslint/no-non-null-assertion,no-empty */
 'use client';
-
+import { invoke } from '@tauri-apps/api/core';
 import { ChevronUp, Search, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import React, {
@@ -549,11 +549,9 @@ function SearchPageClient() {
       }
 
       // 检测是否在 Tauri 环境 - Tauri 环境下不支持流式搜索
-      const tauri = (window as any).__TAURI__;
       const runtimeStorageType =
         (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-      const isTauriEnv =
-        runtimeStorageType === 'localstorage' && tauri?.core?.invoke;
+      const isTauriEnv = runtimeStorageType === 'localstorage' && invoke;
 
       if (currentFluidSearch && !isTauriEnv) {
         // 流式搜索：打开新的流式连接
@@ -651,15 +649,13 @@ function SearchPageClient() {
         };
       } else {
         // 传统搜索：检查是否在 Tauri 环境
-        const tauri = (window as any).__TAURI__;
         const runtimeStorageType =
           (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-        const isTauriEnv = runtimeStorageType === 'localstorage' && tauri?.core?.invoke;
+        const isTauriEnv = runtimeStorageType === 'localstorage' && invoke;
 
         if (isTauriEnv) {
           // Tauri 环境：使用 search 命令
-          tauri.core
-            .invoke('search', { query: trimmed })
+          invoke<SearchResult[]>('search', { query: trimmed })
             .then((results: SearchResult[]) => {
               if (currentQueryRef.current !== trimmed) return;
 

@@ -22,9 +22,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet,
-            commands::auth::login,
-            commands::auth::logout,
-            commands::auth::get_current_user,
             commands::config::get_config,
             commands::config::save_config,
             commands::config::reset_config,
@@ -43,6 +40,8 @@ pub fn run() {
             commands::video::fetch_url,
             commands::video::fetch_binary,
             commands::video::get_douban_data,
+            commands::version::version_for_updates,
+            commands::version_check::check_for_updates,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

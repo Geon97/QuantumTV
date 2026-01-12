@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 'use client';
-
+import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useState } from 'react';
 
 import { ApiSite } from '@/lib/config';
@@ -10,6 +10,11 @@ export interface SourceCategory {
   type_id: string | number;
   type_name: string;
   type_pid?: string | number;
+}
+
+interface FetchUrlResult {
+  status: number;
+  body: string;
 }
 
 // 源分类响应
@@ -144,16 +149,15 @@ export function useSourceFilter(): UseSourceFilterReturn {
           : `${source.api}/?ac=class`;
 
         // 检测 Tauri 环境
-        const tauri = (window as any).__TAURI__;
         const runtimeStorageType =
           (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-        const isTauriEnv = runtimeStorageType === 'localstorage' && tauri?.core?.invoke;
+        const isTauriEnv = runtimeStorageType === 'localstorage' && invoke;
 
         let data: SourceCategoryResponse;
 
         if (isTauriEnv) {
           // Tauri 环境：使用 fetch_url 命令
-          const result = await tauri.core.invoke('fetch_url', {
+          const result = await invoke<FetchUrlResult>('fetch_url', {
             url: apiUrl,
             method: 'GET',
           });

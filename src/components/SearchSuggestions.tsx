@@ -1,5 +1,5 @@
 'use client';
-
+import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface SearchSuggestionsProps {
@@ -33,16 +33,14 @@ export default function SearchSuggestions({
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const fetchSuggestionsFromAPI = useCallback(async (searchQuery: string) => {
-    // 检测 Tauri 环境
-    const tauri = (window as any).__TAURI__;
     const runtimeStorageType =
       (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-    const isTauriEnv = runtimeStorageType === 'localstorage' && tauri?.core?.invoke;
+    const isTauriEnv = runtimeStorageType === 'localstorage' && invoke;
 
     if (isTauriEnv) {
       // Tauri 环境：使用 get_search_suggestions 命令
       try {
-        const suggestions = await tauri.core.invoke('get_search_suggestions', {
+        const suggestions = await invoke('get_search_suggestions', {
           query: searchQuery,
         });
         if (Array.isArray(suggestions)) {

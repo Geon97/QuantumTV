@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps, no-console, @next/next/no-img-element */
 
 'use client';
-
+import { invoke } from '@tauri-apps/api/core';
 import Artplayer from 'artplayer';
 import Hls from 'hls.js';
 import { Heart } from 'lucide-react';
@@ -741,16 +741,15 @@ function PlayPageClient() {
     ): Promise<SearchResult[]> => {
       try {
         // 检测 Tauri 环境
-        const tauri = (window as any).__TAURI__;
         const runtimeStorageType =
           (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-        const isTauriEnv = runtimeStorageType === 'localstorage' && tauri?.core?.invoke;
+        const isTauriEnv = runtimeStorageType === 'localstorage' && invoke;
 
         let detailData: SearchResult;
 
         if (isTauriEnv) {
           // Tauri 环境：使用 get_video_detail 命令
-          detailData = await tauri.core.invoke('get_video_detail', {
+          detailData = await invoke('get_video_detail', {
             source,
             id,
           });
@@ -781,16 +780,15 @@ function PlayPageClient() {
       // 根据搜索词获取全部源信息
       try {
         // 检测 Tauri 环境
-        const tauri = (window as any).__TAURI__;
         const runtimeStorageType =
           (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-        const isTauriEnv = runtimeStorageType === 'localstorage' && tauri?.core?.invoke;
+        const isTauriEnv = runtimeStorageType === 'localstorage' && invoke;
 
         let allResults: SearchResult[];
 
         if (isTauriEnv) {
           // Tauri 环境：使用 search 命令
-          allResults = await tauri.core.invoke('search', {
+          allResults = await invoke('search', {
             query: query.trim(),
           });
         } else if (runtimeStorageType !== 'localstorage') {
