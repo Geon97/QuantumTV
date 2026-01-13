@@ -23,9 +23,11 @@ pub struct RemoteVersionInfo {
 }
 
 fn get_build_timestamp() -> Result<String, Box<dyn std::error::Error>> {
-    let file_path = "../VERSION.txt";
-    let timestamp = std::fs::read_to_string(file_path)?;
-    Ok(timestamp.trim().to_string())
+    println!(
+        "cargo:rustc-env=BUILD_TIMESTAMP={}",
+        env!("BUILD_TIMESTAMP").to_string()
+    );
+    Ok(env!("BUILD_TIMESTAMP").to_string())
 }
 
 fn get_current_version_inner() -> Result<String, Box<dyn std::error::Error>> {

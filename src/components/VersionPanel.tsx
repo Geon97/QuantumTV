@@ -37,7 +37,7 @@ async function getCurrentVersion(): Promise<string> {
     return await invoke('get_current_version');
   } catch (error) {
     console.warn('获取当前版本失败:', error);
-    return '0.1.0'; // 默认版本
+    return '0.0.0'; // 默认版本
   }
 }
 
@@ -75,7 +75,7 @@ export const VersionPanel: React.FC<VersionPanelProps> = ({
 }) => {
   const [mounted, setMounted] = useState(false);
   const [hasUpdate, setIsHasUpdate] = useState(false);
-  const [currentVersion, setCurrentVersion] = useState<string>('0.1.0');
+  const [currentVersion, setCurrentVersion] = useState<string>('0.0.0');
   const [latestVersion, setLatestVersion] = useState<string>('');
   const [versionCheckResult, setVersionCheckResult] = useState<VersionCheckResult | null>(null);
   const [remoteVersionInfo, setRemoteVersionInfo] = useState<RemoteVersionInfo | null>(null);
