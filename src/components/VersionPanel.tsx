@@ -13,7 +13,7 @@ import {
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { UpdateStatus } from '@/components/UserMenu';
+import { UpdateStatus } from '@/lib/types';
 interface VersionCheckResult {
   status: UpdateStatus;
   local_timestamp?: string;

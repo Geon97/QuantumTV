@@ -16,15 +16,9 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { VersionPanel } from './VersionPanel';
+import { UpdateStatus } from '@/lib/types';
 
-// 本地定义版本状态枚举，不再从外部导入
-export enum UpdateStatus {
-  CHECKING = 'Checking',
-  HAS_UPDATE = 'HasUpdate',
-  NO_UPDATE = 'NoUpdate',
-  FETCH_FAILED = 'FetchFailed',
-}
+import { VersionPanel } from './VersionPanel';
 
 // 本地定义 VersionCheckResult 类型
 interface VersionCheckResult {

@@ -122,3 +122,11 @@ export interface SkipConfig {
   intro_time: number; // 片头时间（秒）
   outro_time: number; // 片尾时间（秒）
 }
+
+// 本地定义版本状态枚举，不再从外部导入
+export enum UpdateStatus {
+  CHECKING = 'Checking',
+  HAS_UPDATE = 'HasUpdate',
+  NO_UPDATE = 'NoUpdate',
+  FETCH_FAILED = 'FetchFailed',
+}
