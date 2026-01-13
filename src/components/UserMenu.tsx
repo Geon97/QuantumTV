@@ -2,6 +2,7 @@
 
 'use client';
 
+import { invoke } from '@tauri-apps/api/core';
 import {
   Check,
   ChevronDown,
@@ -15,10 +16,50 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { CURRENT_VERSION } from '@/lib/version';
-import { checkForUpdates, UpdateStatus } from '@/lib/version_check';
-
 import { VersionPanel } from './VersionPanel';
+
+// 本地定义版本状态枚举，不再从外部导入
+export enum UpdateStatus {
+  CHECKING = 'Checking',
+  HAS_UPDATE = 'HasUpdate',
+  NO_UPDATE = 'NoUpdate',
+  FETCH_FAILED = 'FetchFailed',
+}
+
+// 本地定义 VersionCheckResult 类型
+interface VersionCheckResult {
+  status: UpdateStatus;
+  local_timestamp?: string;
+  remote_timestamp?: string;
+  formatted_local_time?: string;
+  formatted_remote_time?: string;
+  error?: string;
+}
+
+// 获取当前版本
+async function getCurrentVersion(): Promise<string> {
+  // 调用 Rust 后端的 get_current_version 函数
+  try {
+    return await invoke('get_current_version');
+  } catch (error) {
+    console.warn('获取当前版本失败:', error);
+    return '0.0.0'; // 默认版本
+  }
+}
+
+// 检查更新
+async function checkForUpdates(): Promise<VersionCheckResult> {
+  try {
+    // 调用 Rust 后端的 check_for_updates 函数
+    return await invoke('check_for_updates');
+  } catch (error) {
+    console.warn('版本检查失败:', error);
+    return {
+      status: UpdateStatus.FETCH_FAILED,
+      error: error instanceof Error ? error.message : '未知错误',
+    };
+  }
+}
 
 export const UserMenu: React.FC = () => {
   const router = useRouter();
@@ -26,6 +67,9 @@ export const UserMenu: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isVersionPanelOpen, setIsVersionPanelOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+
+  // 当前版本状态
+  const [currentVersion, setCurrentVersion] = useState<string>('0.0.0');
 
   // Body 滚动锁定 - 使用 overflow 方式避免布局问题
   useEffect(() => {
@@ -120,7 +164,7 @@ export const UserMenu: React.FC = () => {
   // 版本检查相关状态
   const [updateStatus, setUpdateStatus] = useState<{
     status: UpdateStatus;
-    currentTimestamp?: string;
+    localTimestamp?: string;
     remoteTimestamp?: string;
   } | null>(null);
   const [isChecking, setIsChecking] = useState(true);
@@ -214,12 +258,30 @@ export const UserMenu: React.FC = () => {
     }
   }, []);
 
+  // 获取当前版本
+  useEffect(() => {
+    const getVersion = async () => {
+      try {
+        const version = await getCurrentVersion();
+        setCurrentVersion(version);
+      } catch (error) {
+        console.warn('获取当前版本失败:', error);
+      }
+    };
+
+    getVersion();
+  }, []);
+
   // 版本检查
   useEffect(() => {
     const checkUpdate = async () => {
       try {
-        const status = await checkForUpdates();
-        setUpdateStatus(status);
+        const result = await checkForUpdates();
+        setUpdateStatus({
+          status: result.status,
+          localTimestamp: result.local_timestamp,
+          remoteTimestamp: result.remote_timestamp,
+        });
       } catch (error) {
         console.warn('版本检查失败:', error);
       } finally {
@@ -451,7 +513,7 @@ export const UserMenu: React.FC = () => {
             className='w-full px-3 py-2 text-center flex items-center justify-center text-slate-600 dark:text-gray-400 hover:bg-slate-50 dark:hover:bg-gray-800/50 transition-colors text-xs'
           >
             <div className='flex items-center gap-1'>
-              <span className='font-mono'>v{CURRENT_VERSION}</span>
+              <span className='font-mono'>v{currentVersion}</span>
               {!isChecking &&
                 updateStatus &&
                 updateStatus.status !== UpdateStatus.FETCH_FAILED && (
@@ -914,10 +976,9 @@ export const UserMenu: React.FC = () => {
                       <div className='flex-1 min-w-0'>
                         <div className='flex items-center gap-2'>
                           <span
-                            className={`font-medium transition-colors duration-300 ${
-                              isSelected
-                                ? colors.label
-                                : 'text-gray-900 dark:text-gray-100'
+                            className={`font-medium transition-colors duration-300 ${isSelected
+                              ? colors.label
+                              : 'text-gray-900 dark:text-gray-100'
                             }`}
                           >
                             {option.label}

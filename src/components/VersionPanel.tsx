@@ -1,7 +1,8 @@
-/* eslint-disable no-console,react-hooks/exhaustive-deps */
+/* eslint-disable no-console */
 
 'use client';
 
+import { invoke } from '@tauri-apps/api/core';
 import {
   CheckCircle,
   Download,
@@ -12,25 +13,60 @@ import {
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { CURRENT_VERSION } from '@/lib/version';
-import {
-  checkForUpdates,
-  UpdateStatus,
-  VersionCheckResult,
-} from '@/lib/version_check';
-// 版本面板组件
+import { UpdateStatus } from '@/components/UserMenu';
+interface VersionCheckResult {
+  status: UpdateStatus;
+  local_timestamp?: string;
+  remote_timestamp?: string;
+  formatted_local_time?: string;
+  formatted_remote_time?: string;
+  error?: string;
+}
 
+interface RemoteVersionInfo {
+  version: string;
+  timestamp: string;
+  build_time: string;
+  release_notes: string[];
+  download_url: string;
+}
+
+// 获取当前版本
+async function getCurrentVersion(): Promise<string> {
+  try {
+    return await invoke('get_current_version');
+  } catch (error) {
+    console.warn('获取当前版本失败:', error);
+    return '0.1.0'; // 默认版本
+  }
+}
+
+// 检查更新
+async function checkForUpdates(): Promise<VersionCheckResult> {
+  try {
+    return await invoke('check_for_updates');
+  } catch (error) {
+    console.warn('版本检查失败:', error);
+    return {
+      status: UpdateStatus.FETCH_FAILED,
+      error: error instanceof Error ? error.message : '未知错误',
+    };
+  }
+}
+// 获取版本详细信息
+async function getVersionForUpdate(): Promise<RemoteVersionInfo | null> {
+  try {
+    return await invoke('version_for_updates');
+  } catch (error) {
+    console.warn('获取版本更新信息失败:', error);
+    return null;
+  }
+}
+
+// 版本面板组件
 interface VersionPanelProps {
   isOpen: boolean;
   onClose: () => void;
-}
-
-interface RemoteChangelogEntry {
-  version: string;
-  date: string;
-  added: string[];
-  changed: string[];
-  fixed: string[];
 }
 
 export const VersionPanel: React.FC<VersionPanelProps> = ({
@@ -39,19 +75,31 @@ export const VersionPanel: React.FC<VersionPanelProps> = ({
 }) => {
   const [mounted, setMounted] = useState(false);
   const [hasUpdate, setIsHasUpdate] = useState(false);
+  const [currentVersion, setCurrentVersion] = useState<string>('0.1.0');
   const [latestVersion, setLatestVersion] = useState<string>('');
-  const [versionCheckResult, setVersionCheckResult] =
-    useState<VersionCheckResult | null>(null);
+  const [versionCheckResult, setVersionCheckResult] = useState<VersionCheckResult | null>(null);
+  const [remoteVersionInfo, setRemoteVersionInfo] = useState<RemoteVersionInfo | null>(null);
   const [isCheckingVersion, setIsCheckingVersion] = useState(false);
-  const UPDATE_REPO =
-    process.env.NEXT_PUBLIC_UPDATE_REPO || 'Geon97/QuantumTV';
-  const REPO_URL =
-    process.env.NEXT_PUBLIC_REPO_URL || `https://github.com/${UPDATE_REPO}`;
+  const UPDATE_REPO = process.env.NEXT_PUBLIC_UPDATE_REPO || 'Geon97/QuantumTV';
+  const REPO_URL = process.env.NEXT_PUBLIC_REPO_URL || `https://github.com/${UPDATE_REPO}`;
 
   // 确保组件已挂载
   useEffect(() => {
     setMounted(true);
     return () => setMounted(false);
+  }, []);
+
+  // 获取当前版本
+  useEffect(() => {
+    const fetchCurrentVersion = async () => {
+      try {
+        const version = await getCurrentVersion();
+        setCurrentVersion(version);
+      } catch (err) {
+        console.warn('获取当前版本失败:', err);
+      }
+    };
+    fetchCurrentVersion();
   }, []);
 
   // Body 滚动锁定 - 使用 overflow 方式避免布局问题
@@ -75,137 +123,41 @@ export const VersionPanel: React.FC<VersionPanelProps> = ({
       };
     }
   }, [isOpen]);
-
-  // 获取远程变更日志
   useEffect(() => {
     if (isOpen) {
-      fetchRemoteChangelog();
       doVersionCheck();
     }
   }, [isOpen]);
 
   // 执行版本检测
   const doVersionCheck = async () => {
-    setIsCheckingVersion(true);
-    try {
-      const result = await checkForUpdates();
-      setVersionCheckResult(result);
-      setIsHasUpdate(result.status === UpdateStatus.HAS_UPDATE);
-    } catch (error) {
-      console.error('版本检测失败:', error);
-    } finally {
-      setIsCheckingVersion(false);
-    }
-  };
-
-  // 获取远程变更日志
-  const fetchRemoteChangelog = async () => {
-    try {
-      if (!UPDATE_REPO) return;
-
-      // 尝试多个镜像源
-      const urls = [
-        `https://raw.githubusercontent.com/${UPDATE_REPO}/main/CHANGELOG`,
-        `https://cdn.jsdelivr.net/gh/${UPDATE_REPO}@main/CHANGELOG`,
-        `https://fastly.jsdelivr.net/gh/${UPDATE_REPO}@main/CHANGELOG`,
-      ];
-
-      let content = '';
-      for (const url of urls) {
-        try {
-          const response = await fetch(`${url}?_t=${Date.now()}`, {
-            cache: 'no-store',
-          });
-          if (response.ok) {
-            content = await response.text();
-            break;
-          }
-        } catch {
-          continue;
-        }
+     console.log('🔍 开始执行 doVersionCheck');
+  setIsCheckingVersion(true);
+  try {
+    const result = await checkForUpdates();
+    console.log('✅ checkForUpdates 成功返回:', result);
+    
+    setVersionCheckResult(result);
+    
+    const hasUpdate = result.status === UpdateStatus.HAS_UPDATE;
+    setIsHasUpdate(hasUpdate);
+    
+    // 如果有更新，获取详细版本信息
+    if (hasUpdate) {
+      const versionInfo = await getVersionForUpdate();
+      setRemoteVersionInfo(versionInfo);
+      if (versionInfo?.version) {
+        setLatestVersion(versionInfo.version);
       }
-
-      if (content) {
-        const parsed = parseChangelog(content);
-
-        // 设置最新版本号
-        if (parsed.length > 0) {
-          setLatestVersion(parsed[0].version);
-        }
-      }
-    } catch (error) {
-      console.error('获取远程变更日志失败:', error);
+    } else {
+      console.log('👍 已是最新版本或无更新');
     }
-  };
-
-  // 解析变更日志格式
-  const parseChangelog = (content: string): RemoteChangelogEntry[] => {
-    const lines = content.split('\n');
-    const versions: RemoteChangelogEntry[] = [];
-    let currentVersion: RemoteChangelogEntry | null = null;
-    let currentSection: string | null = null;
-    let inVersionContent = false;
-
-    for (const line of lines) {
-      const trimmedLine = line.trim();
-
-      // 匹配版本行: ## [X.Y.Z] - YYYY-MM-DD
-      const versionMatch = trimmedLine.match(
-        /^## \[([\d.]+)\] - (\d{4}-\d{2}-\d{2})$/,
-      );
-      if (versionMatch) {
-        if (currentVersion) {
-          versions.push(currentVersion);
-        }
-
-        currentVersion = {
-          version: versionMatch[1],
-          date: versionMatch[2],
-          added: [],
-          changed: [],
-          fixed: [],
-        };
-        currentSection = null;
-        inVersionContent = true;
-        continue;
-      }
-
-      // 如果遇到下一个版本或到达文件末尾，停止处理当前版本
-      if (inVersionContent && currentVersion) {
-        // 匹配章节标题
-        if (trimmedLine === '### Added') {
-          currentSection = 'added';
-          continue;
-        } else if (trimmedLine === '### Changed') {
-          currentSection = 'changed';
-          continue;
-        } else if (trimmedLine === '### Fixed') {
-          currentSection = 'fixed';
-          continue;
-        }
-
-        // 匹配条目: - 内容
-        if (trimmedLine.startsWith('- ') && currentSection) {
-          const entry = trimmedLine.substring(2);
-          if (currentSection === 'added') {
-            currentVersion.added.push(entry);
-          } else if (currentSection === 'changed') {
-            currentVersion.changed.push(entry);
-          } else if (currentSection === 'fixed') {
-            currentVersion.fixed.push(entry);
-          }
-        }
-      }
-    }
-
-    // 添加最后一个版本
-    if (currentVersion) {
-      versions.push(currentVersion);
-    }
-
-    return versions;
-  };
-
+  } catch (error) {
+    console.error('错误详情:', error instanceof Error ? error.stack : error);
+  } finally {
+    setIsCheckingVersion(false);
+  }
+};
 
   // 版本面板内容
   const versionPanelContent = (
@@ -246,7 +198,7 @@ export const VersionPanel: React.FC<VersionPanelProps> = ({
             </h3>
             <div className='flex flex-wrap items-center gap-1 sm:gap-2'>
               <span className='px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 rounded-full'>
-                v{CURRENT_VERSION}
+                v{currentVersion}
               </span>
               {hasUpdate && (
                 <span className='px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 rounded-full flex items-center gap-1'>
@@ -286,7 +238,7 @@ export const VersionPanel: React.FC<VersionPanelProps> = ({
             )}
 
             {/* 远程更新信息 - 有新版本 */}
-            {!isCheckingVersion && hasUpdate && (
+            {!isCheckingVersion && hasUpdate && remoteVersionInfo && (
               <div className='bg-linear-to-r from-yellow-50 to-amber-50 dark:from-yellow-900/20 dark:to-amber-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 sm:p-4'>
                 <div className='flex flex-col gap-3'>
                   <div className='flex items-center gap-2 sm:gap-3'>
@@ -303,23 +255,23 @@ export const VersionPanel: React.FC<VersionPanelProps> = ({
                         发现新版本
                       </h4>
                       <p className='text-xs sm:text-sm text-yellow-700 dark:text-yellow-300 break-all'>
-                        v{CURRENT_VERSION} → v{latestVersion}
+                        v{currentVersion} → v{remoteVersionInfo.version}
                       </p>
-                      {versionCheckResult?.formattedRemoteTime && (
+                      {remoteVersionInfo.build_time && (
                         <p className='text-xs text-yellow-600 dark:text-yellow-400 mt-1'>
-                          发布时间: {versionCheckResult.formattedRemoteTime}
+                          发布时间: {remoteVersionInfo.build_time}
                         </p>
                       )}
                     </div>
                   </div>
                   <a
-                    href={REPO_URL || '#'}
+                    href={remoteVersionInfo.download_url || REPO_URL}
                     target='_blank'
                     rel='noopener noreferrer'
                     className='inline-flex items-center justify-center gap-2 px-3 py-2 bg-yellow-600 hover:bg-yellow-700 text-white text-xs sm:text-sm rounded-lg transition-colors shadow-sm w-full'
                   >
                     <Download className='w-3 h-3 sm:w-4 sm:h-4' />
-                    前往仓库
+                    前往更新
                   </a>
                 </div>
               </div>
@@ -345,11 +297,11 @@ export const VersionPanel: React.FC<VersionPanelProps> = ({
                           当前为最新版本
                         </h4>
                         <p className='text-xs sm:text-sm text-green-700 dark:text-green-300 break-all'>
-                          已是最新版本 v{CURRENT_VERSION}
+                          已是最新版本 v{currentVersion}
                         </p>
-                        {versionCheckResult?.formattedLocalTime && (
+                        {versionCheckResult?.formatted_local_time && (
                           <p className='text-xs text-green-600 dark:text-green-400 mt-1'>
-                            构建时间: {versionCheckResult.formattedLocalTime}
+                            构建时间: {versionCheckResult.formatted_local_time}
                           </p>
                         )}
                       </div>

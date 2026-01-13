@@ -40,6 +40,7 @@ pub fn run() {
             commands::video::fetch_url,
             commands::video::fetch_binary,
             commands::video::get_douban_data,
+            commands::version::get_current_version,
             commands::version::version_for_updates,
             commands::version_check::check_for_updates,
         ])
