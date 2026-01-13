@@ -1,7 +1,5 @@
 use reqwest::Client;
 use serde::Serialize;
-use serde_json::Value;
-use std::fs;
 use std::time::Duration;
 
 const VERSION_SOURCE_URLS: [&str; 4] = [
@@ -13,6 +11,10 @@ const VERSION_SOURCE_URLS: [&str; 4] = [
 
 const RELEASE_URL: &str = "https://github.com/Geon97/QuantumTV/releases";
 
+// 编译时嵌入的版本信息
+const BUILD_TIMESTAMP: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../VERSION.txt"));
+const APP_VERSION: &str = env!("APP_VERSION");
+
 #[derive(Serialize)]
 pub struct RemoteVersionInfo {
     pub version: String,
@@ -22,23 +24,12 @@ pub struct RemoteVersionInfo {
     pub download_url: String,
 }
 
-fn get_build_timestamp() -> Result<String, Box<dyn std::error::Error>> {
-    println!(
-        "cargo:rustc-env=BUILD_TIMESTAMP={}",
-        env!("BUILD_TIMESTAMP").to_string()
-    );
-    Ok(env!("BUILD_TIMESTAMP").to_string())
+fn get_build_timestamp() -> String {
+    BUILD_TIMESTAMP.trim().to_string()
 }
 
-fn get_current_version_inner() -> Result<String, Box<dyn std::error::Error>> {
-    let file_path = "./tauri.conf.json";
-    let json_string = fs::read_to_string(file_path)?;
-    let json: Value = serde_json::from_str(&json_string)?;
-    let version = json
-        .get("version")
-        .and_then(|v| v.as_str())
-        .ok_or("version not found or not a string")?;
-    Ok(version.to_string())
+fn get_app_version() -> String {
+    APP_VERSION.to_string()
 }
 fn is_valid_timestamp(ts: &str) -> bool {
     ts.len() == 14 && ts.chars().all(|c| c.is_ascii_digit())
@@ -87,13 +78,13 @@ async fn fetch_remote_timestamp(client: &Client) -> Option<String> {
     None
 }
 #[tauri::command]
-pub fn get_current_version() -> Result<String, String> {
-    get_current_version_inner().map_err(|e| e.to_string())
+pub fn get_current_version() -> String {
+    get_app_version()
 }
 
 #[tauri::command]
 pub async fn version_for_updates() -> Result<Option<RemoteVersionInfo>, ()> {
-    let local_ts = get_build_timestamp().map_err(|_| ())?;
+    let local_ts = get_build_timestamp();
 
     let client = Client::builder()
         .timeout(Duration::from_secs(5))
@@ -113,7 +104,7 @@ pub async fn version_for_updates() -> Result<Option<RemoteVersionInfo>, ()> {
         return Ok(None);
     }
 
-    let display_version = format!("{}", get_current_version_inner().map_err(|_| ())?);
+    let display_version = get_current_version();
 
     Ok(Some(RemoteVersionInfo {
         version: display_version.clone(),
@@ -148,14 +139,14 @@ mod tests {
     }
     #[test]
     fn test_get_current_version() {
-        let version = get_current_version_inner().expect("get_current_version_inner failed");
+        let version = get_current_version();
         println!("version: {}", version);
         assert!(!version.is_empty());
     }
 
     #[test]
     fn test_get_build_timestamp() {
-        let ts = get_build_timestamp().expect("get_build_timestamp failed");
+        let ts = get_build_timestamp();
         println!("timestamp: {}", ts);
         assert_eq!(ts.len(), 14);
         assert!(ts.chars().all(|c| c.is_ascii_digit()));

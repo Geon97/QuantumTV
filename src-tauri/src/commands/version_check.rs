@@ -29,6 +29,9 @@ const REMOTE_VERSION_URLS: &[&str] = &[
     "https://mirror.ghproxy.com/https://raw.githubusercontent.com/Geon97/QuantumTV/main/VERSION.txt",
 ];
 
+// 编译时嵌入本地版本时间戳
+const BUILD_TIMESTAMP: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../VERSION.txt"));
+
 // 工具：格式化时间戳 YYYYMMDDHHMMSS -> 可读字符串
 fn format_timestamp(ts: &str) -> Option<String> {
     if ts.len() != 14 || !ts.chars().all(|c| c.is_ascii_digit()) {
@@ -51,6 +54,10 @@ fn compare_timestamps(local: &str, remote: &str) -> i8 {
         Ordering::Less => -1,
         Ordering::Equal => 0,
     }
+}
+
+fn get_local_timestamp() -> String {
+    BUILD_TIMESTAMP.trim().to_string()
 }
 
 async fn fetch_url_with_timeout(
@@ -82,39 +89,15 @@ async fn fetch_remote_timestamp(client: &Client) -> Option<String> {
     None
 }
 
-async fn fetch_local_timestamp() -> Option<String> {
-    let paths = [
-        "VERSION.txt",
-        "./VERSION.txt",
-        "../VERSION.txt",
-        "../../VERSION.txt",
-    ];
-    for path in &paths {
-        if let Ok(contents) = tokio::fs::read_to_string(path).await {
-            let trimmed = contents.trim();
-            if trimmed.len() == 14 && trimmed.chars().all(|c| c.is_ascii_digit()) {
-                return Some(trimmed.to_string());
-            }
-        }
-    }
-    None
-}
-// 主版本检测函数，缓存单例
+// 主版本检测函数
 #[tauri::command]
 pub async fn check_for_updates() -> VersionCheckResult {
     let client = Client::builder()
         .user_agent("QuantumTV-VersionCheck")
         .build()
         .unwrap();
-    let local_ts = fetch_local_timestamp().await;
-    if local_ts.is_none() {
-        return VersionCheckResult {
-            status: UpdateStatus::FetchFailed,
-            error: Some("无法获取本地版本时间戳".into()),
-            ..Default::default()
-        };
-    }
-    let local_ts = local_ts.unwrap();
+
+    let local_ts = get_local_timestamp();
 
     let remote_ts = fetch_remote_timestamp(&client).await;
 
@@ -127,15 +110,18 @@ pub async fn check_for_updates() -> VersionCheckResult {
         UpdateStatus::FetchFailed
     };
 
-    let result = VersionCheckResult {
+    VersionCheckResult {
         status,
         local_timestamp: Some(local_ts.clone()),
         remote_timestamp: remote_ts.clone(),
         formatted_local_time: format_timestamp(&local_ts),
         formatted_remote_time: remote_ts.as_deref().and_then(format_timestamp),
-        error: None,
-    };
-    result
+        error: if remote_ts.is_none() {
+            Some("无法获取远程版本信息".into())
+        } else {
+            None
+        },
+    }
 }
 
 // 为方便 Default，实现（部分字段可空）
