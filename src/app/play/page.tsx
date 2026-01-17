@@ -738,33 +738,14 @@ function PlayPageClient() {
       id: string,
     ): Promise<SearchResult[]> => {
       try {
-        // 检测 Tauri 环境
-        const runtimeStorageType =
-          (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-        const isTauriEnv = runtimeStorageType === 'localstorage' && invoke;
-
+        // Tauri 环境
         let detailData: SearchResult;
 
-        if (isTauriEnv) {
-          // Tauri 环境：使用 get_video_detail 命令
-          detailData = await invoke('get_video_detail', {
-            source,
-            id,
-          });
-        } else if (runtimeStorageType !== 'localstorage') {
-          // 云端模式：使用 API
-          const detailResponse = await fetch(
-            `/api/detail?source=${source}&id=${id}`,
-          );
-          if (!detailResponse.ok) {
-            throw new Error('获取视频详情失败');
-          }
-          detailData = (await detailResponse.json()) as SearchResult;
-        } else {
-          // localstorage 模式但 Tauri 未就绪
-          throw new Error('请通过 Tauri 应用访问此功能');
-        }
-
+        // Tauri 环境：使用 get_video_detail 命令
+        detailData = await invoke('get_video_detail', {
+          source,
+          id,
+        });
         setAvailableSources([detailData]);
         return [detailData];
       } catch (err) {
@@ -777,32 +758,12 @@ function PlayPageClient() {
     const fetchSourcesData = async (query: string): Promise<SearchResult[]> => {
       // 根据搜索词获取全部源信息
       try {
-        // 检测 Tauri 环境
-        const runtimeStorageType =
-          (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-        const isTauriEnv = runtimeStorageType === 'localstorage' && invoke;
-
         let allResults: SearchResult[];
 
-        if (isTauriEnv) {
-          // Tauri 环境：使用 search 命令
-          allResults = await invoke('search', {
-            query: query.trim(),
-          });
-        } else if (runtimeStorageType !== 'localstorage') {
-          // 云端模式：使用 API
-          const response = await fetch(
-            `/api/search?q=${encodeURIComponent(query.trim())}`,
-          );
-          if (!response.ok) {
-            throw new Error('搜索失败');
-          }
-          const data = await response.json();
-          allResults = data.results || [];
-        } else {
-          // localstorage 模式但 Tauri 未就绪
-          throw new Error('请通过 Tauri 应用访问此功能');
-        }
+        // Tauri 环境：使用 search 命令
+        allResults = await invoke('search', {
+          query: query.trim(),
+        });
 
         // 处理搜索结果，根据规则过滤
         const results = allResults.filter(

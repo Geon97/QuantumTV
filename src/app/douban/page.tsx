@@ -742,45 +742,15 @@ function DoubanPageClient() {
 
         let data: any;
 
-        // 检测 Tauri 环境
-        const runtimeStorageType =
-          (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-        const isTauriEnv = runtimeStorageType === 'localstorage' && invoke;
-
-        if (isTauriEnv) {
-          // Tauri 环境：使用 fetch_url 命令绕过 CORS
-          const result = await invoke<FetchUrlResult>('fetch_url', {
-            url: originalApiUrl,
-            method: 'GET',
-          });
-          if (result.status !== 200) {
-            throw new Error('获取分类数据失败');
-          }
-          data = JSON.parse(result.body);
-        } else if (runtimeStorageType !== 'localstorage') {
-          // 云端模式：使用代理
-          const isExternalUrl =
-            originalApiUrl.startsWith('http://') ||
-            originalApiUrl.startsWith('https://');
-          const proxyUrl = `/api/proxy/cms?url=${encodeURIComponent(originalApiUrl)}`;
-          const fetchUrl = isExternalUrl ? proxyUrl : originalApiUrl;
-
-          const response = await fetch(fetchUrl, {
-            headers: {
-              Accept: 'application/json',
-            },
-          });
-
-          if (!response.ok) {
-            throw new Error('获取分类数据失败');
-          }
-
-          data = await response.json();
-        } else {
-          // localstorage 模式但 Tauri 未就绪，等待或提示
-          console.warn('Tauri 环境未就绪，无法获取外部数据');
-          throw new Error('请通过 Tauri 应用访问此功能');
+        // Tauri 环境：使用 fetch_url 命令绕过 CORS
+        const result = await invoke<FetchUrlResult>('fetch_url', {
+          url: originalApiUrl,
+          method: 'GET',
+        });
+        if (result.status !== 200) {
+          throw new Error('获取分类数据失败');
         }
+        data = JSON.parse(result.body);
         const items = data.list || [];
 
         // 转换为 DoubanItem 格式
@@ -871,47 +841,15 @@ function DoubanPageClient() {
 
           let data: any;
 
-          // 检测 Tauri 环境
-          const runtimeStorageType =
-            (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-          const isTauriEnv = runtimeStorageType === 'localstorage' && invoke;
-
-          if (isTauriEnv) {
-            // Tauri 环境：使用 fetch_url 命令绕过 CORS
-            const result = await invoke<FetchUrlResult>('fetch_url', {
-              url: originalApiUrl,
-              method: 'GET',
-            });
-            if (result.status !== 200) {
-              throw new Error(`获取分类列表失败: ${result.status}`);
-            }
-            data = JSON.parse(result.body);
-          } else if (runtimeStorageType !== 'localstorage') {
-            // 云端模式：使用代理
-            const isExternalUrl =
-              originalApiUrl.startsWith('http://') ||
-              originalApiUrl.startsWith('https://');
-            const proxyUrl = `/api/proxy/cms?url=${encodeURIComponent(originalApiUrl)}`;
-            const fetchUrl = isExternalUrl ? proxyUrl : originalApiUrl;
-            const response = await fetch(fetchUrl, {
-              headers: {
-                Accept: 'application/json',
-              },
-            });
-
-
-            if (!response.ok) {
-              const errorText = await response.text().catch(() => '');
-              console.error('🔥 [Debug] Response error:', errorText);
-              throw new Error(`获取分类列表失败: ${response.status}`);
-            }
-
-            data = await response.json();
-          } else {
-            // localstorage 模式但 Tauri 未就绪
-            console.warn('🔥 [Debug] Tauri 环境未就绪，无法获取外部数据');
-            throw new Error('请通过 Tauri 应用访问此功能');
+          // Tauri 环境：使用 fetch_url 命令绕过 CORS
+          const result = await invoke<FetchUrlResult>('fetch_url', {
+            url: originalApiUrl,
+            method: 'GET',
+          });
+          if (result.status !== 200) {
+            throw new Error(`获取分类列表失败: ${result.status}`);
           }
+          data = JSON.parse(result.body);
 
           const allCategories: SourceCategory[] = data.class || [];
 

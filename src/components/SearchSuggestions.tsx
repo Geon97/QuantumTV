@@ -7,7 +7,7 @@ interface SearchSuggestionsProps {
   isVisible: boolean;
   onSelect: (suggestion: string) => void;
   onClose: () => void;
-  onEnterKey: () => void; // 新增：处理回车键的回调
+  onEnterKey: () => void; // 处理回车键的回调
 }
 
 interface SuggestionItem {
@@ -29,77 +29,22 @@ export default function SearchSuggestions({
   // 防抖定时器
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 用于中止旧请求
-  const abortControllerRef = useRef<AbortController | null>(null);
-
   const fetchSuggestionsFromAPI = useCallback(async (searchQuery: string) => {
-    const runtimeStorageType =
-      (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-    const isTauriEnv = runtimeStorageType === 'localstorage' && invoke;
-
-    if (isTauriEnv) {
-      // Tauri 环境：使用 get_search_suggestions 命令
-      try {
-        const suggestions = await invoke('get_search_suggestions', {
-          query: searchQuery,
-        });
-        if (Array.isArray(suggestions)) {
-          const apiSuggestions = suggestions.map((text: string) => ({
-            text,
-            type: 'related' as const,
-          }));
-          setSuggestions(apiSuggestions);
-        } else {
-          setSuggestions([]);
-        }
-      } catch {
-        setSuggestions([]);
-      }
-      return;
-    }
-
-    if (runtimeStorageType === 'localstorage') {
-      // localstorage 模式但 Tauri 未就绪，不显示建议
-      setSuggestions([]);
-      return;
-    }
-
-    // 云端模式：使用 API
-    // 每次请求前取消上一次的请求
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
     try {
-      const response = await fetch(
-        `/api/search/suggestions?q=${encodeURIComponent(searchQuery)}`,
-        {
-          signal: controller.signal,
-        }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        const apiSuggestions = data.suggestions.map(
-          (item: { text: string }) => ({
-            text: item.text,
-            type: 'related' as const,
-          })
-        );
+      const suggestions = await invoke<string[]>('get_search_suggestions', {
+        query: searchQuery,
+      });
+      if (Array.isArray(suggestions)) {
+        const apiSuggestions = suggestions.map((text) => ({
+          text,
+          type: 'related' as const,
+        }));
         setSuggestions(apiSuggestions);
-      }
-    } catch (err: unknown) {
-      // 类型保护判断 err 是否是 Error 类型
-      if (err instanceof Error) {
-        if (err.name !== 'AbortError') {
-          // 不是取消请求导致的错误才清空
-          setSuggestions([]);
-        }
       } else {
-        // 如果 err 不是 Error 类型，也清空提示
         setSuggestions([]);
       }
+    } catch {
+      setSuggestions([]);
     }
   }, []);
 
@@ -180,7 +125,7 @@ export default function SearchSuggestions({
   return (
     <div
       ref={containerRef}
-      className='absolute top-full left-0 right-0 z-[600] mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 max-h-80 overflow-y-auto'
+      className="absolute top-full left-0 right-0 z-[600] mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 max-h-80 overflow-y-auto"
     >
       {suggestions.map((suggestion) => (
         <button
@@ -188,7 +133,7 @@ export default function SearchSuggestions({
           onClick={() => onSelect(suggestion.text)}
           className="w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-150 flex items-center gap-3"
         >
-          <span className='flex-1 text-sm text-gray-700 dark:text-gray-300 truncate'>
+          <span className="flex-1 text-sm text-gray-700 dark:text-gray-300 truncate">
             {suggestion.text}
           </span>
         </button>

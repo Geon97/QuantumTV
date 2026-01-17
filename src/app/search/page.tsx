@@ -4,7 +4,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { ChevronUp, Search, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import React, {
-  startTransition,
   Suspense,
   useEffect,
   useMemo,
@@ -547,157 +546,19 @@ function SearchPageClient() {
       if (currentFluidSearch !== useFluidSearch) {
         setUseFluidSearch(currentFluidSearch);
       }
-
-      // 检测是否在 Tauri 环境 - Tauri 环境下不支持流式搜索
-      const runtimeStorageType =
-        (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-      const isTauriEnv = runtimeStorageType === 'localstorage' && invoke;
-
-      if (currentFluidSearch && !isTauriEnv) {
-        // 流式搜索：打开新的流式连接
-        const es = new EventSource(
-          `/api/search/ws?q=${encodeURIComponent(trimmed)}`,
-        );
-        eventSourceRef.current = es;
-
-        es.onmessage = (event) => {
-          if (!event.data) return;
-          try {
-            const payload = JSON.parse(event.data);
-            if (currentQueryRef.current !== trimmed) return;
-            switch (payload.type) {
-              case 'start':
-                setTotalSources(payload.totalSources || 0);
-                if (payload.normalizedQuery) {
-                  setNormalizedQuery(payload.normalizedQuery);
-                }
-                setCompletedSources(0);
-                break;
-              case 'source_result': {
-                setCompletedSources((prev) => prev + 1);
-                if (
-                  Array.isArray(payload.results) &&
-                  payload.results.length > 0
-                ) {
-                  // 缓冲新增结果，节流刷入，避免频繁重渲染导致闪烁
-                  // ✨ 后端已按相关性排序，直接使用结果
-                  const incoming: SearchResult[] =
-                    payload.results as SearchResult[];
-                  pendingResultsRef.current.push(...incoming);
-                  if (!flushTimerRef.current) {
-                    flushTimerRef.current = window.setTimeout(() => {
-                      const toAppend = pendingResultsRef.current;
-                      pendingResultsRef.current = [];
-                      startTransition(() => {
-                        setSearchResults((prev) => prev.concat(toAppend));
-                      });
-                      flushTimerRef.current = null;
-                    }, 80);
-                  }
-                }
-                break;
-              }
-              case 'source_error':
-                setCompletedSources((prev) => prev + 1);
-                break;
-              case 'complete':
-                setCompletedSources(payload.completedSources || totalSources);
-                // 完成前确保将缓冲写入
-                if (pendingResultsRef.current.length > 0) {
-                  const toAppend = pendingResultsRef.current;
-                  pendingResultsRef.current = [];
-                  if (flushTimerRef.current) {
-                    clearTimeout(flushTimerRef.current);
-                    flushTimerRef.current = null;
-                  }
-                  startTransition(() => {
-                    setSearchResults((prev) => prev.concat(toAppend));
-                  });
-                }
-                setIsLoading(false);
-                try {
-                  es.close();
-                } catch {}
-                if (eventSourceRef.current === es) {
-                  eventSourceRef.current = null;
-                }
-                break;
-            }
-          } catch {}
-        };
-
-        es.onerror = () => {
+      // 直接使用rust 后端 search
+      invoke<SearchResult[]>('search', { query: trimmed })
+        .then((results) => {
+          if (currentQueryRef.current !== trimmed) return;
+          setSearchResults(results || []);
+          setTotalSources(1);
+          setCompletedSources(1);
           setIsLoading(false);
-          // 错误时也清空缓冲
-          if (pendingResultsRef.current.length > 0) {
-            const toAppend = pendingResultsRef.current;
-            pendingResultsRef.current = [];
-            if (flushTimerRef.current) {
-              clearTimeout(flushTimerRef.current);
-              flushTimerRef.current = null;
-            }
-            startTransition(() => {
-              setSearchResults((prev) => prev.concat(toAppend));
-            });
-          }
-          try {
-            es.close();
-          } catch {}
-          if (eventSourceRef.current === es) {
-            eventSourceRef.current = null;
-          }
-        };
-      } else {
-        // 传统搜索：检查是否在 Tauri 环境
-        const runtimeStorageType =
-          (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-        const isTauriEnv = runtimeStorageType === 'localstorage' && invoke;
-
-        if (isTauriEnv) {
-          // Tauri 环境：使用 search 命令
-          invoke<SearchResult[]>('search', { query: trimmed })
-            .then((results: SearchResult[]) => {
-              if (currentQueryRef.current !== trimmed) return;
-
-              setSearchResults(results || []);
-              setTotalSources(1);
-              setCompletedSources(1);
-              setIsLoading(false);
-            })
-            .catch((err: any) => {
-              console.error('Tauri search error:', err);
-              setIsLoading(false);
-            });
-        } else if (runtimeStorageType !== 'localstorage') {
-          // 云端模式：使用普通接口
-          fetch(`/api/search?q=${encodeURIComponent(trimmed)}`)
-            .then((response) => response.json())
-            .then((data) => {
-              if (currentQueryRef.current !== trimmed) return;
-
-              if (data.normalizedQuery) {
-                setNormalizedQuery(data.normalizedQuery);
-              }
-
-              if (data.results && Array.isArray(data.results)) {
-                // ✨ 后端已按相关性排序，直接使用结果
-                const results: SearchResult[] = data.results as SearchResult[];
-
-                setSearchResults(results);
-                setTotalSources(1);
-                setCompletedSources(1);
-              }
-              setIsLoading(false);
-            })
-            .catch(() => {
-              setIsLoading(false);
-            });
-        } else {
-          // localstorage 模式但 Tauri 未就绪
-          console.warn('Tauri 环境未就绪，无法执行搜索');
+        })
+        .catch((err) => {
+          console.error('Tauri search error:', err);
           setIsLoading(false);
-        }
-      }
+        });
       setShowSuggestions(false);
 
       // 保存到搜索历史 (事件监听会自动更新界面)

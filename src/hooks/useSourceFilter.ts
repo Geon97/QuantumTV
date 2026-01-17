@@ -148,43 +148,18 @@ export function useSourceFilter(): UseSourceFilterReturn {
           ? `${source.api}?ac=class`
           : `${source.api}/?ac=class`;
 
-        // 检测 Tauri 环境
-        const runtimeStorageType =
-          (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-        const isTauriEnv = runtimeStorageType === 'localstorage' && invoke;
 
         let data: SourceCategoryResponse;
-
-        if (isTauriEnv) {
-          // Tauri 环境：使用 fetch_url 命令
-          const result = await invoke<FetchUrlResult>('fetch_url', {
-            url: apiUrl,
-            method: 'GET',
-          });
-          if (result.status !== 200) {
-            throw new Error('获取分类列表失败');
-          }
-          data = JSON.parse(result.body);
-        } else if (runtimeStorageType !== 'localstorage') {
-          // 云端模式：直接 fetch
-          const response = await fetch(apiUrl, {
-            headers: {
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-              Accept: 'application/json',
-            },
-          });
-
-          if (!response.ok) {
-            throw new Error('获取分类列表失败');
-          }
-
-          data = await response.json();
-        } else {
-          // localstorage 模式但 Tauri 未就绪
-          console.warn('Tauri 环境未就绪，无法获取外部数据');
-          throw new Error('请通过 Tauri 应用访问此功能');
+        // Tauri 环境：使用 fetch_url 命令
+        const result = await invoke<FetchUrlResult>('fetch_url', {
+          url: apiUrl,
+          method: 'GET',
+        });
+        if (result.status !== 200) {
+          throw new Error('获取分类列表失败');
         }
+        data = JSON.parse(result.body);
+
 
         const categories = data.class || [];
         setSourceCategories(categories);
