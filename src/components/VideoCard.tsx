@@ -1,5 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps, @typescript-eslint/no-unused-vars, unused-imports/no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-unused-vars, unused-imports/no-unused-vars */
 
+import { invoke } from '@tauri-apps/api/core';
 import {
   ExternalLink,
   Heart,
@@ -20,20 +21,15 @@ import React, {
   useState,
 } from 'react';
 
-import {
-  deleteFavorite,
-  deletePlayRecord,
-  generateStorageKey,
-  isFavorited,
-  saveFavorite,
-  subscribeToDataUpdates,
-} from '@/lib/db.client';
+import { RustFavorite } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
+import { generateStorageKey, subscribeToDataUpdates } from '@/lib/utils';
 import { useLongPress } from '@/hooks/useLongPress';
 
 import { ImagePlaceholder } from '@/components/ImagePlaceholder';
 import MobileActionSheet from '@/components/MobileActionSheet';
 import { SimpleRatingBadge } from '@/components/RatingBadge';
+
 
 export interface VideoCardProps {
   id?: string;
@@ -146,7 +142,9 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
 
       const fetchFavoriteStatus = async () => {
         try {
-          const fav = await isFavorited(actualSource, actualId);
+          const allFavorites = await invoke<RustFavorite[]>('get_play_favorites');
+          const key = generateStorageKey(actualSource, actualId);
+          const fav = allFavorites.some(f => f.key === key);
           setFavorited(fav);
         } catch (_err) {
           throw new Error('检查收藏状态失败');
@@ -159,10 +157,15 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       const storageKey = generateStorageKey(actualSource, actualId);
       const unsubscribe = subscribeToDataUpdates(
         'favoritesUpdated',
-        (newFavorites: Record<string, any>) => {
-          // 检查当前项目是否在新的收藏列表中
-          const isNowFavorited = !!newFavorites[storageKey];
-          setFavorited(isNowFavorited);
+        async () => {
+          // 重新检查收藏状态
+          try {
+            const allFavorites = await invoke<RustFavorite[]>('get_play_favorites');
+            const isNowFavorited = allFavorites.some(f => f.key === storageKey);
+            setFavorited(isNowFavorited);
+          } catch (_err) {
+            // ignore
+          }
         },
       );
 
@@ -180,9 +183,11 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
           const currentFavorited =
             from === 'search' ? searchFavorited : favorited;
 
+          const key = generateStorageKey(actualSource, actualId);
+
           if (currentFavorited) {
             // 如果已收藏，删除收藏
-            await deleteFavorite(actualSource, actualId);
+            await invoke('delete_play_favorite', { key });
             if (from === 'search') {
               setSearchFavorited(false);
             } else {
@@ -190,13 +195,18 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
             }
           } else {
             // 如果未收藏，添加收藏
-            await saveFavorite(actualSource, actualId, {
-              title: actualTitle,
-              source_name: source_name || '',
-              year: actualYear || '',
-              cover: actualPoster,
-              total_episodes: actualEpisodes ?? 1,
-              save_time: Date.now(),
+            await invoke('save_play_favorite', {
+              record: {
+                key,
+                title: actualTitle,
+                source_name: source_name || '',
+                year: actualYear || '',
+                cover: actualPoster,
+                episode_index: 1,
+                total_episodes: actualEpisodes ?? 1,
+                save_time: Math.floor(Date.now() / 1000),
+                search_title: actualQuery || '',
+              },
             });
             if (from === 'search') {
               setSearchFavorited(true);
@@ -204,6 +214,8 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               setFavorited(true);
             }
           }
+          // 触发事件通知其他组件
+          window.dispatchEvent(new CustomEvent('favoritesUpdated', { detail: {} }));
         } catch (_err) {
           throw new Error('切换收藏状态失败');
         }
@@ -219,6 +231,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         actualEpisodes,
         favorited,
         searchFavorited,
+        actualQuery,
       ],
     );
 
@@ -228,8 +241,11 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         e.stopPropagation();
         if (from !== 'playrecord' || !actualSource || !actualId) return;
         try {
-          await deletePlayRecord(actualSource, actualId);
+          const key = generateStorageKey(actualSource, actualId);
+          await invoke('delete_play_record', { key });
           onDelete?.();
+          // 触发事件通知其他组件
+          window.dispatchEvent(new CustomEvent('playRecordsUpdated', { detail: {} }));
         } catch (_err) {
           throw new Error('删除播放记录失败');
         }
@@ -309,7 +325,9 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         searchFavorited === null
       ) {
         try {
-          const fav = await isFavorited(actualSource, actualId);
+          const allFavorites = await invoke<RustFavorite[]>('get_play_favorites');
+          const key = generateStorageKey(actualSource, actualId);
+          const fav = allFavorites.some(f => f.key === key);
           setSearchFavorited(fav);
         } catch (_err) {
           setSearchFavorited(false);

@@ -1,14 +1,11 @@
 /* eslint-disable no-console */
 'use client';
 
+import { invoke } from '@tauri-apps/api/core';
 import { useEffect, useState } from 'react';
 
-import type { PlayRecord } from '@/lib/db.client';
-import {
-  clearAllPlayRecords,
-  getAllPlayRecords,
-  subscribeToDataUpdates,
-} from '@/lib/db.client';
+import { RustPlayRecord } from '@/lib/types';
+import { subscribeToDataUpdates } from '@/lib/utils';
 
 import ScrollableRow from '@/components/ScrollableRow';
 import VideoCard from '@/components/VideoCard';
@@ -18,21 +15,13 @@ interface ContinueWatchingProps {
 }
 
 export default function ContinueWatching({ className }: ContinueWatchingProps) {
-  const [playRecords, setPlayRecords] = useState<
-    (PlayRecord & { key: string })[]
-  >([]);
+  const [playRecords, setPlayRecords] = useState<RustPlayRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   // 处理播放记录数据更新的函数
-  const updatePlayRecords = (allRecords: Record<string, PlayRecord>) => {
-    // 将记录转换为数组并根据 save_time 由近到远排序
-    const recordsArray = Object.entries(allRecords).map(([key, record]) => ({
-      ...record,
-      key,
-    }));
-
+  const updatePlayRecords = (records: RustPlayRecord[]) => {
     // 按 save_time 降序排序（最新的在前面）
-    const sortedRecords = recordsArray.sort(
+    const sortedRecords = [...records].sort(
       (a, b) => b.save_time - a.save_time
     );
 
@@ -44,8 +33,8 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
       try {
         setLoading(true);
 
-        // 从缓存或API获取所有播放记录
-        const allRecords = await getAllPlayRecords();
+        // 从 Rust 获取所有播放记录
+        const allRecords = await invoke<RustPlayRecord[]>('get_all_play_records');
         updatePlayRecords(allRecords);
       } catch (error) {
         console.error('获取播放记录失败:', error);
@@ -60,8 +49,13 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
     // 监听播放记录更新事件
     const unsubscribe = subscribeToDataUpdates(
       'playRecordsUpdated',
-      (newRecords: Record<string, PlayRecord>) => {
-        updatePlayRecords(newRecords);
+      async () => {
+        try {
+          const allRecords = await invoke<RustPlayRecord[]>('get_all_play_records');
+          updatePlayRecords(allRecords);
+        } catch (err) {
+          console.error('获取播放记录失败:', err);
+        }
       }
     );
 
@@ -74,14 +68,16 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
   }
 
   // 计算播放进度百分比
-  const getProgress = (record: PlayRecord) => {
+  const getProgress = (record: RustPlayRecord) => {
     if (record.total_time === 0) return 0;
     return (record.play_time / record.total_time) * 100;
   };
 
   // 从 key 中解析 source 和 id
   const parseKey = (key: string) => {
-    const [source, id] = key.split('+');
+    const plusIndex = key.indexOf('+');
+    const source = key.slice(0, plusIndex);
+    const id = key.slice(plusIndex + 1);
     return { source, id };
   };
 
@@ -95,8 +91,9 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
           <button
             className='text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
             onClick={async () => {
-              await clearAllPlayRecords();
+              await invoke('clear_all_play_records');
               setPlayRecords([]);
+              window.dispatchEvent(new CustomEvent('playRecordsUpdated', { detail: {} }));
             }}
           >
             清空
@@ -135,7 +132,7 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
                     source_name={record.source_name}
                     progress={getProgress(record)}
                     episodes={record.total_episodes}
-                    currentEpisode={record.index}
+                    currentEpisode={record.episode_index}
                     query={record.search_title}
                     from='playrecord'
                     onDelete={() =>

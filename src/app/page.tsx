@@ -1,7 +1,8 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps, no-console */
+/* eslint-disable react-hooks/exhaustive-deps, no-console */
 
 'use client';
 
+import { invoke } from '@tauri-apps/api/core';
 import { ChevronRight, Sparkles, X } from 'lucide-react';
 import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
@@ -10,15 +11,9 @@ import {
   BangumiCalendarData,
   GetBangumiCalendarData,
 } from '@/lib/bangumi.client';
-// 客户端收藏 API
-import {
-  clearAllFavorites,
-  getAllFavorites,
-  getAllPlayRecords,
-  subscribeToDataUpdates,
-} from '@/lib/db.client';
 import { getDoubanCategories } from '@/lib/douban.client';
-import { DoubanItem } from '@/lib/types';
+import { DoubanItem, RustFavorite, RustPlayRecord } from '@/lib/types';
+import { subscribeToDataUpdates } from '@/lib/utils';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
@@ -62,7 +57,6 @@ function HomeClient() {
     source_name: string;
     currentEpisode?: number;
     search_title?: string;
-    origin?: 'vod' | 'live';
   };
 
   const [favoriteItems, setFavoriteItems] = useState<FavoriteItem[]>([]);
@@ -109,53 +103,58 @@ function HomeClient() {
   }, []);
 
   // 处理收藏数据更新的函数
-  const updateFavoriteItems = async (allFavorites: Record<string, any>) => {
-    const allPlayRecords = await getAllPlayRecords();
+  const updateFavoriteItems = async () => {
+    try {
+      const allFavorites = await invoke<RustFavorite[]>('get_play_favorites');
+      const allPlayRecords = await invoke<RustPlayRecord[]>('get_all_play_records');
 
-    // 根据保存时间排序（从近到远）
-    const sorted = Object.entries(allFavorites)
-      .sort(([, a], [, b]) => b.save_time - a.save_time)
-      .map(([key, fav]) => {
-        const plusIndex = key.indexOf('+');
-        const source = key.slice(0, plusIndex);
-        const id = key.slice(plusIndex + 1);
-
-        // 查找对应的播放记录，获取当前集数
-        const playRecord = allPlayRecords[key];
-        const currentEpisode = playRecord?.index;
-
-        return {
-          id,
-          source,
-          title: fav.title,
-          year: fav.year,
-          poster: fav.cover,
-          episodes: fav.total_episodes,
-          source_name: fav.source_name,
-          currentEpisode,
-          search_title: fav?.search_title,
-          origin: fav?.origin,
-        } as FavoriteItem;
+      // 创建播放记录的 Map，方便查找
+      const playRecordsMap = new Map<string, RustPlayRecord>();
+      allPlayRecords.forEach((record) => {
+        playRecordsMap.set(record.key, record);
       });
-    setFavoriteItems(sorted);
+
+      // 根据保存时间排序（从近到远）
+      const sorted = [...allFavorites]
+        .sort((a, b) => b.save_time - a.save_time)
+        .map((fav) => {
+          const plusIndex = fav.key.indexOf('+');
+          const source = fav.key.slice(0, plusIndex);
+          const id = fav.key.slice(plusIndex + 1);
+
+          // 查找对应的播放记录，获取当前集数
+          const playRecord = playRecordsMap.get(fav.key);
+          const currentEpisode = playRecord?.episode_index;
+
+          return {
+            id,
+            source,
+            title: fav.title,
+            year: fav.year,
+            poster: fav.cover,
+            episodes: fav.total_episodes,
+            source_name: fav.source_name,
+            currentEpisode,
+            search_title: fav.search_title,
+          } as FavoriteItem;
+        });
+      setFavoriteItems(sorted);
+    } catch (err) {
+      console.error('获取收藏数据失败:', err);
+    }
   };
 
   // 当切换到收藏夹时加载收藏数据
   useEffect(() => {
     if (activeTab !== 'favorites') return;
 
-    const loadFavorites = async () => {
-      const allFavorites = await getAllFavorites();
-      await updateFavoriteItems(allFavorites);
-    };
-
-    loadFavorites();
+    updateFavoriteItems();
 
     // 监听收藏更新事件
     const unsubscribe = subscribeToDataUpdates(
       'favoritesUpdated',
-      (newFavorites: Record<string, any>) => {
-        updateFavoriteItems(newFavorites);
+      () => {
+        updateFavoriteItems();
       }
     );
 
@@ -205,8 +204,11 @@ function HomeClient() {
                   <button
                     className='text-sm text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400 transition-colors'
                     onClick={async () => {
-                      await clearAllFavorites();
+                      await invoke('clear_all_favorites');
                       setFavoriteItems([]);
+                      window.dispatchEvent(
+                        new CustomEvent('favoritesUpdated', { detail: {} })
+                      );
                     }}
                   >
                     清空

@@ -80,32 +80,4 @@ impl StorageManager {
         drop(data);
         self.save()
     }
-
-    pub fn update_play_records(&self, new_records: serde_json::Value) -> Result<(), String> {
-        let mut data = self.data.lock().map_err(|e| e.to_string())?;
-        data.play_records = new_records;
-        drop(data);
-        self.save()
-    }
-
-    pub fn update_favorites(&self, new_favorites: serde_json::Value) -> Result<(), String> {
-        let mut data = self.data.lock().map_err(|e| e.to_string())?;
-        data.favorites = new_favorites;
-        drop(data);
-        self.save()
-    }
-
-    pub fn update_search_history(&self, new_history: serde_json::Value) -> Result<(), String> {
-        let mut data = self.data.lock().map_err(|e| e.to_string())?;
-        data.search_history = new_history;
-        drop(data);
-        self.save()
-    }
-
-    pub fn update_skip_configs(&self, new_configs: serde_json::Value) -> Result<(), String> {
-        let mut data = self.data.lock().map_err(|e| e.to_string())?;
-        data.skip_configs = new_configs;
-        drop(data);
-        self.save()
-    }
 }

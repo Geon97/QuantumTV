@@ -9,20 +9,13 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
 import {
-  deleteFavorite,
-  deletePlayRecord,
-  deleteSkipConfig,
-  generateStorageKey,
-  getAllPlayRecords,
-  getSkipConfig,
-  isFavorited,
-  saveFavorite,
-  savePlayRecord,
-  saveSkipConfig,
-  subscribeToDataUpdates,
-} from '@/lib/db.client';
-import { SearchResult } from '@/lib/types';
+  RustFavorite,
+  RustPlayRecord,
+  RustSkipConfig,
+  SearchResult,
+} from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
+import { generateStorageKey, subscribeToDataUpdates } from '@/lib/utils';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
@@ -588,7 +581,8 @@ function PlayPageClient() {
       localStorage.setItem(storageKey, JSON.stringify(newConfig));
 
       if (!newConfig.enable && !newConfig.intro_time && !newConfig.outro_time) {
-        await deleteSkipConfig(currentSourceRef.current, currentIdRef.current);
+        const key = generateStorageKey(currentSourceRef.current, currentIdRef.current);
+        await invoke('delete_skip_config', { key });
         localStorage.removeItem(storageKey);
         showToast('已清除跳过设置', 'info');
         artPlayerRef.current.setting.update({
@@ -649,11 +643,15 @@ function PlayPageClient() {
           },
         });
       } else {
-        await saveSkipConfig(
-          currentSourceRef.current,
-          currentIdRef.current,
-          newConfig,
-        );
+        const key = generateStorageKey(currentSourceRef.current, currentIdRef.current);
+        await invoke('save_skip_config', {
+          config: {
+            key,
+            enable: newConfig.enable,
+            intro_time: newConfig.intro_time,
+            outro_time: newConfig.outro_time,
+          },
+        });
 
         // 显示 Toast 通知
         const introText =
@@ -930,12 +928,12 @@ function PlayPageClient() {
       if (!currentSource || !currentId) return;
 
       try {
-        const allRecords = await getAllPlayRecords();
+        const allRecords = await invoke<RustPlayRecord[]>('get_all_play_records');
         const key = generateStorageKey(currentSource, currentId);
-        const record = allRecords[key];
+        const record = allRecords.find(r => r.key === key);
 
         if (record) {
-          const targetIndex = record.index - 1;
+          const targetIndex = record.episode_index - 1;
           const targetTime = record.play_time;
 
           // 更新当前选集索引
@@ -971,11 +969,20 @@ function PlayPageClient() {
           console.log('从 localStorage 恢复跳过配置:', config);
         } else {
           // 如果 localStorage 没有，再尝试从数据库读取
-          const config = await getSkipConfig(currentSource, currentId);
+          const key = generateStorageKey(currentSource, currentId);
+          const config = await invoke<RustSkipConfig | null>('get_skip_config', { key });
           if (config) {
-            setSkipConfig(config);
+            setSkipConfig({
+              enable: config.enable,
+              intro_time: config.intro_time,
+              outro_time: config.outro_time,
+            });
             // 同步到 localStorage
-            localStorage.setItem(storageKey, JSON.stringify(config));
+            localStorage.setItem(storageKey, JSON.stringify({
+              enable: config.enable,
+              intro_time: config.intro_time,
+              outro_time: config.outro_time,
+            }));
           }
         }
       } catch (err) {
@@ -1004,10 +1011,8 @@ function PlayPageClient() {
       // 清除前一个历史记录
       if (currentSourceRef.current && currentIdRef.current) {
         try {
-          await deletePlayRecord(
-            currentSourceRef.current,
-            currentIdRef.current,
-          );
+          const key = generateStorageKey(currentSourceRef.current, currentIdRef.current);
+          await invoke('delete_play_record', { key });
           console.log('已清除前一个播放记录');
         } catch (err) {
           console.error('清除播放记录失败:', err);
@@ -1017,11 +1022,17 @@ function PlayPageClient() {
       // 清除并设置下一个跳过片头片尾配置
       if (currentSourceRef.current && currentIdRef.current) {
         try {
-          await deleteSkipConfig(
-            currentSourceRef.current,
-            currentIdRef.current,
-          );
-          await saveSkipConfig(newSource, newId, skipConfigRef.current);
+          const oldKey = generateStorageKey(currentSourceRef.current, currentIdRef.current);
+          await invoke('delete_skip_config', { key: oldKey });
+          const newKey = generateStorageKey(newSource, newId);
+          await invoke('save_skip_config', {
+            config: {
+              key: newKey,
+              enable: skipConfigRef.current.enable,
+              intro_time: skipConfigRef.current.intro_time,
+              outro_time: skipConfigRef.current.outro_time,
+            },
+          });
         } catch (err) {
           console.error('清除跳过片头片尾配置失败:', err);
         }
@@ -1233,18 +1244,27 @@ function PlayPageClient() {
     }
 
     try {
-      await savePlayRecord(currentSourceRef.current, currentIdRef.current, {
-        title: videoTitleRef.current,
-        source_name: detailRef.current?.source_name || '',
-        year: detailRef.current?.year,
-        cover: detailRef.current?.poster || '',
-        index: currentEpisodeIndexRef.current + 1, // 转换为1基索引
-        total_episodes: detailRef.current?.episodes.length || 1,
-        play_time: Math.floor(currentTime),
-        total_time: Math.floor(duration),
-        save_time: Date.now(),
-        search_title: searchTitle,
+      const key = generateStorageKey(currentSourceRef.current, currentIdRef.current);
+      await invoke('save_play_record', {
+        record: {
+          key,
+          title: videoTitleRef.current,
+          source_name: detailRef.current?.source_name || '',
+          year: detailRef.current?.year || '',
+          cover: detailRef.current?.poster || '',
+          episode_index: currentEpisodeIndexRef.current + 1, // 转换为1基索引
+          total_episodes: detailRef.current?.episodes.length || 1,
+          play_time: Math.floor(currentTime),
+          total_time: Math.floor(duration),
+          save_time: Math.floor(Date.now() / 1000), // Rust 使用秒级时间戳
+          search_title: searchTitle || '',
+        },
       });
+
+      // 触发事件通知其他组件
+      window.dispatchEvent(
+        new CustomEvent('playRecordsUpdated', { detail: {} })
+      );
 
       lastSaveTimeRef.current = Date.now();
       console.log('播放进度已保存:', {
@@ -1307,7 +1327,9 @@ function PlayPageClient() {
     if (!currentSource || !currentId) return;
     (async () => {
       try {
-        const fav = await isFavorited(currentSource, currentId);
+        const allFavorites = await invoke<RustFavorite[]>('get_play_favorites');
+        const key = generateStorageKey(currentSource, currentId);
+        const fav = allFavorites.some(f => f.key === key);
         setFavorited(fav);
       } catch (err) {
         console.error('检查收藏状态失败:', err);
@@ -1321,10 +1343,15 @@ function PlayPageClient() {
 
     const unsubscribe = subscribeToDataUpdates(
       'favoritesUpdated',
-      (favorites: Record<string, any>) => {
-        const key = generateStorageKey(currentSource, currentId);
-        const isFav = !!favorites[key];
-        setFavorited(isFav);
+      async () => {
+        try {
+          const allFavorites = await invoke<RustFavorite[]>('get_play_favorites');
+          const key = generateStorageKey(currentSource, currentId);
+          const isFav = allFavorites.some(f => f.key === key);
+          setFavorited(isFav);
+        } catch (err) {
+          console.error('检查收藏状态失败:', err);
+        }
       },
     );
 
@@ -1342,23 +1369,32 @@ function PlayPageClient() {
       return;
 
     try {
+      const key = generateStorageKey(currentSourceRef.current, currentIdRef.current);
       if (favorited) {
         // 如果已收藏，删除收藏
-        await deleteFavorite(currentSourceRef.current, currentIdRef.current);
+        await invoke('delete_play_favorite', { key });
         setFavorited(false);
       } else {
         // 如果未收藏，添加收藏
-        await saveFavorite(currentSourceRef.current, currentIdRef.current, {
-          title: videoTitleRef.current,
-          source_name: detailRef.current?.source_name || '',
-          year: detailRef.current?.year,
-          cover: detailRef.current?.poster || '',
-          total_episodes: detailRef.current?.episodes.length || 1,
-          save_time: Date.now(),
-          search_title: searchTitle,
+        await invoke('save_play_favorite', {
+          record: {
+            key,
+            title: videoTitleRef.current,
+            source_name: detailRef.current?.source_name || '',
+            year: detailRef.current?.year || '',
+            cover: detailRef.current?.poster || '',
+            episode_index: currentEpisodeIndexRef.current + 1,
+            total_episodes: detailRef.current?.episodes.length || 1,
+            save_time: Math.floor(Date.now() / 1000),
+            search_title: searchTitle || '',
+          },
         });
         setFavorited(true);
       }
+      // 触发事件通知其他组件
+      window.dispatchEvent(
+        new CustomEvent('favoritesUpdated', { detail: {} })
+      );
     } catch (err) {
       console.error('切换收藏失败:', err);
     }
@@ -2219,32 +2255,6 @@ function PlayPageClient() {
                       alt={videoTitle}
                       className='w-full h-full object-cover'
                     />
-
-                    {/* 豆瓣链接按钮 */}
-                    {/* {videoDoubanId !== 0 && (
-                      <a
-                        href={`https://movie.douban.com/subject/${videoDoubanId.toString()}`}
-                        target='_blank'
-                        rel='noopener noreferrer'
-                        className='absolute top-3 left-3'
-                      >
-                        <div className='bg-green-500 text-white text-xs font-bold w-8 h-8 rounded-full flex items-center justify-center shadow-md hover:bg-green-600 hover:scale-[1.1] transition-all duration-300 ease-out'>
-                          <svg
-                            width='16'
-                            height='16'
-                            viewBox='0 0 24 24'
-                            fill='none'
-                            stroke='currentColor'
-                            strokeWidth='2'
-                            strokeLinecap='round'
-                            strokeLinejoin='round'
-                          >
-                            <path d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'></path>
-                            <path d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'></path>
-                          </svg>
-                        </div>
-                      </a>
-                    )} */}
                   </>
                 ) : (
                   <span className='text-gray-600 dark:text-gray-400'>

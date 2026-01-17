@@ -12,14 +12,8 @@ import React, {
   useState,
 } from 'react';
 
-import {
-  addSearchHistory,
-  clearSearchHistory,
-  deleteSearchHistory,
-  getSearchHistory,
-  subscribeToDataUpdates,
-} from '@/lib/db.client';
 import { SearchResult } from '@/lib/types';
+import { subscribeToDataUpdates } from '@/lib/utils';
 
 import PageLayout from '@/components/PageLayout';
 import SearchResultFilter, {
@@ -441,7 +435,7 @@ function SearchPageClient() {
     !searchParams.get('q') && document.getElementById('searchInput')?.focus();
 
     // 初始加载搜索历史
-    getSearchHistory().then(setSearchHistory);
+    invoke<string[]>('get_search_history').then(setSearchHistory).catch(console.error);
 
     // 读取流式搜索设置
     if (typeof window !== 'undefined') {
@@ -458,8 +452,14 @@ function SearchPageClient() {
     // 监听搜索历史更新事件
     const unsubscribe = subscribeToDataUpdates(
       'searchHistoryUpdated',
-      (newHistory: string[]) => {
-        setSearchHistory(newHistory);
+      async () => {
+        // 重新获取搜索历史
+        try {
+          const history = await invoke<string[]>('get_search_history');
+          setSearchHistory(history);
+        } catch (err) {
+          console.error('获取搜索历史失败:', err);
+        }
       },
     );
 
@@ -701,7 +701,9 @@ function SearchPageClient() {
       setShowSuggestions(false);
 
       // 保存到搜索历史 (事件监听会自动更新界面)
-      addSearchHistory(query);
+      invoke('add_search_history', { keyword: query }).then(() => {
+        window.dispatchEvent(new CustomEvent('searchHistoryUpdated', { detail: {} }));
+      }).catch(console.error);
     } else {
       setShowResults(false);
       setShowSuggestions(false);
@@ -990,8 +992,10 @@ function SearchPageClient() {
                 搜索历史
                 {searchHistory.length > 0 && (
                   <button
-                    onClick={() => {
-                      clearSearchHistory(); // 事件监听会自动更新界面
+                    onClick={async () => {
+                      await invoke('clear_search_history');
+                      setSearchHistory([]);
+                      window.dispatchEvent(new CustomEvent('searchHistoryUpdated', { detail: {} }));
                     }}
                     className='ml-3 text-sm text-gray-500 hover:text-red-500 transition-colors dark:text-gray-400 dark:hover:text-red-500'
                   >
@@ -1016,10 +1020,12 @@ function SearchPageClient() {
                     {/* 删除按钮 */}
                     <button
                       aria-label='删除搜索历史'
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
                         e.preventDefault();
-                        deleteSearchHistory(item); // 事件监听会自动更新界面
+                        await invoke('delete_search_history', { keyword: item });
+                        setSearchHistory((prev) => prev.filter((h) => h !== item));
+                        window.dispatchEvent(new CustomEvent('searchHistoryUpdated', { detail: {} }));
                       }}
                       className='absolute -top-1 -right-1 w-4 h-4 opacity-0 group-hover:opacity-100 bg-gray-400 hover:bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] transition-colors'
                     >

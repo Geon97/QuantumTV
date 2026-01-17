@@ -130,3 +130,37 @@ export enum UpdateStatus {
   NO_UPDATE = 'NoUpdate',
   FETCH_FAILED = 'FetchFailed',
 }
+
+// Rust 数据结构类型
+export interface RustFavorite {
+  key: string;
+  title: string;
+  source_name: string;
+  year: string;
+  cover: string;
+  episode_index: number;
+  total_episodes: number;
+  save_time: number;
+  search_title: string;
+}
+
+export interface RustPlayRecord {
+  key: string;
+  title: string;
+  source_name: string;
+  year: string;
+  cover: string;
+  episode_index: number;
+  total_episodes: number;
+  play_time: number;
+  total_time: number;
+  save_time: number;
+  search_title: string;
+}
+
+export interface RustSkipConfig {
+  key: string;
+  enable: boolean;
+  intro_time: number;
+  outro_time: number;
+}

@@ -244,3 +244,30 @@ export function cleanHtmlTags(text: string): string {
   // 使用 he 库解码 HTML 实体
   return he.decode(cleanedText);
 }
+
+// 生成存储 key
+export function generateStorageKey(source: string, id: string): string {
+  return `${source}+${id}`;
+}
+
+// 事件订阅辅助函数（用于组件间通信）
+type CacheUpdateEvent = 'searchHistoryUpdated' | 'playRecordsUpdated' | 'favoritesUpdated';
+
+export function subscribeToDataUpdates<T>(
+  eventType: CacheUpdateEvent,
+  callback: (data: T) => void,
+): () => void {
+  if (typeof window === 'undefined') {
+    return () => {};
+  }
+
+  const handleUpdate = (event: CustomEvent) => {
+    callback(event.detail);
+  };
+
+  window.addEventListener(eventType, handleUpdate as EventListener);
+
+  return () => {
+    window.removeEventListener(eventType, handleUpdate as EventListener);
+  };
+}
