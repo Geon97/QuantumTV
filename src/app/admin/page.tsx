@@ -448,7 +448,7 @@ const CollapsibleTab = ({
     >
       <div className='flex items-center gap-3'>
         {icon}
-        <h3 className='font-semibold text-gray-900 dark:text-gray-100'>{title}</h3>
+        <span className='font-semibold text-base text-gray-900 dark:text-gray-100'>{title}</span>
       </div>
       {isExpanded ? (
         <ChevronUp className='w-5 h-5 text-gray-500' />
@@ -503,7 +503,7 @@ const SortableSourceItem = ({
 
       <div className='flex-1 min-w-0'>
         <div className='flex items-center gap-2'>
-          <span className='font-medium text-gray-900 dark:text-gray-100 truncate'>
+          <span className='text-sm font-medium text-gray-900 dark:text-gray-100 truncate'>
             {source.name}
           </span>
           {source.is_adult && (
@@ -901,7 +901,7 @@ const CategoryConfig = ({ config, onSave, showAlert }: CategoryConfigProps) => {
           >
             <div className='flex-1 min-w-0'>
               <div className='flex items-center gap-2'>
-                <span className='font-medium text-gray-900 dark:text-gray-100'>
+                <span className='text-sm font-medium text-gray-900 dark:text-gray-100'>
                   {category.name || category.query}
                 </span>
                 <span className={`px-1.5 py-0.5 text-xs rounded ${category.type === 'movie' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400'}`}>

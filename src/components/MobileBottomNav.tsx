@@ -119,15 +119,25 @@ const MobileBottomNav = memo(function MobileBottomNav({ activePath = '/' }: Mobi
     [activePath],
   );
 
-  // 使用 useTransition 处理导航
+  // 使用硬跳转在 Tauri 环境下获得更好的性能
   const handleNavigation = useCallback(
-    (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    (e: React.MouseEvent, href: string) => {
       e.preventDefault();
-      startTransition(() => {
-        router.push(href);
-      });
+      
+      // 检测是否在 Tauri 桌面环境中
+      const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+      
+      if (isTauri) {
+        // Tauri 环境：使用硬跳转绕过 React 客户端导航
+        window.location.assign(href);
+      } else {
+        // 浏览器环境：使用 startTransition 包裹
+        startTransition(() => {
+          router.push(href);
+        });
+      }
     },
-    [router],
+    [router, startTransition],
   );
 
   // 滚动到激活项

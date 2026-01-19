@@ -23,9 +23,11 @@ import {
  * - 用户反馈"改地址栏很快，点链接很慢"
  *
  * 工作原理：
- * 1. 默认模式：使用 next/link 的 SPA 导航（prefetch=false 避免预加载阻塞）
- * 2. forceRefresh 模式：绕过 React，直接使用浏览器硬跳转
- * 3. useTransition 模式：将导航标记为非阻塞 transition，不阻塞 UI
+ * 1. 始终使用 next/link 渲染（保持 SSR hydration 一致性）
+ * 2. 点击时检测环境：
+ *    - Tauri 桌面环境：使用 window.location 硬跳转（绕过 React 重渲染）
+ *    - 浏览器环境：使用 next/link 的 SPA 导航或 startTransition
+ * 3. forceRefresh 模式：强制使用浏览器硬跳转
  *
  * 使用场景：
  * - 导航栏、底部栏等频繁点击的核心路由
@@ -47,9 +49,9 @@ interface FastLinkProps extends Omit<
    */
   forceRefresh?: boolean;
   /**
-   * 使用 React Transition 包裹导航
+   * 使用 React Transition 包裹导航（仅在非 Tauri 环境生效）
    * - 将导航标记为低优先级，不阻塞当前 UI 交互
-   * - 适合在保持 SPA 特性的同时提升响应感
+   * - 在 Tauri 环境下会被忽略，始终使用硬跳转
    */
   useTransitionNav?: boolean;
   /** 额外的点击处理 */
@@ -74,8 +76,7 @@ const FastLink = forwardRef<HTMLAnchorElement, FastLinkProps>(
 
     /**
      * 处理点击事件
-     * - forceRefresh: 直接使用浏览器跳转，绕过 React
-     * - useTransitionNav: 使用 startTransition 包裹，降低优先级
+     * 在点击时才检测环境，避免 SSR/CSR hydration 不匹配
      */
     const handleClick = useCallback(
       (e: MouseEvent<HTMLAnchorElement>) => {
@@ -91,12 +92,15 @@ const FastLink = forwardRef<HTMLAnchorElement, FastLinkProps>(
         // 外部链接直接走浏览器默认行为
         if (href.startsWith('http://') || href.startsWith('https://')) return;
 
-        if (forceRefresh) {
-          // 强制刷新模式：阻止 SPA 导航，使用浏览器硬跳转
+        // 在点击时检测 Tauri 环境（避免 hydration 不匹配）
+        const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+        
+        // Tauri 环境或 forceRefresh 模式：使用硬跳转
+        if (forceRefresh || isTauri) {
           e.preventDefault();
           window.location.assign(href);
         } else if (useTransitionNav) {
-          // Transition 模式：将导航包裹在 startTransition 中
+          // 非 Tauri 环境的 Transition 模式
           e.preventDefault();
           startTransition(() => {
             router.push(href);
@@ -107,22 +111,8 @@ const FastLink = forwardRef<HTMLAnchorElement, FastLinkProps>(
       [href, forceRefresh, useTransitionNav, onClick, router, startTransition],
     );
 
-    // 强制刷新模式使用原生 <a> 标签
-    if (forceRefresh) {
-      return (
-        <a
-          ref={ref}
-          href={href}
-          onClick={handleClick}
-          className={className}
-          {...rest}
-        >
-          {children}
-        </a>
-      );
-    }
-
-    // 默认使用 next/link，禁用 prefetch 避免资源抢占
+    // 始终使用 next/link 渲染，保持 SSR 一致性
+    // 硬跳转逻辑在 handleClick 中处理
     return (
       <Link
         ref={ref}
