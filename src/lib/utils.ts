@@ -1,6 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { type ClassValue, clsx } from 'clsx';
 import he from 'he';
 import Hls from 'hls.js';
+import { twMerge } from 'tailwind-merge';
+
+/**
+ * 合并 CSS 类名，支持条件类名和 Tailwind CSS 类名冲突解决
+ * @example cn('px-2 py-1', isActive && 'bg-blue-500', 'hover:bg-blue-600')
+ */
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 function getDoubanImageProxyConfig(): {
   proxyType:

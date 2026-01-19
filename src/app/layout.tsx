@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import { DM_Sans, Space_Grotesk } from 'next/font/google';
 import NextTopLoader from 'nextjs-toploader';
 import React from 'react';
 
@@ -14,7 +14,18 @@ import { SiteProvider } from '../components/SiteProvider';
 import { ThemeProvider } from '../components/ThemeProvider';
 import TopNavbar from '../components/TopNavbar';
 
-const inter = Inter({ subsets: ['latin'] });
+// Font configuration - Tech Startup Pairing
+const dmSans = DM_Sans({
+  subsets: ['latin'],
+  variable: '--font-body',
+  display: 'swap',
+});
+
+const spaceGrotesk = Space_Grotesk({
+  subsets: ['latin'],
+  variable: '--font-heading',
+  display: 'swap',
+});
 
 // // // // // export const dynamic = 'force-dynamic';
 
@@ -127,7 +138,7 @@ export default async function RootLayout({
         />
       </head>
       <body
-        className={`${inter.className} min-h-screen text-gray-900 dark:text-gray-100 bg-animated-gradient`}
+        className={`${dmSans.variable} ${spaceGrotesk.variable} font-sans min-h-screen text-gray-900 dark:text-gray-100 bg-aurora`}
       >
         {/* 顶部进度条 - Aurora 紫色主题 */}
         <NextTopLoader
