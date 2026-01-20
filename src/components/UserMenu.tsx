@@ -824,9 +824,6 @@ export const UserMenu: React.FC = () => {
                 </div>
               </label>
             </div>
-
-            {/* 分割线 */}
-            <div className='border-t border-gray-200 dark:border-gray-700'></div>
           </div>
         </div>
       </div>

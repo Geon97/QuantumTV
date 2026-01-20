@@ -45,25 +45,40 @@ import { createPortal } from 'react-dom';
 
 import { AdminConfig } from '@/lib/admin.types';
 
-import DatabaseImportExport from '@/components/DatabaseImportExport';
+import DatabaseImportExport, { ConfirmModal } from '@/components/DatabaseImportExport';
 import PageLayout from '@/components/PageLayout';
 
-// 配置导入/导出弹窗组件
+// 配置迁移弹窗组件
 interface ConfigImportExportModalProps {
   isOpen: boolean;
   onClose: () => void;
   config: AdminConfig | null;
   onImport: (config: AdminConfig) => void;
+  showAlert: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void;
 }
 
 const ConfigImportExportModal = ({
   isOpen,
   onClose,
   config,
-  // onImport,
+  onImport,
+  showAlert,
 }: ConfigImportExportModalProps) => {
   const [importText, setImportText] = useState('');
   const [activeTab, setActiveTab] = useState<'import' | 'export'>('export');
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    type?: 'danger' | 'warning';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    type: 'warning',
+  });
 
   if (!isOpen) return null;
 
@@ -79,6 +94,7 @@ const ConfigImportExportModal = ({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    showAlert('success', '导出成功', '配置文件已下载');
   };
 
   const handleImport = () => {
@@ -163,6 +179,10 @@ const ConfigImportExportModal = ({
               is_adult: s.is_adult || false,
             })),
           };
+        } else {
+          // 如果不是视频源数组，使用默认配置
+          showAlert('error', '格式错误', '数组格式需要包含视频源信息');
+          return;
         }
       }
       // 情况3: 包含 sites 字段的格式 (常见的订阅配置格式)
@@ -199,14 +219,21 @@ const ConfigImportExportModal = ({
       }
       // 情况5: 无法识别的格式
       else {
-        alert('无法识别的配置格式，请确保包含 SourceConfig、sites 或 api_site 字段');
+        showAlert('error', '无法识别的配置格式', '请确保包含 SourceConfig、sites 或 api_site 字段');
         return;
       }
-
+      // 确保 finalConfig 已定义
+      if (!finalConfig) {
+        showAlert('error', '配置解析失败', '无法解析配置格式');
+        return;
+      }
+      onImport(finalConfig);
       setImportText('');
       onClose();
-    } catch {
-      alert('配置格式错误，请检查 JSON 格式');
+      showAlert('success', '导入成功');
+    } catch (error) {
+      console.error('导入失败:', error);
+      showAlert('error', '配置格式错误', '请检查 JSON 格式是否正确');
     }
   };
 
@@ -226,7 +253,7 @@ const ConfigImportExportModal = ({
       <div className='bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full p-6'>
         <div className='flex justify-between items-center mb-4'>
           <h3 className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
-            配置导入/导出
+            配置迁移
           </h3>
           <button onClick={onClose}>
             <X className='w-5 h-5 text-gray-500' />
@@ -289,7 +316,19 @@ const ConfigImportExportModal = ({
               className='w-full h-40 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm resize-none'
             />
             <button
-              onClick={handleImport}
+              onClick={() => {
+                if (!importText.trim()) {
+                  showAlert('error', '请输入配置内容');
+                  return;
+                }
+                setConfirmModal({
+                  isOpen: true,
+                  title: '导入配置',
+                  message: '导入配置将覆盖当前所有配置，确认要继续吗？',
+                  onConfirm: handleImport,
+                  type: 'warning',
+                });
+              }}
               disabled={!importText.trim()}
               className='w-full py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors'
             >
@@ -297,12 +336,22 @@ const ConfigImportExportModal = ({
             </button>
           </div>
         )}
+        {/* 使用 DatabaseImportExport 中的 ConfirmModal 组件 */}
+        <ConfirmModal
+          isOpen={confirmModal.isOpen}
+          onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+          onConfirm={confirmModal.onConfirm}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          confirmText='确认'
+          cancelText='取消'
+          type={confirmModal.type}
+        />
       </div>
     </div>,
     document.body
   );
 };
-
 // localStorage 配置键
 const LOCAL_CONFIG_KEY = 'quantumtv_admin_config';
 
@@ -1437,7 +1486,7 @@ function AdminPageContent() {
             className='flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors'
           >
             <Database className='w-4 h-4' />
-            导入/导出
+            配置迁移
           </button>
         </div>
 
@@ -1491,7 +1540,7 @@ function AdminPageContent() {
         timer={2000}
       />
 
-      {/* 导入/导出弹窗 */}
+      {/* 配置迁移弹窗 */}
       <ConfigImportExportModal
         isOpen={isImportExportModalOpen}
         onClose={() => setIsImportExportModalOpen(false)}
@@ -1500,6 +1549,7 @@ function AdminPageContent() {
           saveConfig(newConfig);
           showAlert('success', '导入成功');
         }}
+        showAlert={showAlert}
       />
     </PageLayout>
   );

@@ -23,7 +23,7 @@ interface ConfirmModalProps {
   type?: 'danger' | 'warning';
 }
 
-const ConfirmModal = ({
+export const ConfirmModal = ({
   isOpen,
   onClose,
   onConfirm,
