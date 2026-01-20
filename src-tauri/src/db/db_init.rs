@@ -1,6 +1,49 @@
 use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use tauri::Manager;
+
+#[derive(Serialize, Deserialize)]
+pub struct PlayRecord {
+    pub key: String,
+    pub title: String,
+    pub source_name: String,
+    pub year: String,
+    pub cover: String,
+    pub episode_index: i32,
+    pub total_episodes: i32,
+    pub play_time: i32,
+    pub total_time: i32,
+    pub save_time: i32,
+    pub search_title: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Favorite {
+    pub key: String,
+    pub title: String,
+    pub source_name: String,
+    pub year: String,
+    pub cover: String,
+    pub episode_index: i32,
+    pub total_episodes: i32,
+    pub save_time: i32,
+    pub search_title: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SearchHistory {
+    pub keyword: String,
+    pub save_time: i32,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SkipConfig {
+    pub key: String,
+    pub enable: i32,
+    pub intro_time: f64,
+    pub outro_time: f64,
+}
 
 pub fn init_db(app: &tauri::AppHandle) -> Connection {
     let app_dir = app

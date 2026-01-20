@@ -1,4 +1,5 @@
 pub mod db_client;
+pub mod db_handlers;
 pub mod db_init;
 pub mod play_favorite;
 pub mod play_record;

@@ -45,6 +45,7 @@ import { createPortal } from 'react-dom';
 
 import { AdminConfig } from '@/lib/admin.types';
 
+import DatabaseImportExport from '@/components/DatabaseImportExport';
 import PageLayout from '@/components/PageLayout';
 
 // 配置导入/导出弹窗组件
@@ -335,7 +336,7 @@ function getDefaultConfig(): AdminConfig {
 }
 
 // 通用弹窗组件
-interface AlertModalProps {
+export interface AlertModalProps {
   isOpen: boolean;
   onClose: () => void;
   type: 'success' | 'error' | 'warning';
@@ -344,7 +345,7 @@ interface AlertModalProps {
   timer?: number;
 }
 
-const AlertModal = ({
+export const AlertModal = ({
   isOpen,
   onClose,
   type,
@@ -1319,6 +1320,7 @@ function AdminPageContent() {
     videoSource: false,
     categoryConfig: false,
     liveSource: false,
+    databaseImportExport: false,
   });
   const [alertModal, setAlertModal] = useState({
     isOpen: false,
@@ -1467,6 +1469,15 @@ function AdminPageContent() {
           onToggle={() => toggleTab('categoryConfig')}
         >
           <CategoryConfig config={config} onSave={saveConfig} showAlert={showAlert} />
+        </CollapsibleTab>
+        {/* 数据库导入导出 */}
+        <CollapsibleTab
+          title='数据操作'
+          icon={<Database className='w-5 h-5 text-green-500' />}
+          isExpanded={expandedTabs.databaseImportExport}
+          onToggle={() => toggleTab('databaseImportExport')}
+        >
+          <DatabaseImportExport showAlert={showAlert} />
         </CollapsibleTab>
       </div>
 

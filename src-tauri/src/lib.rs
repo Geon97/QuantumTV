@@ -62,6 +62,10 @@ pub fn run() {
             db::play_skip::get_skip_config,
             db::play_skip::save_skip_config,
             db::play_skip::delete_skip_config,
+            // 导入导出清除
+            db::db_handlers::export_json,
+            db::db_handlers::import_json,
+            db::db_handlers::clear_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
