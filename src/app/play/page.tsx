@@ -91,39 +91,6 @@ function PlayPageClient() {
     blockAdEnabledRef.current = blockAdEnabled;
   }, [blockAdEnabled]);
 
-  // 获取 HLS 缓冲配置（根据用户设置的模式）
-  const getHlsBufferConfig = () => {
-    const mode =
-      typeof window !== 'undefined'
-        ? localStorage.getItem('playerBufferMode') || 'standard'
-        : 'standard';
-
-    switch (mode) {
-      case 'enhanced':
-        // 增强模式：1.5 倍缓冲
-        return {
-          maxBufferLength: 45, // 45s（默认30s × 1.5）
-          backBufferLength: 45,
-          maxBufferSize: 90 * 1000 * 1000, // 90MB
-        };
-      case 'max':
-        // 强力模式：3 倍缓冲
-        return {
-          maxBufferLength: 90, // 90s（默认30s × 3）
-          backBufferLength: 60,
-          maxBufferSize: 180 * 1000 * 1000, // 180MB
-        };
-      case 'standard':
-      default:
-        // 默认模式
-        return {
-          maxBufferLength: 30,
-          backBufferLength: 30,
-          maxBufferSize: 60 * 1000 * 1000, // 60MB
-        };
-    }
-  };
-
   // 视频基本信息
   const [videoTitle, setVideoTitle] = useState(searchParams.get('title') || '');
   const [videoYear, setVideoYear] = useState(searchParams.get('year') || '');
@@ -1466,18 +1433,11 @@ function PlayPageClient() {
               video.hls.destroy();
             }
 
-            // 获取用户的缓冲模式配置
-            const bufferConfig = getHlsBufferConfig();
 
             const hls = new Hls({
               debug: false, // 关闭日志
               enableWorker: true, // WebWorker 解码，降低主线程压力
               lowLatencyMode: true, // 开启低延迟 LL-HLS
-
-              /* 缓冲/内存相关 - 根据用户设置动态配置 */
-              maxBufferLength: bufferConfig.maxBufferLength,
-              backBufferLength: bufferConfig.backBufferLength,
-              maxBufferSize: bufferConfig.maxBufferSize,
 
               /* 自定义loader */
               loader: blockAdEnabledRef.current
