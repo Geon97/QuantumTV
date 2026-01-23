@@ -1,6 +1,6 @@
 {
   "name": "quantumtv",
-  "version": "0.1.8",
+  "version": "0.1.7",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -17,8 +17,7 @@
     "format:check": "prettier -c .",
     "copy:version": "node -e \"require('fs').copyFileSync('VERSION.txt', 'public/VERSION.txt')\"",
     "postbuild": "echo 'Build completed - sitemap generation disabled'",
-    "prepare": "husky install",
-    "vercel-build": "pnpm copy:version && next build"
+    "prepare": "husky install"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
