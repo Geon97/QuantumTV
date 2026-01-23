@@ -66,6 +66,8 @@ pub fn run() {
             db::db_handlers::export_json,
             db::db_handlers::import_json,
             db::db_handlers::clear_cache,
+            // 番
+            commands::bangumi::get_bangumi_calendar_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

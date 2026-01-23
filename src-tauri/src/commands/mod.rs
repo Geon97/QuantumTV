@@ -1,3 +1,4 @@
+pub mod bangumi;
 pub mod config;
 pub mod search;
 pub mod version;

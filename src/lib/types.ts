@@ -164,3 +164,25 @@ export interface RustSkipConfig {
   intro_time: number;
   outro_time: number;
 }
+
+export interface BangumiCalendarData {
+  weekday: {
+    en: string;
+  };
+  items: {
+    id: number;
+    name: string;
+    name_cn: string;
+    rating?: {
+      score?: number;
+    };
+    air_date?: string;
+    images?: {
+      large?: string;
+      common?: string;
+      medium?: string;
+      small?: string;
+      grid?: string;
+    };
+  }[];
+}

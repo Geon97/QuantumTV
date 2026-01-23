@@ -5,13 +5,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
-import { GetBangumiCalendarData } from '@/lib/bangumi.client';
 import {
   getDoubanCategories,
   getDoubanList,
   getDoubanRecommends,
 } from '@/lib/douban.client';
-import { DoubanItem, DoubanResult } from '@/lib/types';
+import { BangumiCalendarData,DoubanItem, DoubanResult } from '@/lib/types';
 import { useSourceFilter } from '@/hooks/useSourceFilter';
 
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
@@ -315,7 +314,7 @@ function DoubanPageClient() {
           throw new Error('没有找到对应的分类');
         }
       } else if (type === 'anime' && primarySelection === '每日放送') {
-        const calendarData = await GetBangumiCalendarData();
+        const calendarData = await invoke<BangumiCalendarData[]>('get_bangumi_calendar_data');
         // 如果 selectedWeekday 为空，使用当天的星期
         const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         const targetWeekday = selectedWeekday || weekdays[new Date().getDay()];

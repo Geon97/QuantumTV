@@ -7,12 +7,8 @@ import { ChevronRight, Sparkles, X } from 'lucide-react';
 import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 
-import {
-  BangumiCalendarData,
-  GetBangumiCalendarData,
-} from '@/lib/bangumi.client';
 import { getDoubanCategories } from '@/lib/douban.client';
-import { DoubanItem, RustFavorite, RustPlayRecord } from '@/lib/types';
+import { BangumiCalendarData, DoubanItem, RustFavorite, RustPlayRecord } from '@/lib/types';
 import { subscribeToDataUpdates } from '@/lib/utils';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
@@ -76,7 +72,7 @@ function HomeClient() {
             }),
             getDoubanCategories({ kind: 'tv', category: 'tv', type: 'tv' }),
             getDoubanCategories({ kind: 'tv', category: 'show', type: 'show' }),
-            GetBangumiCalendarData(),
+            invoke<BangumiCalendarData[]>('get_bangumi_calendar_data'),
           ]);
 
         if (moviesData.code === 200) {
