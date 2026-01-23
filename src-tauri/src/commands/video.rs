@@ -1,10 +1,12 @@
 use crate::storage::StorageManager;
+use image::{GenericImageView, ImageOutputFormat};
 use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, REFERER, USER_AGENT};
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::RwLock;
@@ -33,7 +35,8 @@ impl VideoCacheManager {
         let mut keys = self.keys.write().await;
 
         if !cache.contains_key(&url) {
-            if keys.len() > 20 {
+            // 缓存大小到 50
+            if keys.len() >= 50 {
                 if let Some(oldest) = keys.get(0).cloned() {
                     cache.remove(&oldest);
                     keys.remove(0);
@@ -471,7 +474,14 @@ pub async fn get_video_detail(
 
 #[tauri::command]
 pub async fn proxy_image(url: String) -> Result<Vec<u8>, String> {
-    let client = reqwest::Client::new();
+    // 优化的 HTTP 客户端配置
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .pool_max_idle_per_host(10)
+        .pool_idle_timeout(std::time::Duration::from_secs(90))
+        .build()
+        .map_err(|e| e.to_string())?;
+
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"));
     headers.insert(
@@ -481,7 +491,6 @@ pub async fn proxy_image(url: String) -> Result<Vec<u8>, String> {
         ),
     );
 
-    // If it's a douban image, add referer
     if url.contains("doubanio.com") {
         headers.insert(REFERER, HeaderValue::from_static("https://www.douban.com/"));
     }
@@ -498,7 +507,32 @@ pub async fn proxy_image(url: String) -> Result<Vec<u8>, String> {
     }
 
     let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
-    Ok(bytes.to_vec())
+    // 压缩图片
+    let compressed_bytes = tokio::task::spawn_blocking(move || {
+        let img = image::load_from_memory(&bytes).map_err(|e| format!("图片解码失败: {}", e))?;
+        let (width, height) = img.dimensions();
+        let processed_img = if width > 800 {
+            img.resize(
+                800,
+                800 * height / width,
+                image::imageops::FilterType::Triangle,
+            )
+        } else {
+            img
+        };
+
+        let mut buf = Vec::new();
+        let mut cursor = Cursor::new(&mut buf);
+        // 这里设置为 JPEG 格式，质量为 70 (范围 1-100)
+        processed_img
+            .write_to(&mut cursor, ImageOutputFormat::Jpeg(70))
+            .map_err(|e| format!("图片编码失败: {}", e))?;
+
+        Ok::<Vec<u8>, String>(buf)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(compressed_bytes)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -581,7 +615,14 @@ pub async fn fetch_binary(
     }
 
     // 2. 执行网络请求
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .pool_max_idle_per_host(20)
+        .pool_idle_timeout(std::time::Duration::from_secs(90))
+        .tcp_keepalive(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| e.to_string())?;
+
     let req_method = match method_str.to_uppercase().as_str() {
         "POST" => reqwest::Method::POST,
         "HEAD" => reqwest::Method::HEAD,
@@ -659,10 +700,18 @@ async fn prefetch_next_segments(
     };
     let padding = num_str.len();
 
-    let client = reqwest::Client::new();
+    // 优化的 HTTP 客户端配置
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .pool_max_idle_per_host(20)
+        .pool_idle_timeout(std::time::Duration::from_secs(90))
+        .tcp_keepalive(std::time::Duration::from_secs(60))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
 
-    // 预取接下来的 3 个分片
-    for i in 1..=3 {
+    // 预取接下来的 6 个分片
+    let mut handles = Vec::new();
+    for i in 1..=6 {
         let next_num = current_num + i;
         let next_num_str = format!("{:0width$}", next_num, width = padding);
         let next_url = format!("{}{}{}", prefix, next_num_str, suffix);
@@ -675,43 +724,62 @@ async fn prefetch_next_segments(
             }
         }
 
-        // 开始下载
-        let mut final_headers = HeaderMap::new();
-        if let Some(h) = headers.clone() {
-            for (k, v) in h {
-                if let Ok(name) = reqwest::header::HeaderName::from_bytes(k.as_bytes()) {
-                    if let Ok(value) = HeaderValue::from_str(&v) {
-                        final_headers.insert(name, value);
-                    }
-                }
-            }
-        }
+        // 并发下载
+        let client_clone = client.clone();
+        let headers_clone = headers.clone();
+        let cache_clone = cache.clone();
+        let keys_clone = keys.clone();
+        let next_url_clone = next_url.clone();
 
-        if !final_headers.contains_key(USER_AGENT) {
-            final_headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"));
-        }
-
-        let resp = client.get(&next_url).headers(final_headers).send().await;
-        if let Ok(r) = resp {
-            if r.status() == 200 {
-                if let Ok(data) = r.bytes().await {
-                    let mut c = cache.write().await;
-                    let mut k = keys.write().await;
-
-                    if !c.contains_key(&next_url) {
-                        if k.len() > 30 {
-                            // 预取可以允许稍微大一点的缓存
-                            if let Some(oldest) = k.get(0).cloned() {
-                                c.remove(&oldest);
-                                k.remove(0);
-                            }
+        let handle = tokio::spawn(async move {
+            let mut final_headers = HeaderMap::new();
+            if let Some(h) = headers_clone {
+                for (k, v) in h {
+                    if let Ok(name) = reqwest::header::HeaderName::from_bytes(k.as_bytes()) {
+                        if let Ok(value) = HeaderValue::from_str(&v) {
+                            final_headers.insert(name, value);
                         }
-                        k.push(next_url.clone());
                     }
-                    c.insert(next_url, data.to_vec());
                 }
             }
-        }
+
+            if !final_headers.contains_key(USER_AGENT) {
+                final_headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"));
+            }
+
+            let resp = client_clone
+                .get(&next_url_clone)
+                .headers(final_headers)
+                .send()
+                .await;
+            if let Ok(r) = resp {
+                if r.status() == 200 {
+                    if let Ok(data) = r.bytes().await {
+                        let mut c = cache_clone.write().await;
+                        let mut k = keys_clone.write().await;
+
+                        if !c.contains_key(&next_url_clone) {
+                            if k.len() >= 80 {
+                                // 预取缓存可以更大
+                                if let Some(oldest) = k.get(0).cloned() {
+                                    c.remove(&oldest);
+                                    k.remove(0);
+                                }
+                            }
+                            k.push(next_url_clone.clone());
+                        }
+                        c.insert(next_url_clone, data.to_vec());
+                    }
+                }
+            }
+        });
+
+        handles.push(handle);
+    }
+
+    // 等待所有预取任务完成
+    for handle in handles {
+        let _ = handle.await;
     }
 }
 

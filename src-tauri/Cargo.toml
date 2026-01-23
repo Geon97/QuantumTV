@@ -33,4 +33,5 @@ uuid = { version = "1", features = ["v4", "serde"] }
 url = "2"
 tauri-plugin-http = "2"
 rusqlite = { version = "0.38.0", features = ["bundled"] }
+image = "0.24"
 

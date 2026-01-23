@@ -22,9 +22,9 @@ import React, {
 } from 'react';
 
 import { RustFavorite } from '@/lib/types';
-import { processImageUrl } from '@/lib/utils';
 import { generateStorageKey, subscribeToDataUpdates } from '@/lib/utils';
 import { useLongPress } from '@/hooks/useLongPress';
+import { useProxyImage } from '@/hooks/useProxyImage';
 
 import { ImagePlaceholder } from '@/components/ImagePlaceholder';
 import MobileActionSheet from '@/components/MobileActionSheet';
@@ -91,6 +91,9 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
     const [searchFavorited, setSearchFavorited] = useState<boolean | null>(
       null,
     ); // 搜索结果的收藏状态
+
+    // 使用 Tauri proxy_image 命令加载图片
+    const { url: proxiedPosterUrl } = useProxyImage(poster || '');
 
     // 可外部修改的可控字段
     const [dynamicEpisodes, setDynamicEpisodes] = useState<number | undefined>(
@@ -623,7 +626,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
             {!isLoading && <ImagePlaceholder aspectRatio='aspect-2/3' />}
             {/* 图片 */}
             <Image
-              src={processImageUrl(actualPoster)}
+              src={proxiedPosterUrl}
               alt={actualTitle}
               fill
               className={origin === 'live' ? 'object-contain' : 'object-cover'}
@@ -636,7 +639,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                 if (!img.dataset.retried) {
                   img.dataset.retried = 'true';
                   setTimeout(() => {
-                    img.src = processImageUrl(actualPoster);
+                    img.src = proxiedPosterUrl;
                   }, 2000);
                 }
               }}
@@ -1137,7 +1140,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
           isOpen={showMobileActions}
           onClose={() => setShowMobileActions(false)}
           title={actualTitle}
-          poster={processImageUrl(actualPoster)}
+          poster={proxiedPosterUrl}
           actions={mobileActions}
           sources={
             isAggregate && dynamicSourceNames

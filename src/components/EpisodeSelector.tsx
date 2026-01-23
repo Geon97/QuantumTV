@@ -10,7 +10,8 @@ import React, {
 } from 'react';
 
 import { SearchResult } from '@/lib/types';
-import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
+import { getVideoResolutionFromM3u8 } from '@/lib/utils';
+import { useProxyImage } from '@/hooks/useProxyImage';
 
 // 定义视频信息类型
 interface VideoInfo {
@@ -19,6 +20,23 @@ interface VideoInfo {
   pingTime: number;
   hasError?: boolean; // 添加错误状态标识
 }
+
+// 源封面组件 - 使用 Tauri proxy_image
+const SourcePoster: React.FC<{ poster: string; title: string }> = ({ poster, title }) => {
+  const { url: proxiedUrl } = useProxyImage(poster);
+
+  return (
+    <img
+      src={proxiedUrl}
+      alt={title}
+      className='w-full h-full object-cover'
+      onError={(e) => {
+        const target = e.target as HTMLImageElement;
+        target.style.display = 'none';
+      }}
+    />
+  );
+};
 
 interface EpisodeSelectorProps {
   /** 总集数 */
@@ -560,15 +578,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                         {/* 封面 */}
                         <div className='shrink-0 w-12 h-20 bg-gray-300 dark:bg-gray-600 rounded overflow-hidden'>
                           {source.episodes && source.episodes.length > 0 && (
-                            <img
-                              src={processImageUrl(source.poster)}
-                              alt={source.title}
-                              className='w-full h-full object-cover'
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.style.display = 'none';
-                              }}
-                            />
+                            <SourcePoster poster={source.poster} title={source.title} />
                           )}
                         </div>
 

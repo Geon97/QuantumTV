@@ -14,8 +14,9 @@ import {
   RustSkipConfig,
   SearchResult,
 } from '@/lib/types';
-import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
+import { getVideoResolutionFromM3u8 } from '@/lib/utils';
 import { generateStorageKey, subscribeToDataUpdates } from '@/lib/utils';
+import { useProxyImage } from '@/hooks/useProxyImage';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
@@ -96,6 +97,9 @@ function PlayPageClient() {
   const [videoYear, setVideoYear] = useState(searchParams.get('year') || '');
   const [videoCover, setVideoCover] = useState('');
   const [videoDoubanId, setVideoDoubanId] = useState(0);
+
+  // 使用 Tauri proxy_image 命令加载封面图片
+  const { url: proxiedCoverUrl } = useProxyImage(videoCover);
   // 当前源和ID
   const [currentSource, setCurrentSource] = useState(
     searchParams.get('source') || '',
@@ -663,36 +667,107 @@ function PlayPageClient() {
     }
   };
 
-  class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
+  // 使用 Tauri fetch_binary 的 HLS.js Loader（带缓存和预取）
+  class TauriHlsJsLoader {
+    context: any;
+    config: any;
+    callbacks: any;
+    stats: any;
+    enableAdBlock: boolean;
+
     constructor(config: any) {
-      super(config);
-      const load = this.load.bind(this);
-      this.load = function (context: any, config: any, callbacks: any) {
-        // 拦截manifest和level请求
-        if (
-          (context as any).type === 'manifest' ||
-          (context as any).type === 'level'
-        ) {
-          const onSuccess = callbacks.onSuccess;
-          callbacks.onSuccess = function (
-            response: any,
-            stats: any,
-            context: any,
-          ) {
-            // 如果是m3u8文件，处理内容以移除广告分段
-            if (response.data && typeof response.data === 'string') {
-              // 过滤掉广告段 - 实现更精确的广告过滤逻辑
-              response.data = filterAdsFromM3U8(response.data);
-            }
-            return onSuccess(response, stats, context, null);
-          };
-        }
-        // 执行原始load方法
-        load(context, config, callbacks);
+      this.config = config;
+      this.enableAdBlock = config.enableAdBlock || false;
+      
+      // 在构造函数中立即初始化 stats
+      this.stats = {
+        aborted: false,
+        loaded: 0,
+        retry: 0,
+        total: 0,
+        chunkCount: 0,
+        bwEstimate: 0,
+        loading: { start: 0, first: 0, end: 0 },
+        parsing: { start: 0, end: 0 },
+        buffering: { start: 0, first: 0, end: 0 },
       };
     }
-  }
 
+    destroy() {
+      this.callbacks = null;
+      this.config = null;
+      this.stats = null;
+      this.context = null;
+    }
+
+    abort() {
+      if (this.stats) {
+        this.stats.aborted = true;
+      }
+    }
+
+    load(context: any, config: any, callbacks: any) {
+      this.context = context;
+      this.callbacks = callbacks;
+      
+      // 确保 stats 存在（以防万一）
+      if (this.stats) {
+        this.stats.loading.start = performance.now();
+        this.stats.loading.first = 0;
+        this.stats.loading.end = 0;
+      }
+
+      const { url } = context;
+
+      // 使用 Tauri fetch_binary 命令（自动缓存和预取）
+      invoke<{ status: number; body: number[] }>('fetch_binary', {
+        url,
+        method: 'GET',
+        headersOpt: null,
+      })
+        .then((result) => {
+          // 关键修复：先检查 this.stats 是否为 null (即 loader 是否已被销毁)
+          if (!this.stats || this.stats.aborted) return;
+
+
+          this.stats.loading.end = performance.now();
+          this.stats.loading.first = this.stats.loading.start; 
+          
+          const data = new Uint8Array(result.body);
+          this.stats.loaded = data.byteLength;
+          this.stats.total = data.byteLength;
+          const duration = this.stats.loading.end - this.stats.loading.start;
+          duration > 0 ? (this.stats.loaded * 8 / 1000 / 1000) / (duration / 1000) : 0;
+
+          let responseData: any = data.buffer;
+
+          if (
+            context.type === 'manifest' ||
+            context.type === 'level'
+          ) {
+            const text = new TextDecoder().decode(data);
+            const filteredText = this.enableAdBlock ? filterAdsFromM3U8(text) : text;
+            responseData = filteredText;
+          }
+
+          const response = {
+            url,
+            data: responseData,
+          };
+
+          callbacks.onSuccess(response, this.stats, context);
+        })
+        .catch((error) => {
+          // 关键修复：同样在错误处理中检查 this.stats 是否存在
+          if (!this.stats || this.stats.aborted) return;
+          
+          callbacks.onError(
+            { code: 0, text: error.toString() },
+            context
+          );
+        });
+    }
+  }
   // 当集数索引变化时自动更新视频地址
   useEffect(() => {
     updateVideoUrl(detail, currentEpisodeIndex);
@@ -1439,11 +1514,10 @@ function PlayPageClient() {
               enableWorker: true, // WebWorker 解码，降低主线程压力
               lowLatencyMode: true, // 开启低延迟 LL-HLS
 
-              /* 自定义loader */
-              loader: blockAdEnabledRef.current
-                ? CustomHlsJsLoader
-                : Hls.DefaultConfig.loader,
-            });
+              /* 自定义loader - 使用 Tauri fetch_binary（带缓存和预取） */
+              loader: TauriHlsJsLoader,
+              enableAdBlock: blockAdEnabledRef.current, // 传递去广告配置
+            } as any);
 
             hls.loadSource(url);
             hls.attachMedia(video);
@@ -2172,7 +2246,7 @@ function PlayPageClient() {
                 {videoCover ? (
                   <>
                     <img
-                      src={processImageUrl(videoCover)}
+                      src={proxiedCoverUrl}
                       alt={videoTitle}
                       className='w-full h-full object-cover'
                     />
