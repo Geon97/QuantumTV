@@ -473,8 +473,25 @@ pub async fn get_video_detail(
 }
 
 #[tauri::command]
-pub async fn proxy_image(url: String) -> Result<Vec<u8>, String> {
-    // 优化的 HTTP 客户端配置
+pub async fn proxy_image(
+    url: String,
+    cache_manager: State<'_, crate::db::image_cache::ImageCacheManager>,
+) -> Result<Vec<u8>, String> {
+    // 1. 先尝试从 SQLite 缓存获取
+    match cache_manager.get(&url) {
+        Ok(Some(data)) => {
+            return Ok(data);
+        }
+        Ok(None) => {
+            // 缓存未命中，继续请求
+        }
+        Err(e) => {
+            eprintln!("Failed to get cached image: {}", e);
+            // 缓存读取失败，继续请求
+        }
+    }
+
+    // 2. 缓存未命中，通过 HTTP 请求获取图片
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .pool_max_idle_per_host(10)
@@ -507,7 +524,8 @@ pub async fn proxy_image(url: String) -> Result<Vec<u8>, String> {
     }
 
     let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
-    // 压缩图片
+
+    // 3. 压缩图片
     let compressed_bytes = tokio::task::spawn_blocking(move || {
         let img = image::load_from_memory(&bytes).map_err(|e| format!("图片解码失败: {}", e))?;
         let (width, height) = img.dimensions();
@@ -523,7 +541,6 @@ pub async fn proxy_image(url: String) -> Result<Vec<u8>, String> {
 
         let mut buf = Vec::new();
         let mut cursor = Cursor::new(&mut buf);
-        // 这里设置为 JPEG 格式，质量为 70 (范围 1-100)
         processed_img
             .write_to(&mut cursor, ImageOutputFormat::Jpeg(70))
             .map_err(|e| format!("图片编码失败: {}", e))?;
@@ -532,6 +549,12 @@ pub async fn proxy_image(url: String) -> Result<Vec<u8>, String> {
     })
     .await
     .map_err(|e| e.to_string())??;
+
+    // 4. 保存到 SQLite 缓存
+    if let Err(e) = cache_manager.set(&url, &compressed_bytes) {
+        eprintln!("Failed to save image to cache: {}", e);
+    }
+
     Ok(compressed_bytes)
 }
 

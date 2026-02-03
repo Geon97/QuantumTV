@@ -7,6 +7,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
 import { BangumiCalendarData,DoubanItem, DoubanResult } from '@/lib/types';
 import { useSourceFilter } from '@/hooks/useSourceFilter';
+import { useImagePreload } from '@/hooks/useImagePreload';
 
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
 import DoubanCustomSelector from '@/components/DoubanCustomSelector';
@@ -92,6 +93,10 @@ function DoubanPageClient() {
   const [filteredSourceCategories, setFilteredSourceCategories] = useState<
     SourceCategory[]
   >([]);
+
+  // 图片预加载：提取前 30 张图片
+  const imageUrls = doubanData.slice(0, 30).map(item => item.poster).filter(Boolean);
+  useImagePreload(imageUrls, !loading && doubanData.length > 0);
 
   // 选中的源分类
   const [selectedSourceCategory, setSelectedSourceCategory] =
@@ -392,7 +397,8 @@ function DoubanPageClient() {
 
         if (isSnapshotEqual(requestSnapshot, currentSnapshot)) {
           setDoubanData(data.list);
-          setHasMore(data.list.length !== 0);
+          // 判断是否还有更多数据：返回的数据等于 pageLimit (25) 说明可能还有更多
+          setHasMore(data.list.length === 25);
           setLoading(false);
         } else {
           console.log('参数不一致，不执行任何操作，避免设置过期数据');
@@ -559,8 +565,17 @@ function DoubanPageClient() {
             const currentSnapshot = { ...currentParamsRef.current };
 
             if (isSnapshotEqual(requestSnapshot, currentSnapshot)) {
-              setDoubanData((prev) => [...prev, ...data.list]);
-              setHasMore(data.list.length !== 0);
+              // 去重：使用 id 作为唯一标识
+              setDoubanData((prev) => {
+                const existingIds = new Set(prev.map(item => item.id));
+                const newItems = data.list.filter(item => !existingIds.has(item.id));
+                return [...prev, ...newItems];
+              });
+
+              // 判断是否还有更多数据：
+              // 1. 返回的数据为空，说明到底了
+              // 2. 返回的数据少于 pageLimit (25)，说明是最后一页
+              setHasMore(data.list.length > 0 && data.list.length === 25);
             } else {
               console.log('参数不一致，不执行任何操作，避免设置过期数据');
             }

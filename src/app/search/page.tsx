@@ -13,6 +13,7 @@ import React, {
 
 import { SearchResult } from '@/lib/types';
 import { subscribeToDataUpdates } from '@/lib/utils';
+import { useImagePreload } from '@/hooks/useImagePreload';
 
 import PageLayout from '@/components/PageLayout';
 import SearchResultFilter, {
@@ -499,6 +500,12 @@ function SearchPageClient() {
       document.body.removeEventListener('scroll', handleScroll);
     };
   }, []);
+
+  // 图片预加载：提取前 30 张搜索结果的图片
+  const searchImageUrls = useMemo(() => {
+    return searchResults.slice(0, 30).map(item => item.poster).filter(Boolean);
+  }, [searchResults]);
+  useImagePreload(searchImageUrls, !isLoading && searchResults.length > 0);
 
   useEffect(() => {
     // 当搜索参数变化时更新搜索状态

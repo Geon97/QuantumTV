@@ -9,6 +9,7 @@ import { Suspense, useEffect, useState } from 'react';
 
 import { BangumiCalendarData, DoubanItem, DoubanResult, RustFavorite,RustPlayRecord } from '@/lib/types';
 import { subscribeToDataUpdates } from '@/lib/utils';
+import { useImagePreload } from '@/hooks/useImagePreload';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
@@ -55,6 +56,18 @@ function HomeClient() {
   };
 
   const [favoriteItems, setFavoriteItems] = useState<FavoriteItem[]>([]);
+
+  // 图片预加载：提取所有图片 URL
+  const allImageUrls = [
+    ...hotMovies.map(m => m.poster),
+    ...hotTvShows.map(m => m.poster),
+    ...hotVarietyShows.map(m => m.poster),
+    ...bangumiCalendarData.flatMap(b => b.items.map(item => item.images?.large || item.images?.common)),
+    ...favoriteItems.map(f => f.poster),
+  ].filter((url): url is string => Boolean(url)); // 过滤空值并确保类型
+
+  // 自动预加载（延迟 500ms，避免阻塞首屏渲染）
+  useImagePreload(allImageUrls, !loading);
 
   useEffect(() => {
     const fetchRecommendData = async () => {

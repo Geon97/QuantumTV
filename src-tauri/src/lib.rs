@@ -4,6 +4,7 @@ mod storage;
 
 use db::db_client;
 use db::db_init;
+use db::image_cache::ImageCacheManager;
 use storage::StorageManager;
 use tauri::Manager;
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -23,6 +24,13 @@ pub fn run() {
             let conn = db_init::init_db(app.handle());
             let db = db_client::Db::new(conn);
             app.manage(db);
+
+            // 初始化图片缓存管理器
+            let cache_conn = db_init::init_db(app.handle());
+            let image_cache_manager = ImageCacheManager::new(cache_conn);
+            image_cache_manager.init_table().expect("failed to init image cache table");
+            app.manage(image_cache_manager);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -66,6 +74,9 @@ pub fn run() {
             db::db_handlers::export_json,
             db::db_handlers::import_json,
             db::db_handlers::clear_cache,
+            // 图片缓存
+            db::image_cache::get_cached_image,
+            db::image_cache::save_cached_image,
             // 番
             commands::bangumi::get_bangumi_calendar_data,
             // douban

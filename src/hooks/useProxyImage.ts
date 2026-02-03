@@ -1,40 +1,33 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useEffect, useRef, useState } from 'react';
 
-// 全局缓存：存储图片的原始数据（字节数组），而不是 blob URL
-const imageDataCache = new Map<string, Uint8Array>();
+// 内存缓存：存储 Blob URL，避免重复创建
+const blobUrlCache = new Map<string, string>();
+// Blob URL 引用计数，防止过早释放
+const blobUrlRefCount = new Map<string, number>();
 // 正在进行的请求，避免重复请求
 const pendingRequests = new Map<string, Promise<Uint8Array>>();
-// 全局 Blob URL 缓存，避免重复创建
-const blobUrlCache = new Map<string, string>();
 
 async function getImageData(originalUrl: string): Promise<Uint8Array> {
-  // 检查缓存
-  const cached = imageDataCache.get(originalUrl);
-  if (cached) {
-    return cached;
-  }
-
   // 检查是否有正在进行的请求
   const pending = pendingRequests.get(originalUrl);
   if (pending) {
     return pending;
   }
 
-  // 创建新请求
-  const request = invoke<number[]>('proxy_image', { url: originalUrl })
-    .then((imageData) => {
+  // 创建新请求（proxy_image 内部会自动处理 SQLite 缓存）
+  const request = (async () => {
+    try {
+      const imageData = await invoke<number[]>('proxy_image', { url: originalUrl });
       const data = new Uint8Array(imageData);
-      // 缓存原始数据
-      imageDataCache.set(originalUrl, data);
       pendingRequests.delete(originalUrl);
       return data;
-    })
-    .catch((err) => {
-      console.error('Failed to load image via Tauri:', err);
+    } catch (err) {
+      console.error('Failed to load image:', err);
       pendingRequests.delete(originalUrl);
       throw err;
-    });
+    }
+  })();
 
   pendingRequests.set(originalUrl, request);
   return request;
@@ -92,12 +85,12 @@ export function useProxyImage(originalUrl: string): {
           const blob = new Blob([imageData] as any, { type: 'image/jpeg' });
           newBlobUrl = URL.createObjectURL(blob);
           blobUrlCache.set(originalUrl, newBlobUrl);
+          blobUrlRefCount.set(originalUrl, 0);
         }
 
-        // 清理旧的 blob URL（如果与新的不同）
-        if (blobUrlRef.current && blobUrlRef.current !== newBlobUrl) {
-          URL.revokeObjectURL(blobUrlRef.current);
-        }
+        // 增加引用计数
+        const currentCount = blobUrlRefCount.get(originalUrl) || 0;
+        blobUrlRefCount.set(originalUrl, currentCount + 1);
 
         blobUrlRef.current = newBlobUrl;
         setUrl(newBlobUrl);
@@ -114,18 +107,26 @@ export function useProxyImage(originalUrl: string): {
 
     return () => {
       cancelled = true;
-    };
-  }, [originalUrl]);
 
-  // 组件卸载时清理 blob URL
-  useEffect(() => {
-    return () => {
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
+      // 组件卸载时减少引用计数
+      if (blobUrlRef.current && originalUrl) {
+        const currentCount = blobUrlRefCount.get(originalUrl) || 0;
+        const newCount = currentCount - 1;
+
+        if (newCount <= 0) {
+          // 引用计数为 0，可以安全释放
+          const blobUrl = blobUrlCache.get(originalUrl);
+          if (blobUrl) {
+            URL.revokeObjectURL(blobUrl);
+            blobUrlCache.delete(originalUrl);
+            blobUrlRefCount.delete(originalUrl);
+          }
+        } else {
+          blobUrlRefCount.set(originalUrl, newCount);
+        }
       }
     };
-  }, []);
+  }, [originalUrl]);
 
   return { url, isLoading, error };
 }

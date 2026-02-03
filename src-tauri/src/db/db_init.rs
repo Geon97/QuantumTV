@@ -121,6 +121,24 @@ pub fn init_db(app: &tauri::AppHandle) -> Connection {
     )
     .expect("failed to create skip_configs table");
 
+    conn.execute_batch(
+        // 图片缓存表
+        r#"
+        CREATE TABLE IF NOT EXISTS image_cache (
+            url TEXT PRIMARY KEY,
+            data BLOB NOT NULL,
+            created_at INTEGER NOT NULL,
+            last_accessed INTEGER NOT NULL,
+            access_count INTEGER DEFAULT 1,
+            size INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_last_accessed ON image_cache(last_accessed);
+        CREATE INDEX IF NOT EXISTS idx_created_at ON image_cache(created_at);
+        "#,
+    )
+    .expect("failed to create image_cache table");
+
     conn
 }
 
