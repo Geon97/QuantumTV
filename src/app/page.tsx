@@ -7,8 +7,7 @@ import { ChevronRight, Sparkles, X } from 'lucide-react';
 import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 
-import { getDoubanCategories } from '@/lib/douban.client';
-import { BangumiCalendarData, DoubanItem, RustFavorite, RustPlayRecord } from '@/lib/types';
+import { BangumiCalendarData, DoubanItem, DoubanResult, RustFavorite,RustPlayRecord } from '@/lib/types';
 import { subscribeToDataUpdates } from '@/lib/utils';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
@@ -65,13 +64,27 @@ function HomeClient() {
         // 并行获取热门电影、热门剧集和热门综艺
         const [moviesData, tvShowsData, varietyShowsData, bangumiCalendarData] =
           await Promise.all([
-            getDoubanCategories({
-              kind: 'movie',
-              category: '热门',
-              type: '全部',
+            invoke<DoubanResult>('get_douban_categories', {
+              params: {
+                kind: 'movie',
+                category: '热门',
+                type: '全部',
+              },
             }),
-            getDoubanCategories({ kind: 'tv', category: 'tv', type: 'tv' }),
-            getDoubanCategories({ kind: 'tv', category: 'show', type: 'show' }),
+            invoke<DoubanResult>('get_douban_categories', {
+              params: {
+                kind: 'tv',
+                category: 'tv',
+                type: 'tv',
+              },
+            }),
+            invoke<DoubanResult>('get_douban_categories', {
+              params: {
+                kind: 'tv',
+                category: 'show',
+                type: 'show',
+              },
+            }),
             invoke<BangumiCalendarData[]>('get_bangumi_calendar_data'),
           ]);
 

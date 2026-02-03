@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from 'react';
 const imageDataCache = new Map<string, Uint8Array>();
 // 正在进行的请求，避免重复请求
 const pendingRequests = new Map<string, Promise<Uint8Array>>();
+// 全局 Blob URL 缓存，避免重复创建
+const blobUrlCache = new Map<string, string>();
 
 async function getImageData(originalUrl: string): Promise<Uint8Array> {
   // 检查缓存
@@ -82,12 +84,18 @@ export function useProxyImage(originalUrl: string): {
       .then((imageData) => {
         if (cancelled) return;
 
-        // 每次都创建新的 blob URL
-        const blob = new Blob([imageData] as any, { type: 'image/jpeg' });
-        const newBlobUrl = URL.createObjectURL(blob);
+        // 检查是否已有缓存的 Blob URL
+        let newBlobUrl = blobUrlCache.get(originalUrl);
 
-        // 清理旧的 blob URL
-        if (blobUrlRef.current) {
+        if (!newBlobUrl) {
+          // 只在没有缓存时创建新的 blob URL
+          const blob = new Blob([imageData] as any, { type: 'image/jpeg' });
+          newBlobUrl = URL.createObjectURL(blob);
+          blobUrlCache.set(originalUrl, newBlobUrl);
+        }
+
+        // 清理旧的 blob URL（如果与新的不同）
+        if (blobUrlRef.current && blobUrlRef.current !== newBlobUrl) {
           URL.revokeObjectURL(blobUrlRef.current);
         }
 

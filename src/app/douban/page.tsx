@@ -5,11 +5,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
-import {
-  getDoubanCategories,
-  getDoubanList,
-  getDoubanRecommends,
-} from '@/lib/douban.client';
 import { BangumiCalendarData,DoubanItem, DoubanResult } from '@/lib/types';
 import { useSourceFilter } from '@/hooks/useSourceFilter';
 
@@ -304,7 +299,7 @@ function DoubanPageClient() {
         );
 
         if (selectedCategory) {
-          data = await getDoubanList({
+          data = await invoke<DoubanResult>('get_douban_list', {
             tag: selectedCategory.query,
             type: selectedCategory.type,
             pageLimit: 25,
@@ -345,7 +340,7 @@ function DoubanPageClient() {
           throw new Error('没有找到对应的日期');
         }
       } else if (type === 'anime') {
-        data = await getDoubanRecommends({
+        data = await invoke('get_douban_recommends',{
           kind: primarySelection === '番剧' ? 'tv' : 'movie',
           pageLimit: 25,
           pageStart: 0,
@@ -364,7 +359,7 @@ function DoubanPageClient() {
             : '',
         });
       } else if (primarySelection === '全部') {
-        data = await getDoubanRecommends({
+        data = await invoke('get_douban_recommends',{
           kind: type === 'show' ? 'tv' : (type as 'tv' | 'movie'),
           pageLimit: 25,
           pageStart: 0, // 初始数据加载始终从第一页开始
@@ -385,7 +380,9 @@ function DoubanPageClient() {
             : '',
         });
       } else {
-        data = await getDoubanCategories(getRequestParams(0));
+        data = await invoke('get_douban_categories', {
+          params: getRequestParams(0),
+        });
       }
 
       if (data.code === 200) {
@@ -486,7 +483,7 @@ function DoubanPageClient() {
             );
 
             if (selectedCategory) {
-              data = await getDoubanList({
+              data = await invoke<DoubanResult>('get_douban_list', {
                 tag: selectedCategory.query,
                 type: selectedCategory.type,
                 pageLimit: 25,
@@ -503,7 +500,7 @@ function DoubanPageClient() {
               list: [],
             };
           } else if (type === 'anime') {
-            data = await getDoubanRecommends({
+            data = await invoke('get_douban_recommends',{
               kind: primarySelection === '番剧' ? 'tv' : 'movie',
               pageLimit: 25,
               pageStart: currentPage * 25,
@@ -526,7 +523,7 @@ function DoubanPageClient() {
                 : '',
             });
           } else if (primarySelection === '全部') {
-            data = await getDoubanRecommends({
+            data = await invoke('get_douban_recommends', {
               kind: type === 'show' ? 'tv' : (type as 'tv' | 'movie'),
               pageLimit: 25,
               pageStart: currentPage * 25,
@@ -551,9 +548,9 @@ function DoubanPageClient() {
                 : '',
             });
           } else {
-            data = await getDoubanCategories(
-              getRequestParams(currentPage * 25),
-            );
+            data = await invoke('get_douban_categories', {
+              params: getRequestParams(currentPage * 25),
+            });
           }
 
           if (data.code === 200) {

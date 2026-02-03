@@ -106,17 +106,12 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       douban_id,
     );
 
+    // 合并三个 useEffect 避免重复渲染
     useEffect(() => {
       setDynamicEpisodes(episodes);
-    }, [episodes]);
-
-    useEffect(() => {
       setDynamicSourceNames(source_names);
-    }, [source_names]);
-
-    useEffect(() => {
       setDynamicDoubanId(douban_id);
-    }, [douban_id]);
+    }, [episodes, source_names, douban_id]);
 
     useImperativeHandle(ref, () => ({
       setEpisodes: (eps?: number) => setDynamicEpisodes(eps),

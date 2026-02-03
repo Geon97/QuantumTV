@@ -68,6 +68,11 @@ pub fn run() {
             db::db_handlers::clear_cache,
             // 番
             commands::bangumi::get_bangumi_calendar_data,
+            // douban
+            commands::douban_client::get_douban_categories,
+            commands::douban_client::fetch_douban_list,
+            commands::douban_client::get_douban_recommends,
+            commands::douban_client::get_douban_list,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
