@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import type { Metadata, Viewport } from 'next';
 import { DM_Sans, Space_Grotesk } from 'next/font/google';
 import NextTopLoader from 'nextjs-toploader';
@@ -5,7 +6,7 @@ import React from 'react';
 
 import './globals.css';
 
-import { getConfig } from '@/lib/config';
+import { AdminConfig } from '@/lib/admin.types';
 
 import { GlobalErrorIndicator } from '../components/GlobalErrorIndicator';
 import NavbarGate from '../components/NavbarGate';
@@ -36,10 +37,10 @@ export async function generateMetadata(): Promise<Metadata> {
 
   let siteName = process.env.NEXT_PUBLIC_SITE_NAME || 'QuantumTV';
 
-  // 静态导出时不调用 getConfig，使用环境变量
+  // 静态导出时不调用，使用环境变量
   if (!isStatic && storageType !== 'localstorage') {
     try {
-      const config = getConfig();
+      const config = await invoke<AdminConfig>('get_config_data');
       siteName = config.SiteConfig.SiteName;
     } catch {
       // 静态构建时可能失败，使用默认值
@@ -85,10 +86,10 @@ export default async function RootLayout({
     query: string;
   }[];
 
-  // 静态导出时不调用 getConfig，使用环境变量
+  // 静态导出时不调用，使用环境变量
   if (!isStatic && storageType !== 'localstorage') {
     try {
-      const config = getConfig();
+      const config = await invoke<AdminConfig>('get_config_data');
       siteName = config.SiteConfig.SiteName;
       announcement = config.SiteConfig.Announcement;
 

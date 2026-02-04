@@ -3,7 +3,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useState } from 'react';
 
-import { ApiSite } from '@/lib/config';
+import { ApiSite } from '@/lib/types';
 
 // 源分类项
 export interface SourceCategory {

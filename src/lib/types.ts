@@ -1,5 +1,12 @@
-import { AdminConfig } from './admin.types';
+import { AdminConfig } from "@/lib/admin.types";
 
+export interface ApiSite {
+  key: string;
+  api: string;
+  name: string;
+  detail?: string;
+  is_adult?: boolean;
+}
 // 播放记录数据结构
 export interface PlayRecord {
   title: string;

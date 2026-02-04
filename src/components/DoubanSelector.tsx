@@ -13,7 +13,7 @@ import {
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { ApiSite } from '@/lib/config';
+import { ApiSite } from '@/lib/types';
 
 import MultiLevelSelector from './MultiLevelSelector';
 import WeekdaySelector from './WeekdaySelector';

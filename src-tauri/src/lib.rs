@@ -28,7 +28,9 @@ pub fn run() {
             // 初始化图片缓存管理器
             let cache_conn = db_init::init_db(app.handle());
             let image_cache_manager = ImageCacheManager::new(cache_conn);
-            image_cache_manager.init_table().expect("failed to init image cache table");
+            image_cache_manager
+                .init_table()
+                .expect("failed to init image cache table");
             app.manage(image_cache_manager);
 
             Ok(())
@@ -38,6 +40,7 @@ pub fn run() {
             commands::config::get_config,
             commands::config::save_config,
             commands::config::reset_config,
+            commands::config::get_config_data,
             commands::search::get_search_suggestions,
             // 视频
             commands::video::search,
