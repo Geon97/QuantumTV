@@ -1944,6 +1944,24 @@ div[data-media-provider] video {
   object-fit: contain;
 }
 
+.art-video-player.art-fullscreen,
+.art-video-player.art-fullscreen-web {
+  padding-top: env(safe-area-inset-top) !important;
+  padding-bottom: env(safe-area-inset-bottom) !important;
+  padding-left: env(safe-area-inset-left) !important;
+  padding-right: env(safe-area-inset-right) !important;
+}
+
+.art-video-player.art-fullscreen .art-bottom,
+.art-video-player.art-fullscreen-web .art-bottom {
+  padding-bottom: calc(10px + env(safe-area-inset-bottom)) !important;
+}
+
+.art-video-player.art-fullscreen .art-layers,
+.art-video-player.art-fullscreen-web .art-layers {
+  padding-top: env(safe-area-inset-top) !important;
+}
+
 /* Hide mobile-only controls */
 @media (max-width: 768px) {
   .art-control-pip,

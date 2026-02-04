@@ -146,6 +146,7 @@ export const VersionPanel: React.FC<VersionPanelProps> = ({
     if (hasUpdate) {
       const versionInfo = await getVersionForUpdate();
       setRemoteVersionInfo(versionInfo);
+      console.log('versionInfo:', versionInfo);
       if (versionInfo?.version) {
         setLatestVersion(versionInfo.version);
       }

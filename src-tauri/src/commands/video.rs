@@ -595,7 +595,6 @@ pub async fn fetch_url(
         final_headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"));
     }
 
-    // Add Referer only for douban domains
     if url.contains("doubanio.com") || url.contains("douban.com") {
         final_headers.insert(REFERER, HeaderValue::from_static("https://www.douban.com/"));
     }
