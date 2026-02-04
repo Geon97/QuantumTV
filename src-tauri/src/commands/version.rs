@@ -1,5 +1,5 @@
 use reqwest::Client;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 const VERSION_SOURCE_URLS: [&str; 4] = [
@@ -22,6 +22,47 @@ pub struct RemoteVersionInfo {
     pub build_time: String,
     pub release_notes: Vec<String>,
     pub download_url: String,
+}
+// 远程版本信息
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PackageJson {
+    version: String,
+}
+
+async fn fetch_latest_github_release(client: &Client) -> Option<String> {
+    let urls = [
+        "https://raw.githubusercontent.com/Geon97/QuantumTV/main/package.json",
+        "https://cdn.jsdelivr.net/gh/Geon97/QuantumTV@main/package.json",
+        "https://fastly.jsdelivr.net/gh/Geon97/QuantumTV@main/package.json",
+        "https://ghproxy.net/https://raw.githubusercontent.com/Geon97/QuantumTV/main/package.json",
+    ];
+
+    for url in urls {
+        let resp = client
+            .get(url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+            .header("Accept", "application/json")
+            .timeout(Duration::from_secs(3))
+            .send()
+            .await;
+
+        let Ok(resp) = resp else { continue };
+
+        if !resp.status().is_success() {
+            continue;
+        }
+
+        // ⚠️ 有些镜像会返回 HTML，这一步是关键兜底
+        let Ok(pkg) = resp.json::<PackageJson>().await else {
+            continue;
+        };
+
+        if !pkg.version.is_empty() {
+            return Some(pkg.version);
+        }
+    }
+
+    None
 }
 
 fn get_build_timestamp() -> String {
@@ -103,19 +144,22 @@ pub async fn version_for_updates() -> Result<Option<RemoteVersionInfo>, ()> {
     if remote_num <= local_num {
         return Ok(None);
     }
+    let remote_version = fetch_latest_github_release(&client)
+        .await
+        .unwrap_or_else(|| "unknown".into());
 
-    let display_version = get_current_version();
+    let download_url = RELEASE_URL.to_string();
 
     Ok(Some(RemoteVersionInfo {
-        version: display_version.clone(),
+        version: remote_version.clone(),
         timestamp: remote_ts.clone(),
         build_time: format_timestamp(&remote_ts),
         release_notes: vec![
             "发现新版本可用".into(),
-            format!("最新版本: {}", display_version),
+            format!("最新版本: {}", remote_version),
             format!("构建时间: {}", format_timestamp(&remote_ts)),
         ],
-        download_url: RELEASE_URL.into(),
+        download_url: download_url.into(),
     }))
 }
 
