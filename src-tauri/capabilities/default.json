@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "opener:default",
+    "global-shortcut:default",
     {
       "identifier": "http:default",
       "allow": [{ "url": "*" }],

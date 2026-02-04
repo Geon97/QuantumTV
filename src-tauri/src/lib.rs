@@ -7,6 +7,7 @@ use db::db_init;
 use db::image_cache::ImageCacheManager;
 use storage::StorageManager;
 use tauri::Manager;
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -19,6 +20,38 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // 注册老板键
+            #[cfg(desktop)]
+            {
+                use tauri_plugin_global_shortcut::{
+                    Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
+                };
+
+                let boss_key_shortcut =
+                    // Ctrl+Alt+X
+                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyX);
+
+                app.handle().plugin(
+                    tauri_plugin_global_shortcut::Builder::new()
+                        .with_handler(move |app, shortcut, event| {
+                            if shortcut == &boss_key_shortcut
+                                && event.state() == ShortcutState::Pressed
+                            {
+                                if let Some(window) = app.get_webview_window("main") {
+                                    if window.is_visible().unwrap_or(true) {
+                                        let _ = window.hide();
+                                    } else {
+                                        let _ = window.show();
+                                        let _ = window.set_focus();
+                                    }
+                                }
+                            }
+                        })
+                        .build(),
+                )?;
+
+                app.global_shortcut().register(boss_key_shortcut)?;
+            }
             app.manage(StorageManager::new(app.handle()));
             app.manage(commands::video::VideoCacheManager::new());
             let conn = db_init::init_db(app.handle());
