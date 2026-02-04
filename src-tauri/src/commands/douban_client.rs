@@ -368,7 +368,12 @@ async fn fetch_douban_categories(
         params.category,
         params.type_
     );
-    let client_builder = reqwest::Client::builder();
+    let client_builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30)) // 30秒超时
+        .connect_timeout(std::time::Duration::from_secs(10)) // 10秒连接超时
+        .pool_max_idle_per_host(10) // 连接池优化
+        .pool_idle_timeout(std::time::Duration::from_secs(90))
+        .tcp_keepalive(std::time::Duration::from_secs(60)); // TCP keepalive
 
     let client_builder = if !proxy_url.is_empty() && !use_tencent_cdn && !use_ali_cdn {
         // 只有非 CDN 情况下用代理
@@ -379,46 +384,65 @@ async fn fetch_douban_categories(
 
     let client = client_builder.build()?;
 
-    let response = client
-        .get(&target)
-        .header("User-Agent", "Mozilla/5.0 ...")
-        .header("Referer", "https://movie.douban.com/")
-        .header("Accept", "application/json, text/plain, */*")
-        .send()
-        .await?;
-    if !response.status().is_success() {
-        return Err(format!("HTTP error! Status: {}", response.status()).into());
-    }
-    let douban_data: DoubanCategoryApiResponse = response.json().await?;
-    let list = douban_data
-        .items
-        .unwrap_or_default()
-        .into_iter()
-        .map(|items| {
-            let poster = items.pic.map(|pic| pic.normal).unwrap_or_default();
-            let rate = items
-                .rating
-                .map(|rating| rating.value.to_string())
-                .unwrap_or_default();
-            let year = items
-                .card_subtitle
-                .chars()
-                .filter(|c| c.is_digit(10))
-                .collect::<String>();
-            DoubanItem {
-                id: items.id,
-                title: items.title,
-                poster,
-                rate,
-                year,
+    // 添加重试机制
+    let mut retries = 0;
+    let max_retries = 3;
+
+    loop {
+        match client
+            .get(&target)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+            .header("Referer", "https://movie.douban.com/")
+            .header("Accept", "application/json, text/plain, */*")
+            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+            .send()
+            .await
+        {
+            Ok(response) => {
+                if !response.status().is_success() {
+                    return Err(format!("HTTP error! Status: {}", response.status()).into());
+                }
+                let douban_data: DoubanCategoryApiResponse = response.json().await?;
+                let list = douban_data
+                    .items
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|items| {
+                        let poster = items.pic.map(|pic| pic.normal).unwrap_or_default();
+                        let rate = items
+                            .rating
+                            .map(|rating| rating.value.to_string())
+                            .unwrap_or_default();
+                        let year = items
+                            .card_subtitle
+                            .chars()
+                            .filter(|c| c.is_digit(10))
+                            .collect::<String>();
+                        DoubanItem {
+                            id: items.id,
+                            title: items.title,
+                            poster,
+                            rate,
+                            year,
+                        }
+                    })
+                    .collect();
+                return Ok(DoubanResult {
+                    code: 200,
+                    message: "获取成功".to_string(),
+                    list,
+                });
             }
-        })
-        .collect();
-    Ok(DoubanResult {
-        code: 200,
-        message: "获取成功".to_string(),
-        list,
-    })
+            Err(e) => {
+                retries += 1;
+                if retries >= max_retries {
+                    return Err(format!("请求失败，已重试 {} 次: {}", max_retries, e).into());
+                }
+                // 等待一段时间后重试（指数退避）
+                tokio::time::sleep(std::time::Duration::from_millis(500 * retries as u64)).await;
+            }
+        }
+    }
 }
 
 async fn fetch_douban_recommends(
@@ -430,7 +454,7 @@ async fn fetch_douban_recommends(
     let base_url = params.base_url(use_tencent_cdn, use_ali_cdn);
     let query = params.build_query_string()?;
     let target_url = format!("{}?{}", base_url, query);
-    println!("target_url: {}", target_url);
+
     let client_builder = reqwest::Client::builder();
 
     let client_builder = if !proxy_url.is_empty() && !use_tencent_cdn && !use_ali_cdn {
@@ -444,9 +468,10 @@ async fn fetch_douban_recommends(
 
     let response = client
         .get(&target_url)
-        .header("User-Agent", "Mozilla/5.0 ...")
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
         .header("Referer", "https://movie.douban.com/")
         .header("Accept", "application/json, text/plain, */*")
+        .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
         .send()
         .await?;
     if !response.status().is_success() {
@@ -630,9 +655,10 @@ pub async fn fetch_douban_list(
 
     let response = client
         .get(&target)
-        .header("User-Agent", "Mozilla/5.0 ...")
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
         .header("Referer", "https://movie.douban.com/")
         .header("Accept", "application/json, text/plain, */*")
+        .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
         .send()
         .await
         .map_err(|e| format!("Network request failed: {}", e))?;
