@@ -47,8 +47,3 @@ export interface AdminConfig {
     disabled?: boolean;
   }[];
 }
-
-export interface AdminConfigResult {
-  Role: 'owner' | 'admin';
-  Config: AdminConfig;
-}
