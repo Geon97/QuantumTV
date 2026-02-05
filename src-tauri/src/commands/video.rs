@@ -1,5 +1,6 @@
 use crate::storage::StorageManager;
 use image::{GenericImageView, ImageOutputFormat};
+use moka::future::Cache;
 use regex::Regex;
 use reqwest::header::{
     HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, RANGE, REFERER, USER_AGENT,
@@ -9,44 +10,30 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::Cursor;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 use tauri::State;
-use tokio::sync::RwLock;
 use uuid::Uuid;
 
 pub struct VideoCacheManager {
-    pub cache: Arc<RwLock<HashMap<String, Vec<u8>>>>,
-    pub keys: Arc<RwLock<Vec<String>>>,
+    pub cache: Cache<String, Vec<u8>>,
 }
 
 impl VideoCacheManager {
     pub fn new() -> Self {
-        Self {
-            cache: Arc::new(RwLock::new(HashMap::new())),
-            keys: Arc::new(RwLock::new(Vec::new())),
-        }
+        // 最大 300 条目，TTL 10分钟（适合视频 ts 分片）
+        let cache = Cache::builder()
+            .max_capacity(300)
+            .time_to_live(std::time::Duration::from_secs(600))
+            .build();
+        Self { cache }
     }
 
     pub async fn get(&self, url: &str) -> Option<Vec<u8>> {
-        let cache = self.cache.read().await;
-        cache.get(url).cloned()
+        self.cache.get(url).await
     }
 
     pub async fn set(&self, url: String, data: Vec<u8>) {
-        let mut cache = self.cache.write().await;
-        let mut keys = self.keys.write().await;
-
-        if !cache.contains_key(&url) {
-            // 增大缓存容量到 200
-            if keys.len() >= 200 {
-                if let Some(oldest) = keys.get(0).cloned() {
-                    cache.remove(&oldest);
-                    keys.remove(0);
-                }
-            }
-            keys.push(url.clone());
-        }
-        cache.insert(url, data);
+        self.cache.insert(url, data).await;
     }
 }
 
@@ -722,12 +709,11 @@ pub async fn fetch_binary(
         cache_manager.set(url.clone(), body.clone()).await;
 
         if url.contains(".ts") {
-            let cache_arc = cache_manager.cache.clone();
-            let keys_arc = cache_manager.keys.clone();
+            let cache_clone = cache_manager.cache.clone();
             let headers_clone = headers_opt.clone();
 
             tokio::spawn(async move {
-                prefetch_next_segments(url, headers_clone, cache_arc, keys_arc).await;
+                prefetch_next_segments(url, headers_clone, cache_clone).await;
             });
         }
     }
@@ -739,8 +725,7 @@ pub async fn fetch_binary(
 async fn prefetch_next_segments(
     current_url: String,
     headers: Option<HashMap<String, String>>,
-    cache: Arc<RwLock<HashMap<String, Vec<u8>>>>,
-    keys: Arc<RwLock<Vec<String>>>,
+    cache: Cache<String, Vec<u8>>,
 ) {
     // 简单的数字预测 logic: 查找末尾连续的数字
     // 如 segment_01.ts -> segment_02.ts
@@ -784,19 +769,16 @@ async fn prefetch_next_segments(
         let next_num = current_num + i;
         let next_num_str = format!("{:0width$}", next_num, width = padding);
         let next_url = format!("{}{}{}", prefix, next_num_str, suffix);
+
         // 已有缓存，跳过
-        {
-            let c = cache.read().await;
-            if c.contains_key(&next_url) {
-                continue;
-            }
+        if cache.contains_key(&next_url) {
+            continue;
         }
 
         // 并发下载
         let client_clone = client.clone();
         let request_headers = final_headers.clone();
         let cache_clone = cache.clone();
-        let keys_clone = keys.clone();
         let next_url_clone = next_url.clone();
 
         let handle = tokio::spawn(async move {
@@ -812,20 +794,8 @@ async fn prefetch_next_segments(
                 match resp {
                     Ok(r) if r.status().is_success() => {
                         if let Ok(data) = r.bytes().await {
-                            let mut c = cache_clone.write().await;
-                            let mut k = keys_clone.write().await;
-
-                            if !c.contains_key(&next_url_clone) {
-                                // 缓存清理逻辑
-                                if k.len() >= 250 {
-                                    if let Some(oldest) = k.get(0).cloned() {
-                                        c.remove(&oldest);
-                                        k.remove(0);
-                                    }
-                                }
-                                k.push(next_url_clone.clone());
-                            }
-                            c.insert(next_url_clone, data.to_vec());
+                            // moka 会自动处理 LRU 淘汰和 TTL 过期
+                            cache_clone.insert(next_url_clone, data.to_vec()).await;
                         }
                         break; // 成功则退出循环
                     }

@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-shortcuts",
+  "description": "Global shortcuts capability for desktop only",
+  "windows": ["main"],
+  "permissions": [
+    "global-shortcut:default"
+  ],
+  "platforms": ["linux", "macOS", "windows"]
+}

@@ -6,11 +6,11 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "global-shortcut:default",
     {
       "identifier": "http:default",
       "allow": [{ "url": "*" }],
       "deny": []
     }
-  ]
+  ],
+  "platforms": ["linux", "macOS", "windows"]
 }

@@ -1,21 +1,12 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 // TODO:
-// 3. 最后考虑配置：将 lib 的内容移到rust。
-//   1. 第一步: 从 crypto.ts 和 db.client.ts 开始，将加密和本地存储这两个最适合后端化的功能迁移到 Rust。
-//   2. 第二步: 迁移 config.ts，建立起由 Rust 管理应用配置的基础。
-//   3. 第三步: 集中处理所有网络请求，将 douban.client.ts、downstream.ts、search-cache.ts 和 bangumi.client.ts
-//       的逻辑全部移入 Rust 后端。
-//   4. 第四步: 迁移计算密集型任务 search-ranking.ts，优化搜索排序性能。
-// 4. 清除配置源之外缓存
-// 5. 应用级的核心状态（例如：当前用户、主题、配置、观看历史等）移到 Rust 中管理
-// 6. 页面跳转卡顿
-// 7. 老板键 Ctrl+Alt+X
-// 8. 添加内存缓存（moka），清理缓存，图片缓存
-// 9. 插件系统，自定义视频源插件
-// 10.下载系统
-// 11. 视频预加载
-// 12. 解决国内网络播放速度慢的问题
+// 1. 添加内存缓存（moka），清理缓存，图片缓存
+// 2. 插件系统
+// 3. 历史记录、观影信息（配置有，但主题/当前观看等仍在前端）
+// 4. 下载系统
+// 5. 视频预加载 （初步实现）
+// 6. 将图片预加载队列管理移入 Rust
 fn main() {
     tauri_temp_lib::run()
 }
