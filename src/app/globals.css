@@ -2479,3 +2479,26 @@ div[data-media-provider] video {
 .animation-delay-1000 {
   animation-delay: 1s;
 }
+
+/* ==== 强化全屏安全区域适配 ==== */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .art-video-player.art-fullscreen,
+  .art-video-player.art-fullscreen-web {
+    padding-top: max(env(safe-area-inset-top), 20px) !important;
+    padding-bottom: max(env(safe-area-inset-bottom), 20px) !important;
+    padding-left: env(safe-area-inset-left) !important;
+    padding-right: env(safe-area-inset-right) !important;
+  }
+
+  .art-video-player.art-fullscreen .art-layers,
+  .art-video-player.art-fullscreen-web .art-layers {
+    padding-top: max(env(safe-area-inset-top), 20px) !important;
+  }
+
+  .art-video-player.art-fullscreen .art-bottom,
+  .art-video-player.art-fullscreen-web .art-bottom {
+    padding-bottom: calc(
+      10px + max(env(safe-area-inset-bottom), 20px)
+    ) !important;
+  }
+}
