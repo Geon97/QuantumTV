@@ -1115,6 +1115,7 @@ const ConfigSubscription = ({ config, onSave, showAlert }: ConfigSubscriptionPro
       if (config) {
         const newConfig = {
           ...config,
+          ConfigFile: text,
           ConfigSubscribtion: {
             ...config.ConfigSubscribtion,
             URL: subscriptionUrl,

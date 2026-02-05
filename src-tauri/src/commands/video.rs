@@ -1,13 +1,15 @@
 use crate::storage::StorageManager;
 use image::{GenericImageView, ImageOutputFormat};
 use regex::Regex;
-use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, REFERER, USER_AGENT};
+use reqwest::header::{
+    HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, RANGE, REFERER, USER_AGENT,
+};
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::Cursor;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tauri::State;
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -35,8 +37,8 @@ impl VideoCacheManager {
         let mut keys = self.keys.write().await;
 
         if !cache.contains_key(&url) {
-            // 缓存大小到 50
-            if keys.len() >= 50 {
+            // 增大缓存容量到 200
+            if keys.len() >= 200 {
                 if let Some(oldest) = keys.get(0).cloned() {
                     cache.remove(&oldest);
                     keys.remove(0);
@@ -176,7 +178,32 @@ pub struct DoubanCommentsResponse {
     pub total: i32,
     pub comments: Vec<DoubanComment>,
 }
+static VIDEO_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
+fn get_video_client() -> &'static reqwest::Client {
+    VIDEO_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            // 大幅增加连接池大小，允许更高并发
+            .pool_max_idle_per_host(100)
+            .pool_idle_timeout(std::time::Duration::from_secs(120))
+            // 开启 TCP_NODELAY，减少小包延迟
+            .tcp_nodelay(true)
+            .tcp_keepalive(std::time::Duration::from_secs(60))
+            // 开启自适应窗口，解决跨国高延迟下的吞吐量瓶颈
+            .http2_adaptive_window(true)
+            // 保持 H2 连接活跃，防止中间设备切断
+            .http2_keep_alive_interval(std::time::Duration::from_secs(30))
+            // 增加超时时间，适应跨国慢速网络
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            // 烂证书 野鸡CDN 连接问题
+            .danger_accept_invalid_certs(true) // 忽略证书无效/过期/自签名
+            .danger_accept_invalid_hostnames(true) // 忽略域名不匹配
+            .no_proxy() // (可选) 避免被系统代理设置干扰，直连
+            .build()
+            .expect("Failed to create global video client")
+    })
+}
 fn is_playable_m3u8(url: &str) -> bool {
     url.to_lowercase().contains(".m3u8")
 }
@@ -289,10 +316,8 @@ pub async fn search(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-        .map_err(|e| e.to_string())?;
+    // Search 使用全局 Client
+    let client = get_video_client();
 
     let mut handles = Vec::new();
     for site in &sites {
@@ -428,7 +453,8 @@ pub async fn get_video_detail(
         };
 
     let site = api_site.ok_or_else(|| "Source not found".to_string())?;
-    let client = reqwest::Client::new();
+    // 使用全局 Client
+    let client = get_video_client();
 
     let url = format!("{}?ac=videolist&ids={}", site.api, id);
     let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
@@ -491,13 +517,8 @@ pub async fn proxy_image(
         }
     }
 
-    // 2. 缓存未命中，通过 HTTP 请求获取图片
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .pool_max_idle_per_host(10)
-        .pool_idle_timeout(std::time::Duration::from_secs(90))
-        .build()
-        .map_err(|e| e.to_string())?;
+    // 2. 使用全局 Client 获取图片
+    let client = get_video_client();
 
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"));
@@ -506,6 +527,10 @@ pub async fn proxy_image(
         HeaderValue::from_static(
             "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
         ),
+    );
+    headers.insert(
+        reqwest::header::ACCEPT_ENCODING,
+        HeaderValue::from_static("gzip, deflate, br"),
     );
 
     if url.contains("doubanio.com") {
@@ -570,7 +595,8 @@ pub async fn fetch_url(
     method: Option<String>,
     headers_opt: Option<std::collections::HashMap<String, String>>,
 ) -> Result<FetchResponse, String> {
-    let client = reqwest::Client::new();
+    // 使用全局 Client
+    let client = get_video_client();
     let method_str = method.unwrap_or_else(|| "GET".to_string());
     let req_method = match method_str.to_uppercase().as_str() {
         "POST" => reqwest::Method::POST,
@@ -609,7 +635,30 @@ pub async fn fetch_url(
 
     Ok(FetchResponse { status, body })
 }
+// 带重试的请求 重试2次
+async fn fetch_with_retry(
+    url: &str,
+    method: reqwest::Method,
+    headers: HeaderMap,
+) -> Result<reqwest::Response, String> {
+    let client = get_video_client();
+    let mut retries = 2;
 
+    loop {
+        let req = client.request(method.clone(), url).headers(headers.clone());
+        match req.send().await {
+            Ok(resp) => return Ok(resp),
+            Err(e) => {
+                retries -= 1;
+                if retries == 0 {
+                    return Err(e.to_string());
+                }
+                // 指数退避或固定等待
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+        }
+    }
+}
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FetchBinaryResponse {
     pub status: u16,
@@ -636,22 +685,7 @@ pub async fn fetch_binary(
         }
     }
 
-    // 2. 执行网络请求
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .pool_max_idle_per_host(20)
-        .pool_idle_timeout(std::time::Duration::from_secs(90))
-        .tcp_keepalive(std::time::Duration::from_secs(60))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let req_method = match method_str.to_uppercase().as_str() {
-        "POST" => reqwest::Method::POST,
-        "HEAD" => reqwest::Method::HEAD,
-        _ => reqwest::Method::GET,
-    };
-    let request_builder = client.request(req_method, &url);
-
+    // 2. 准备 Headers
     let mut final_headers = HeaderMap::new();
     if let Some(h) = headers_opt.clone() {
         for (k, v) in h {
@@ -662,29 +696,31 @@ pub async fn fetch_binary(
             }
         }
     }
-
     if !final_headers.contains_key(USER_AGENT) {
         final_headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"));
     }
-
     if url.contains("doubanio.com") || url.contains("douban.com") {
         final_headers.insert(REFERER, HeaderValue::from_static("https://www.douban.com/"));
     }
-
-    let resp = request_builder
-        .headers(final_headers.clone())
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    if url.contains(".ts") {
+        // 添加 Range 头
+        final_headers.insert(RANGE, HeaderValue::from_static("bytes=0-"));
+    }
+    let req_method = match method_str.to_uppercase().as_str() {
+        "POST" => reqwest::Method::POST,
+        "HEAD" => reqwest::Method::HEAD,
+        _ => reqwest::Method::GET,
+    };
+    // 3. 执行带重试的网络请求
+    let resp = fetch_with_retry(&url, req_method, final_headers).await?;
     let status = resp.status().as_u16();
     let body_bytes = resp.bytes().await.map_err(|e| e.to_string())?;
     let body = body_bytes.to_vec();
 
-    // 3. 只有成功的 GET 请求才存入缓存并触发预取
+    // 4. 只有成功的 GET 请求才存入缓存并触发预取
     if is_get && status == 200 {
         cache_manager.set(url.clone(), body.clone()).await;
 
-        // 4. 预取逻辑: 如果是 TS 分片，预测后续 URL 并启动后台下载
         if url.contains(".ts") {
             let cache_arc = cache_manager.cache.clone();
             let keys_arc = cache_manager.keys.clone();
@@ -722,23 +758,33 @@ async fn prefetch_next_segments(
     };
     let padding = num_str.len();
 
-    // 优化的 HTTP 客户端配置
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .pool_max_idle_per_host(20)
-        .pool_idle_timeout(std::time::Duration::from_secs(90))
-        .tcp_keepalive(std::time::Duration::from_secs(60))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    // 使用全局 Client
+    let client = get_video_client();
 
-    // 预取接下来的 6 个分片
+    // 优化的 HTTP 客户端配置
+    let mut final_headers = HeaderMap::new();
+    if let Some(h) = headers {
+        for (k, v) in h {
+            if let Ok(name) = reqwest::header::HeaderName::from_bytes(k.as_bytes()) {
+                if let Ok(value) = HeaderValue::from_str(&v) {
+                    final_headers.insert(name, value);
+                }
+            }
+        }
+    }
+    if !final_headers.contains_key(USER_AGENT) {
+        final_headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"));
+    }
+    // 直接加上 Range
+    final_headers.insert(RANGE, HeaderValue::from_static("bytes=0-"));
+
+    // 预取接下来的 10 个分片
     let mut handles = Vec::new();
-    for i in 1..=6 {
+    for i in 1..=10 {
         let next_num = current_num + i;
         let next_num_str = format!("{:0width$}", next_num, width = padding);
         let next_url = format!("{}{}{}", prefix, next_num_str, suffix);
-
-        // 如果已经在缓存中，跳过
+        // 已有缓存，跳过
         {
             let c = cache.read().await;
             if c.contains_key(&next_url) {
@@ -748,49 +794,46 @@ async fn prefetch_next_segments(
 
         // 并发下载
         let client_clone = client.clone();
-        let headers_clone = headers.clone();
+        let request_headers = final_headers.clone();
         let cache_clone = cache.clone();
         let keys_clone = keys.clone();
         let next_url_clone = next_url.clone();
 
         let handle = tokio::spawn(async move {
-            let mut final_headers = HeaderMap::new();
-            if let Some(h) = headers_clone {
-                for (k, v) in h {
-                    if let Ok(name) = reqwest::header::HeaderName::from_bytes(k.as_bytes()) {
-                        if let Ok(value) = HeaderValue::from_str(&v) {
-                            final_headers.insert(name, value);
-                        }
-                    }
-                }
-            }
+            // 内置简单的重试逻辑
+            let mut retries = 2;
+            while retries >= 0 {
+                let resp = client_clone
+                    .get(&next_url_clone)
+                    .headers(request_headers.clone())
+                    .send()
+                    .await;
 
-            if !final_headers.contains_key(USER_AGENT) {
-                final_headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"));
-            }
+                match resp {
+                    Ok(r) if r.status().is_success() => {
+                        if let Ok(data) = r.bytes().await {
+                            let mut c = cache_clone.write().await;
+                            let mut k = keys_clone.write().await;
 
-            let resp = client_clone
-                .get(&next_url_clone)
-                .headers(final_headers)
-                .send()
-                .await;
-            if let Ok(r) = resp {
-                if r.status() == 200 {
-                    if let Ok(data) = r.bytes().await {
-                        let mut c = cache_clone.write().await;
-                        let mut k = keys_clone.write().await;
-
-                        if !c.contains_key(&next_url_clone) {
-                            if k.len() >= 80 {
-                                // 预取缓存可以更大
-                                if let Some(oldest) = k.get(0).cloned() {
-                                    c.remove(&oldest);
-                                    k.remove(0);
+                            if !c.contains_key(&next_url_clone) {
+                                // 缓存清理逻辑
+                                if k.len() >= 250 {
+                                    if let Some(oldest) = k.get(0).cloned() {
+                                        c.remove(&oldest);
+                                        k.remove(0);
+                                    }
                                 }
+                                k.push(next_url_clone.clone());
                             }
-                            k.push(next_url_clone.clone());
+                            c.insert(next_url_clone, data.to_vec());
                         }
-                        c.insert(next_url_clone, data.to_vec());
+                        break; // 成功则退出循环
+                    }
+                    _ => {
+                        retries -= 1;
+                        if retries >= 0 {
+                            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        }
                     }
                 }
             }
@@ -812,7 +855,8 @@ pub async fn get_douban_data(
     start: Option<i32>,
     count: Option<i32>,
 ) -> Result<Value, String> {
-    let client = reqwest::Client::new();
+    // 使用全局 Client 请求
+    let client = get_video_client();
     let url = if data_type == "comments" {
         format!(
             "https://movie.douban.com/subject/{}/comments?status=P&sort=new_score&start={}&count={}",
@@ -825,7 +869,7 @@ pub async fn get_douban_data(
     };
 
     let mut headers = HeaderMap::new();
-    headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"));
+    headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"));
     headers.insert(ACCEPT, HeaderValue::from_static("text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"));
     headers.insert(
         ACCEPT_LANGUAGE,
@@ -834,6 +878,10 @@ pub async fn get_douban_data(
     headers.insert(
         REFERER,
         HeaderValue::from_static("https://movie.douban.com/"),
+    );
+    headers.insert(
+        reqwest::header::ACCEPT_ENCODING,
+        HeaderValue::from_static("gzip, deflate, br"),
     );
 
     let resp = client

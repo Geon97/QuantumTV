@@ -229,9 +229,9 @@ function PlayPageClient() {
 
   // -----------------------------------------------------------------------------
   // 工具函数（Utils）
-  // -----------------------------------------------------------------------------
+  // TODO: 将这些工具函数移到 Rust 端
 
-  // 播放源优选函数
+  // 播放源优选函数 移到 Rust 端
   const preferBestSource = async (
     sources: SearchResult[],
   ): Promise<SearchResult> => {
@@ -360,7 +360,7 @@ function PlayPageClient() {
     return resultsWithScore[0].source;
   };
 
-  // 计算播放源综合评分
+  // 计算播放源综合评分  移到 Rust 端
   const calculateSourceScore = (
     testResult: {
       quality: string;
@@ -449,6 +449,7 @@ function PlayPageClient() {
     }
   };
 
+  // 确保视频源
   const ensureVideoSource = (video: HTMLVideoElement | null, url: string) => {
     if (!video || !url) return;
     const sources = Array.from(video.getElementsByTagName('source'));
@@ -516,7 +517,7 @@ function PlayPageClient() {
     }
   };
 
-  // 去广告相关函数
+  // 去广告相关函数 移到 Rust 端,减少前端负担
   function filterAdsFromM3U8(m3u8Content: string): string {
     if (!m3u8Content) return '';
 
@@ -536,7 +537,7 @@ function PlayPageClient() {
     return filteredLines.join('\n');
   }
 
-  // 跳过片头片尾配置相关函数
+  // 跳过片头片尾配置相关函数 移到 Rust 端
   const handleSkipConfigChange = async (newConfig: {
     enable: boolean;
     intro_time: number;
