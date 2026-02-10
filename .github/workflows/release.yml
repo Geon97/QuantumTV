@@ -9,48 +9,75 @@ on:
 permissions:
   contents: write
 
+# =====================================================================================
+# JOB 1: Create Release (ONLY ONCE)
+# =====================================================================================
 jobs:
-  # =================================================================================================
-  # JOB 1: Desktop Builds (Windows, macOS, Linux)
-  # =================================================================================================
-  release-desktop:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: QuantumTV ${{ github.ref_name }}
+          body: |
+            ## QuantumTV ${{ github.ref_name }}
+
+            Desktop (Windows / macOS / Linux) and Android builds are provided below.
+
+            macOS builds are unsigned.  
+            If Gatekeeper blocks the app, right-click → Open.
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # =====================================================================================
+  # JOB 2: Desktop Builds (Windows / macOS / Linux)
+  # =====================================================================================
+  build-desktop:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
-            args: '--target aarch64-apple-darwin'
-          - platform: macos-latest
-            args: '--target x86_64-apple-darwin'
-          - platform: ubuntu-22.04
-            args: ''
-            label: linux-x86
-          - platform: ubuntu-24.04-arm
-            args: ''
-            label: linux-arm
-          - platform: windows-latest
-            args: ''
+          # ---------------- macOS ----------------
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
 
-    runs-on: ${{ matrix.platform }}
+          # ---------------- Linux ----------------
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+
+          # ---------------- Windows ----------------
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
-      - name: Clean previous build artifacts (Windows)
+
+      # ---------------- Clean ----------------
+      - name: Clean build artifacts (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          rm -rf out src-tauri/target .next
+
+      - name: Clean build artifacts (Windows)
         if: runner.os == 'Windows'
         run: |
           if (Test-Path out) { Remove-Item -Recurse -Force out }
           if (Test-Path src-tauri/target) { Remove-Item -Recurse -Force src-tauri/target }
           if (Test-Path .next) { Remove-Item -Recurse -Force .next }
 
-      - name: Clean previous build artifacts (Linux/macOS)
-        if: runner.os != 'Windows'
-        run: |
-          rm -rf out
-          rm -rf src-tauri/target
-          rm -rf .next
-      # Linux deps
+      # ---------------- Linux deps ----------------
       - name: Install Linux dependencies
-        if: startsWith(matrix.platform, 'ubuntu')
+        if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -66,14 +93,13 @@ jobs:
             patchelf \
             xdg-utils
 
-      # Rust
+      # ---------------- Toolchains ----------------
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
 
-      # Node
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -87,72 +113,69 @@ jobs:
         env:
           NEXT_PUBLIC_STATIC_EXPORT: '1'
 
-      # Tauri build & release (Desktop)
-      - name: Build & Release Desktop
-        uses: tauri-apps/tauri-action@v0.5
+      - name: Build Tauri App
+        run: |
+          npm run tauri build -- --target ${{ matrix.target }}
+
+      # ---------------- Upload ----------------
+      - name: Upload Desktop Artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/target/**/bundle/**
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'QuantumTV ${{ github.ref_name }}'
-          releaseBody: 'See the assets to download this version.'
-          releaseDraft: true
-          args: ${{ matrix.args }}
 
-  # =================================================================================================
-  # JOB 2: Android Build
-  # =================================================================================================
-  release-android:
+  # =====================================================================================
+  # JOB 3: Android Build
+  # =====================================================================================
+  build-android:
+    needs: create-release
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
-      - name: Install dependencies
+
+      - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libclang-dev pkg-config build-essential curl wget clang llvm
+          sudo apt-get install -y \
+            ninja-build \
+            libclang-dev \
+            pkg-config \
+            build-essential \
+            curl wget clang llvm
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # NDK 锁定
-      - name: Setup NDK
+      - name: Setup Android NDK
         run: |
           sdkmanager "ndk;26.1.10909125"
-          NDK_ROOT="$ANDROID_HOME/ndk"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
 
-          # 清理其他版本
-          if [ -d "$NDK_ROOT" ]; then
-            cd "$NDK_ROOT"
-            ls -1 | grep -v "26.1.10909125" | xargs sudo rm -rf || true
-          fi
-
-          echo "NDK_HOME=$NDK_ROOT/26.1.10909125" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$NDK_ROOT/26.1.10909125" >> $GITHUB_ENV
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install Tauri CLI
-        run: |
-          cargo install tauri-cli --version "^2.0.0" --locked
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
 
-      - name: Decode Keystore and Create Properties
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2.0.0" --locked
+
+      # ---------------- Android signing ----------------
+      - name: Decode keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -167,6 +190,7 @@ jobs:
           storePassword=$ANDROID_STORE_PASSWORD
           EOF
 
+      # ---------------- Build ----------------
       - name: Install frontend deps
         run: npm ci
 
@@ -174,23 +198,20 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_STATIC_EXPORT: '1'
+
       - name: Build Android APK
-        env:
-          CMAKE_GENERATOR: 'Ninja'
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
-          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
         run: |
           chmod +x src-tauri/gen/android/gradlew
-          cargo tauri android build --target aarch64 --verbose
+          cargo tauri android build --target aarch64
 
       - name: Rename APK
         run: |
           mv src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk \
-             src-tauri/gen/android/app/build/outputs/apk/universal/release/QuantumTV-${{ github.ref_name }}-android-universal.apk
-      - name: Upload APK to Release
+             QuantumTV-${{ github.ref_name }}-android-universal.apk
+
+      - name: Upload Android APK
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: src-tauri/gen/android/app/build/outputs/apk/universal/release/QuantumTV-${{ github.ref_name }}-android-universal.apk
+          files: QuantumTV-${{ github.ref_name }}-android-universal.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
