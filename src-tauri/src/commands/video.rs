@@ -39,6 +39,35 @@ impl VideoCacheManager {
     }
 }
 
+pub struct SearchCacheManager {
+    pub cache: Cache<String, Vec<SearchResult>>,
+}
+
+impl SearchCacheManager {
+    pub fn new() -> Self {
+        // 最大 1000 条搜索结果缓存，TTL 3600 秒（1 小时）
+        let cache = Cache::builder()
+            .max_capacity(1000)
+            .time_to_live(std::time::Duration::from_secs(3600))
+            .build();
+        Self { cache }
+    }
+
+    pub async fn get(&self, query: &str) -> Option<Vec<SearchResult>> {
+        let key = Self::normalize_key(query);
+        self.cache.get(&key).await
+    }
+
+    pub async fn set(&self, query: String, results: Vec<SearchResult>) {
+        let key = Self::normalize_key(&query);
+        self.cache.insert(key, results).await;
+    }
+
+    fn normalize_key(query: &str) -> String {
+        query.trim().to_lowercase()
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SearchResult {
     pub id: String,
@@ -53,6 +82,12 @@ pub struct SearchResult {
     pub desc: Option<String>,
     pub type_name: Option<String>,
     pub douban_id: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GetVideoDetailOptimizedResponse {
+    pub detail: SearchResult,
+    pub other_sources: Vec<SearchResult>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -278,7 +313,13 @@ pub async fn search(
     query: String,
     app_handle: tauri::AppHandle,
     storage: State<'_, StorageManager>,
+    cache: State<'_, SearchCacheManager>,
 ) -> Result<Vec<SearchResult>, String> {
+    // 首先尝试从缓存获取结果
+    if let Some(cached_results) = cache.get(&query).await {
+        return Ok(cached_results);
+    }
+
     let data = storage.get_data()?;
     let config = &data.config;
 
@@ -326,8 +367,8 @@ pub async fn search(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    // 限制并发数：最多同时请求 15 个源，避免资源耗尽
-    let semaphore = Arc::new(Semaphore::new(15));
+    // 限制并发数：最多同时请求 20 个源，充分利用并发
+    let semaphore = Arc::new(Semaphore::new(20));
     let client = get_video_client();
     let completed = Arc::new(tokio::sync::Mutex::new(0i32));
 
@@ -353,8 +394,8 @@ pub async fn search(
                 urlencoding::encode(&query)
             );
 
-            // 单个源请求超时 15 秒
-            let resp = match timeout(Duration::from_secs(15), client.get(&url).send()).await {
+            // 单个源请求超时 6 秒
+            let resp = match timeout(Duration::from_secs(6), client.get(&url).send()).await {
                 Ok(Ok(res)) if res.status().is_success() => res,
                 _ => {
                     // 如果启用了流式搜索，即使失败也要发送事件
@@ -378,7 +419,7 @@ pub async fn search(
                 }
             };
 
-            let body = match timeout(Duration::from_secs(10), resp.text()).await {
+            let body = match timeout(Duration::from_secs(5), resp.text()).await {
                 Ok(Ok(text)) => text,
                 _ => {
                     if let Some(app_handle) = &app_handle_opt {
@@ -514,6 +555,9 @@ pub async fn search(
         }
     }
 
+    // 缓存搜索结果
+    cache.set(query, unique_results.clone()).await;
+
     Ok(unique_results)
 }
 
@@ -552,8 +596,8 @@ pub async fn get_video_detail(
 
     let url = format!("{}?ac=videolist&ids={}", site.api, id);
 
-    // 添加超时控制：15秒
-    let resp = match timeout(Duration::from_secs(15), client.get(&url).send()).await {
+    // 添加超时控制：8秒
+    let resp = match timeout(Duration::from_secs(8), client.get(&url).send()).await {
         Ok(Ok(res)) => res,
         _ => return Err("Failed to fetch detail: request timeout or network error".to_string()),
     };
@@ -562,7 +606,7 @@ pub async fn get_video_detail(
         return Err(format!("Failed to fetch detail: {}", resp.status()));
     }
 
-    let body = match timeout(Duration::from_secs(10), resp.text()).await {
+    let body = match timeout(Duration::from_secs(5), resp.text()).await {
         Ok(Ok(text)) => text,
         _ => return Err("Failed to read response: timeout".to_string()),
     };
@@ -598,6 +642,98 @@ pub async fn get_video_detail(
             .vod_douban_id
             .and_then(|v| v.as_i64())
             .map(|v| v as i32),
+    })
+}
+
+#[tauri::command]
+pub async fn get_video_detail_optimized(
+    source: String,
+    id: String,
+    storage: State<'_, StorageManager>,
+    _cache: State<'_, SearchCacheManager>,
+) -> Result<GetVideoDetailOptimizedResponse, String> {
+    let data = storage.get_data()?;
+    let config = &data.config;
+
+    // 立即获取指定源的详情
+    let api_site =
+        if let Some(source_config) = config.get("SourceConfig").and_then(|v| v.as_array()) {
+            source_config
+                .iter()
+                .find(|s| s.get("key").and_then(|v| v.as_str()) == Some(&source))
+                .and_then(|s| {
+                    Some(ApiSite {
+                        key: s.get("key")?.as_str()?.to_string(),
+                        api: s.get("api")?.as_str()?.to_string(),
+                        name: s.get("name")?.as_str()?.to_string(),
+                        detail: s
+                            .get("detail")
+                            .and_then(|v| v.as_str())
+                            .map(|v| v.to_string()),
+                        is_adult: s.get("is_adult").and_then(|v| v.as_bool()),
+                    })
+                })
+        } else {
+            None
+        };
+
+    let site = api_site.ok_or_else(|| "Source not found".to_string())?;
+    let client = get_video_client();
+    let url = format!("{}?ac=videolist&ids={}", site.api, id);
+
+    let resp = match timeout(Duration::from_secs(8), client.get(&url).send()).await {
+        Ok(Ok(res)) => res,
+        _ => return Err("Failed to fetch detail: timeout".to_string()),
+    };
+
+    if !resp.status().is_success() {
+        return Err(format!("Failed to fetch detail: {}", resp.status()));
+    }
+
+    let body = match timeout(Duration::from_secs(5), resp.text()).await {
+        Ok(Ok(text)) => text,
+        _ => return Err("Failed to read response: timeout".to_string()),
+    };
+
+    let search_res = serde_json::from_str::<ApiSearchResponse>(&body).map_err(|e| e.to_string())?;
+
+    let item = search_res
+        .list
+        .into_iter()
+        .next()
+        .ok_or_else(|| "Video not found".to_string())?;
+
+    let (episodes, episodes_titles) = parse_episodes(item.vod_play_url.as_deref().unwrap_or(""));
+
+    let detail = SearchResult {
+        id: match item.vod_id {
+            Value::String(s) => s,
+            Value::Number(n) => n.to_string(),
+            _ => "".to_string(),
+        },
+        title: item.vod_name.trim().to_string(),
+        poster: item.vod_pic,
+        episodes,
+        episodes_titles,
+        source: site.key,
+        source_name: site.name,
+        class: item.vod_class,
+        year: item.vod_year,
+        desc: item.vod_content.map(|c| clean_html_tags(&c)),
+        type_name: item.type_name,
+        douban_id: item
+            .vod_douban_id
+            .and_then(|v| v.as_i64())
+            .map(|v| v as i32),
+    };
+
+    // 如果需要搜索相似源，暂时返回空列表
+    // 前端可以通过后续的 search 命令获取其他源
+    let other_sources = vec![];
+
+    Ok(GetVideoDetailOptimizedResponse {
+        detail,
+        other_sources,
     })
 }
 

@@ -54,6 +54,7 @@ pub fn run() {
             }
             app.manage(StorageManager::new(app.handle()));
             app.manage(commands::video::VideoCacheManager::new());
+            app.manage(commands::video::SearchCacheManager::new());
             let conn = db_init::init_db(app.handle());
             let db = db_client::Db::new(conn);
             app.manage(db);
@@ -78,6 +79,7 @@ pub fn run() {
             // 视频
             commands::video::search,
             commands::video::get_video_detail,
+            commands::video::get_video_detail_optimized,
             commands::video::proxy_image,
             commands::video::fetch_url,
             commands::video::fetch_binary,

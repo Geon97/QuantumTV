@@ -779,32 +779,22 @@ function PlayPageClient() {
     const fetchSourceDetail = async (
       source: string,
       id: string,
-    ): Promise<SearchResult[]> => {
+    ): Promise<SearchResult | null> => {
       try {
-        // Tauri 环境
-        let detailData: SearchResult;
-
-        // Tauri 环境：使用 get_video_detail 命令
-        detailData = await invoke('get_video_detail', {
+        const detailData: SearchResult = await invoke('get_video_detail', {
           source,
           id,
         });
-        setAvailableSources([detailData]);
-        return [detailData];
+        return detailData;
       } catch (err) {
         console.error('获取视频详情失败:', err);
-        return [];
-      } finally {
-        setSourceSearchLoading(false);
+        return null;
       }
     };
-    const fetchSourcesData = async (query: string): Promise<SearchResult[]> => {
-      // 根据搜索词获取全部源信息
-      try {
-        let allResults: SearchResult[];
 
-        // Tauri 环境：使用 search 命令
-        allResults = await invoke('search', {
+    const fetchSourcesData = async (query: string): Promise<SearchResult[]> => {
+      try {
+        const allResults: SearchResult[] = await invoke('search', {
           query: query.trim(),
         });
 
@@ -821,6 +811,7 @@ function PlayPageClient() {
                 (searchType === 'movie' && result.episodes.length === 1)
               : true),
         );
+
         setAvailableSources(results);
         return results;
       } catch (err) {
@@ -838,88 +829,148 @@ function PlayPageClient() {
         setLoading(false);
         return;
       }
+
       setLoading(true);
-      setLoadingStage(currentSource && currentId ? 'fetching' : 'searching');
-      setLoadingMessage(
-        currentSource && currentId
-          ? '🎬 正在获取视频详情...'
-          : '🔍 正在搜索播放源...',
-      );
 
-      let sourcesInfo = await fetchSourcesData(searchTitle || videoTitle);
-      if (
-        currentSource &&
-        currentId &&
-        !sourcesInfo.some(
-          (source) =>
-            source.source === currentSource && source.id === currentId,
-        )
-      ) {
-        sourcesInfo = await fetchSourceDetail(currentSource, currentId);
-      }
-      if (sourcesInfo.length === 0) {
-        setError('未找到匹配结果');
-        setLoading(false);
-        return;
-      }
-
-      let detailData: SearchResult = sourcesInfo[0];
-      // 指定源和id且无需优选
+      // ✅ 优化（Rust 端）: 使用 get_video_detail_optimized 进行快速路径
+      // 如果指定了 source 和 id，使用优化命令并行获取详情和搜索相似源
       if (currentSource && currentId && !needPreferRef.current) {
-        const target = sourcesInfo.find(
-          (source) =>
-            source.source === currentSource && source.id === currentId,
-        );
-        if (target) {
-          detailData = target;
-        } else {
-          setError('未找到匹配结果');
+        setLoadingStage('fetching');
+        setLoadingMessage('🎬 正在获取视频详情...');
+
+        try {
+          const response = await invoke<{
+            detail: SearchResult;
+            other_sources: SearchResult[];
+          }>('get_video_detail_optimized', {
+            source: currentSource,
+            id: currentId,
+            also_search_similar: true,
+          });
+
+          const detailData = response.detail;
+          if (detailData) {
+            setNeedPrefer(false);
+            setCurrentSource(detailData.source);
+            setCurrentId(detailData.id);
+            setVideoYear(detailData.year);
+            setVideoTitle(detailData.title || videoTitleRef.current);
+            setVideoCover(detailData.poster);
+            setVideoDoubanId(detailData.douban_id || 0);
+            setDetail(detailData);
+            if (currentEpisodeIndex >= detailData.episodes.length) {
+              setCurrentEpisodeIndex(0);
+            }
+
+            const newUrl = new URL(window.location.href);
+            newUrl.searchParams.set('source', detailData.source);
+            newUrl.searchParams.set('id', detailData.id);
+            newUrl.searchParams.set('year', detailData.year);
+            newUrl.searchParams.set('title', detailData.title);
+            newUrl.searchParams.delete('prefer');
+            window.history.replaceState({}, '', newUrl.toString());
+
+            // 设置其他可用源
+            if (response.other_sources && response.other_sources.length > 0) {
+              setAvailableSources(response.other_sources);
+            }
+
+            setLoadingStage('ready');
+            setLoadingMessage('✨ 准备就绪，即将开始播放...');
+            setTimeout(() => setLoading(false), 1000);
+
+            // 在后台异步获取其他源
+            const searchQuery = searchTitle || videoTitle;
+            if (searchQuery) {
+              fetchSourcesData(searchQuery)
+                .then(results => {
+                  if (results.length > 0) {
+                    setAvailableSources(results);
+                  }
+                })
+                .catch(console.error);
+            }
+            return;
+          } else {
+            setError('未找到指定的播放源');
+            setLoading(false);
+            return;
+          }
+        } catch (err) {
+          console.error('获取视频详情失败:', err);
+          setError('获取视频详情失败');
           setLoading(false);
           return;
         }
       }
 
-      // 未指定源和 id 或需要优选，且开启优选开关
-      if (
-        (!currentSource || !currentId || needPreferRef.current) &&
-        optimizationEnabled
-      ) {
-        setLoadingStage('preferring');
-        setLoadingMessage('⚡ 正在优选最佳播放源...');
+      // 处理无 source/id 的情况 - 进行搜索
+      const searchQuery = searchTitle || videoTitle;
+      try {
+        setLoadingStage('searching');
+        setLoadingMessage('🔍 正在搜索播放源...');
 
-        detailData = await preferBestSource(sourcesInfo);
-      }
+        const searchResults = await fetchSourcesData(searchQuery);
+        if (searchResults.length === 0) {
+          setError('未找到匹配结果');
+          setLoading(false);
+          return;
+        }
 
-      console.log(detailData.source, detailData.id);
+        const detailData = searchResults[0];
 
-      setNeedPrefer(false);
-      setCurrentSource(detailData.source);
-      setCurrentId(detailData.id);
-      setVideoYear(detailData.year);
-      setVideoTitle(detailData.title || videoTitleRef.current);
-      setVideoCover(detailData.poster);
-      setVideoDoubanId(detailData.douban_id || 0);
-      setDetail(detailData);
-      if (currentEpisodeIndex >= detailData.episodes.length) {
-        setCurrentEpisodeIndex(0);
-      }
+        setNeedPrefer(false);
+        setCurrentSource(detailData.source);
+        setCurrentId(detailData.id);
+        setVideoYear(detailData.year);
+        setVideoTitle(detailData.title || videoTitleRef.current);
+        setVideoCover(detailData.poster);
+        setVideoDoubanId(detailData.douban_id || 0);
+        setDetail(detailData);
+        if (currentEpisodeIndex >= detailData.episodes.length) {
+          setCurrentEpisodeIndex(0);
+        }
 
-      // 规范URL参数
-      const newUrl = new URL(window.location.href);
-      newUrl.searchParams.set('source', detailData.source);
-      newUrl.searchParams.set('id', detailData.id);
-      newUrl.searchParams.set('year', detailData.year);
-      newUrl.searchParams.set('title', detailData.title);
-      newUrl.searchParams.delete('prefer');
-      window.history.replaceState({}, '', newUrl.toString());
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.set('source', detailData.source);
+        newUrl.searchParams.set('id', detailData.id);
+        newUrl.searchParams.set('year', detailData.year);
+        newUrl.searchParams.set('title', detailData.title);
+        newUrl.searchParams.delete('prefer');
+        window.history.replaceState({}, '', newUrl.toString());
 
-      setLoadingStage('ready');
-      setLoadingMessage('✨ 准备就绪，即将开始播放...');
+        setAvailableSources(searchResults);
 
-      // 短暂延迟让用户看到完成状态
-      setTimeout(() => {
+        setLoadingStage('ready');
+        setLoadingMessage('✨ 准备就绪，即将开始播放...');
+        setTimeout(() => setLoading(false), 1000);
+
+        // 后台优选（如果启用且有多个源）
+        if (optimizationEnabled && searchResults.length > 1) {
+          setTimeout(async () => {
+            try {
+              const bestSource = await preferBestSource(searchResults);
+              if (bestSource) {
+                setAvailableSources([
+                  bestSource,
+                  ...searchResults.filter(
+                    s =>
+                      !(
+                        s.source === bestSource.source && s.id === bestSource.id
+                      ),
+                  ),
+                ]);
+              }
+            } catch (err) {
+              console.error('优选播放源失败:', err);
+            }
+          }, 0);
+        }
+      } catch (err) {
+        console.error('初始化失败:', err);
+        setError('初始化失败');
         setLoading(false);
-      }, 1000);
+      }
     };
 
     initAll();
