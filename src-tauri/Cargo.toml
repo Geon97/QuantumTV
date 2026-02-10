@@ -1,9 +1,9 @@
 [package]
 name = "quantumtv"
-version = "0.2.3"
+version = "0.2.4"
 build = "build.rs"
-description = "A Tauri App"
-authors = ["you"]
+description = "quantumtv Tauri App"
+authors = ["Geon"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
