@@ -10,8 +10,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::Cursor;
-use std::sync::OnceLock;
-use tauri::State;
+use std::sync::{Arc, OnceLock};
+use tauri::{Emitter, Manager, State};
+use tokio::sync::Semaphore;
+use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 
 pub struct VideoCacheManager {
@@ -51,6 +53,15 @@ pub struct SearchResult {
     pub desc: Option<String>,
     pub type_name: Option<String>,
     pub douban_id: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SearchStreamEvent {
+    pub results: Vec<SearchResult>,
+    pub source: String,
+    pub source_name: String,
+    pub total_sources: i32,
+    pub completed_sources: i32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -265,10 +276,21 @@ fn parse_episodes(play_url: &str) -> (Vec<String>, Vec<String>) {
 #[tauri::command]
 pub async fn search(
     query: String,
+    app_handle: tauri::AppHandle,
     storage: State<'_, StorageManager>,
 ) -> Result<Vec<SearchResult>, String> {
     let data = storage.get_data()?;
     let config = &data.config;
+
+    // 读取 FluidSearch 配置，判断是否启用流式搜索
+    let fluid_search = config
+        .get("SiteConfig")
+        .and_then(|v| v.get("FluidSearch"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    // 仅在启用 FluidSearch 时才使用流式输出
+    let use_streaming = fluid_search;
 
     let sites = if let Some(source_config) = config.get("SourceConfig").and_then(|v| v.as_array()) {
         source_config
@@ -297,74 +319,147 @@ pub async fn search(
         return Ok(vec![]);
     }
 
+    let total_sources = sites.len() as i32;
     let disable_yellow_filter = config
         .get("SiteConfig")
         .and_then(|v| v.get("DisableYellowFilter"))
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    // Search 使用全局 Client
+    // 限制并发数：最多同时请求 15 个源，避免资源耗尽
+    let semaphore = Arc::new(Semaphore::new(15));
     let client = get_video_client();
+    let completed = Arc::new(tokio::sync::Mutex::new(0i32));
 
     let mut handles = Vec::new();
     for site in &sites {
+        let semaphore = semaphore.clone();
         let client = client.clone();
         let query = query.clone();
         let site_clone = site.clone();
+        // 仅在启用流式搜索时才传递 app_handle
+        let app_handle_opt = if use_streaming {
+            Some(app_handle.clone())
+        } else {
+            None
+        };
+        let completed = completed.clone();
 
         let handle = tokio::spawn(async move {
+            let _permit = semaphore.acquire().await.ok()?;
             let url = format!(
                 "{}?ac=videolist&wd={}",
                 site_clone.api,
                 urlencoding::encode(&query)
             );
-            let resp = client.get(&url).send().await;
 
-            match resp {
-                Ok(res) if res.status().is_success() => {
-                    let body = res.text().await.unwrap_or_default();
-                    if let Ok(search_res) = serde_json::from_str::<ApiSearchResponse>(&body) {
-                        return search_res
-                            .list
-                            .into_iter()
-                            .map(|item| {
-                                let (episodes, episodes_titles) =
-                                    parse_episodes(item.vod_play_url.as_deref().unwrap_or(""));
-                                SearchResult {
-                                    id: match item.vod_id {
-                                        Value::String(s) => s,
-                                        Value::Number(n) => n.to_string(),
-                                        _ => "".to_string(),
-                                    },
-                                    title: item.vod_name.trim().to_string(),
-                                    poster: item.vod_pic,
-                                    episodes,
-                                    episodes_titles,
+            // 单个源请求超时 15 秒
+            let resp = match timeout(Duration::from_secs(15), client.get(&url).send()).await {
+                Ok(Ok(res)) if res.status().is_success() => res,
+                _ => {
+                    // 如果启用了流式搜索，即使失败也要发送事件
+                    if let Some(app_handle) = &app_handle_opt {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let mut count = completed.lock().await;
+                            *count += 1;
+                            let _ = window.emit(
+                                "search-stream-result",
+                                SearchStreamEvent {
+                                    results: vec![],
                                     source: site_clone.key.clone(),
                                     source_name: site_clone.name.clone(),
-                                    class: item.vod_class,
-                                    year: item.vod_year,
-                                    desc: item.vod_content.map(|c| clean_html_tags(&c)),
-                                    type_name: item.type_name,
-                                    douban_id: item
-                                        .vod_douban_id
-                                        .and_then(|v| v.as_i64())
-                                        .map(|v| v as i32),
-                                }
-                            })
-                            .collect::<Vec<SearchResult>>();
+                                    total_sources,
+                                    completed_sources: *count,
+                                },
+                            );
+                        }
                     }
+                    return Some(vec![]);
                 }
-                _ => {}
+            };
+
+            let body = match timeout(Duration::from_secs(10), resp.text()).await {
+                Ok(Ok(text)) => text,
+                _ => {
+                    if let Some(app_handle) = &app_handle_opt {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let mut count = completed.lock().await;
+                            *count += 1;
+                            let _ = window.emit(
+                                "search-stream-result",
+                                SearchStreamEvent {
+                                    results: vec![],
+                                    source: site_clone.key.clone(),
+                                    source_name: site_clone.name.clone(),
+                                    total_sources,
+                                    completed_sources: *count,
+                                },
+                            );
+                        }
+                    }
+                    return Some(vec![]);
+                }
+            };
+
+            let mut source_results = Vec::new();
+            if let Ok(search_res) = serde_json::from_str::<ApiSearchResponse>(&body) {
+                source_results = search_res
+                    .list
+                    .into_iter()
+                    .map(|item| {
+                        let (episodes, episodes_titles) =
+                            parse_episodes(item.vod_play_url.as_deref().unwrap_or(""));
+                        SearchResult {
+                            id: match item.vod_id {
+                                Value::String(s) => s,
+                                Value::Number(n) => n.to_string(),
+                                _ => "".to_string(),
+                            },
+                            title: item.vod_name.trim().to_string(),
+                            poster: item.vod_pic,
+                            episodes,
+                            episodes_titles,
+                            source: site_clone.key.clone(),
+                            source_name: site_clone.name.clone(),
+                            class: item.vod_class,
+                            year: item.vod_year,
+                            desc: item.vod_content.map(|c| clean_html_tags(&c)),
+                            type_name: item.type_name,
+                            douban_id: item
+                                .vod_douban_id
+                                .and_then(|v| v.as_i64())
+                                .map(|v| v as i32),
+                        }
+                    })
+                    .collect::<Vec<SearchResult>>();
             }
-            vec![]
+
+            // 如果启用了流式搜索，立即发送该源的搜索结果给前端
+            if let Some(app_handle) = &app_handle_opt {
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let mut count = completed.lock().await;
+                    *count += 1;
+                    let _ = window.emit(
+                        "search-stream-result",
+                        SearchStreamEvent {
+                            results: source_results.clone(),
+                            source: site_clone.key.clone(),
+                            source_name: site_clone.name.clone(),
+                            total_sources,
+                            completed_sources: *count,
+                        },
+                    );
+                }
+            }
+
+            Some(source_results)
         });
         handles.push(handle);
     }
 
     let mut all_results = Vec::new();
     for handle in handles {
-        if let Ok(results) = handle.await {
+        if let Ok(Some(results)) = handle.await {
             all_results.extend(results);
         }
     }
@@ -406,6 +501,19 @@ pub async fn search(
         }
     });
 
+    // 如果启用了流式搜索，发送搜索完成事件
+    if use_streaming {
+        if let Some(window) = app_handle.get_webview_window("main") {
+            let _ = window.emit(
+                "search-stream-completed",
+                serde_json::json!({
+                    "total": unique_results.len(),
+                    "query": query
+                }),
+            );
+        }
+    }
+
     Ok(unique_results)
 }
 
@@ -440,17 +548,25 @@ pub async fn get_video_detail(
         };
 
     let site = api_site.ok_or_else(|| "Source not found".to_string())?;
-    // 使用全局 Client
     let client = get_video_client();
 
     let url = format!("{}?ac=videolist&ids={}", site.api, id);
-    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+
+    // 添加超时控制：15秒
+    let resp = match timeout(Duration::from_secs(15), client.get(&url).send()).await {
+        Ok(Ok(res)) => res,
+        _ => return Err("Failed to fetch detail: request timeout or network error".to_string()),
+    };
 
     if !resp.status().is_success() {
         return Err(format!("Failed to fetch detail: {}", resp.status()));
     }
 
-    let body = resp.text().await.map_err(|e| e.to_string())?;
+    let body = match timeout(Duration::from_secs(10), resp.text()).await {
+        Ok(Ok(text)) => text,
+        _ => return Err("Failed to read response: timeout".to_string()),
+    };
+
     let search_res = serde_json::from_str::<ApiSearchResponse>(&body)
         .map_err(|e| format!("Parse error: {}, body: {}", e, body))?;
 

@@ -1,6 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-explicit-any,@typescript-eslint/no-non-null-assertion,no-empty */
 'use client';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { ChevronUp, Search, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import React, {
@@ -514,17 +515,79 @@ function SearchPageClient() {
     setIsLoading(true);
     setShowResults(true);
 
-    invoke<SearchResult[]>('search', { query: qParam })
-      .then((results) => {
-        const safeResults = results || [];
-        searchCache.set(qParam, safeResults);
-        setSearchResults(safeResults);
-      })
-      .catch(console.error)
-      .finally(() => {
-        setIsLoading(false);
-      });
-  }, [qParam]);
+    // 清空之前的进度
+    setTotalSources(0);
+    setCompletedSources(0);
+    pendingResultsRef.current = [];
+
+    // 如果启用流式搜索，监听事件
+    if (useFluidSearch) {
+      let unlistenStream: (() => void) | null = null;
+      let unlistenCompleted: (() => void) | null = null;
+
+      const setupListeners = async () => {
+        try {
+          // 监听流式结果事件
+          unlistenStream = await listen<any>('search-stream-result', (event) => {
+            const { results, total_sources, completed_sources } = event.payload;
+
+            setTotalSources(total_sources);
+            setCompletedSources(completed_sources);
+
+            // 实时添加结果（去重）
+            if (results && results.length > 0) {
+              setSearchResults((prevResults) => {
+                const existingIds = new Set(prevResults.map((r) => `${r.source}|${r.id}`));
+                const filteredNew = results.filter(
+                  (r: SearchResult) => !existingIds.has(`${r.source}|${r.id}`)
+                );
+                return [...prevResults, ...filteredNew];
+              });
+            }
+          });
+
+          // 监听搜索完成事件
+          unlistenCompleted = await listen<any>('search-stream-completed', (event) => {
+            setIsLoading(false);
+          });
+        } catch (err) {
+          console.error('Failed to setup stream listeners:', err);
+        }
+      };
+
+      // 设置监听器
+      setupListeners();
+
+      // 调用搜索命令
+      invoke<SearchResult[]>('search', { query: qParam })
+        .then((results) => {
+          const safeResults = results || [];
+          searchCache.set(qParam, safeResults);
+          setSearchResults(safeResults);
+        })
+        .catch((err) => {
+          console.error('Search error:', err);
+          setIsLoading(false);
+        })
+        .finally(() => {
+          // 清理监听器
+          if (unlistenStream) unlistenStream();
+          if (unlistenCompleted) unlistenCompleted();
+        });
+    } else {
+      // 非流式搜索：原有逻辑
+      invoke<SearchResult[]>('search', { query: qParam })
+        .then((results) => {
+          const safeResults = results || [];
+          searchCache.set(qParam, safeResults);
+          setSearchResults(safeResults);
+        })
+        .catch(console.error)
+        .finally(() => {
+          setIsLoading(false);
+        });
+    }
+  }, [qParam, useFluidSearch]);
   useEffect(() => {
     globalSearchUIState.query = qParam;
     globalSearchUIState.viewMode = viewMode;
