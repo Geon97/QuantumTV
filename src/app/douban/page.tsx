@@ -6,8 +6,8 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
 import { BangumiCalendarData,DoubanItem, DoubanResult } from '@/lib/types';
-import { useSourceFilter } from '@/hooks/useSourceFilter';
 import { useImagePreload } from '@/hooks/useImagePreload';
+import { useSourceFilter } from '@/hooks/useSourceFilter';
 
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
 import DoubanCustomSelector from '@/components/DoubanCustomSelector';
