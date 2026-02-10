@@ -9,9 +9,9 @@ on:
 permissions:
   contents: write
 
-# =====================================================================================
+# =====================================================
 # JOB 1: Create Release (ONLY ONCE)
-# =====================================================================================
+# =====================================================
 jobs:
   create-release:
     runs-on: ubuntu-latest
@@ -32,9 +32,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # =====================================================================================
-  # JOB 2: Desktop Builds (Windows / macOS / Linux)
-  # =====================================================================================
+  # =====================================================
+  # JOB 2: Desktop Builds
+  # =====================================================
   build-desktop:
     needs: create-release
     strategy:
@@ -105,6 +105,7 @@ jobs:
           node-version: 20
           cache: npm
 
+      # ---------------- Build ----------------
       - name: Install frontend deps
         run: npm ci
 
@@ -118,17 +119,40 @@ jobs:
           npm run tauri build -- --target ${{ matrix.target }}
 
       # ---------------- Upload ----------------
-      - name: Upload Desktop Artifacts
+      - name: Upload Desktop Artifacts (macOS)
+        if: runner.os == 'macOS'
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            src-tauri/target/**/bundle/**
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # =====================================================================================
+      - name: Upload Desktop Artifacts (Linux)
+        if: runner.os == 'Linux'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
+            src-tauri/target/${{ matrix.target }}/release/bundle/rpm/*.rpm
+            src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Desktop Artifacts (Windows)
+        if: runner.os == 'Windows'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # =====================================================
   # JOB 3: Android Build
-  # =====================================================================================
+  # =====================================================
   build-android:
     needs: create-release
     runs-on: ubuntu-latest
