@@ -21,7 +21,14 @@ import SearchResultFilter, {
 } from '@/components/SearchResultFilter';
 import SearchSuggestions from '@/components/SearchSuggestions';
 import VideoCard, { VideoCardHandle } from '@/components/VideoCard';
-
+const globalSearchUIState = {
+  query: '',
+  viewMode: 'agg' as 'agg' | 'all',
+  filterAgg: { source: 'all', title: 'all', year: 'all', yearOrder: 'none' as const },
+  filterAll: { source: 'all', title: 'all', year: 'all', yearOrder: 'none' as const },
+};
+// 搜索缓存
+const searchCache = new Map<string, SearchResult[]>();
 function SearchPageClient() {
   // 搜索历史
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
@@ -30,12 +37,21 @@ function SearchPageClient() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
+  // 避免渲染时的“初次加载”闪烁
+  const qParam = searchParams.get('q') || '';
+  const isReturning =
+    qParam &&
+    qParam === globalSearchUIState.query &&
+    searchCache.has(qParam);
   const currentQueryRef = useRef<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [normalizedQuery, setNormalizedQuery] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [showResults, setShowResults] = useState(false);
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+
+  const [isLoading, setIsLoading] = useState(!isReturning && !!qParam);
+  const [showResults, setShowResults] = useState(!!qParam);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>(
+    isReturning ? searchCache.get(qParam)! : []
+  );
   const [showSuggestions, setShowSuggestions] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const [totalSources, setTotalSources] = useState(0);
@@ -105,28 +121,22 @@ function SearchPageClient() {
     return { episodes, source_names, douban_id };
   };
   // 过滤器：非聚合与聚合
-  const [filterAll, setFilterAll] = useState<{
-    source: string;
-    title: string;
-    year: string;
-    yearOrder: 'none' | 'asc' | 'desc';
-  }>({
-    source: 'all',
-    title: 'all',
-    year: 'all',
-    yearOrder: 'none',
-  });
-  const [filterAgg, setFilterAgg] = useState<{
-    source: string;
-    title: string;
-    year: string;
-    yearOrder: 'none' | 'asc' | 'desc';
-  }>({
-    source: 'all',
-    title: 'all',
-    year: 'all',
-    yearOrder: 'none',
-  });
+  const [filterAll, setFilterAll] = useState(
+    isReturning ? globalSearchUIState.filterAll : {
+      source: 'all',
+      title: 'all',
+      year: 'all',
+      yearOrder: 'none' as const,
+    }
+  );
+  const [filterAgg, setFilterAgg] = useState(
+    isReturning ? globalSearchUIState.filterAgg : {
+      source: 'all',
+      title: 'all',
+      year: 'all',
+      yearOrder: 'none' as const,
+    }
+  );
 
   // 获取默认聚合设置：只读取用户本地设置，默认为 true
   const getDefaultAggregate = () => {
@@ -138,31 +148,10 @@ function SearchPageClient() {
     }
     return true; // 默认启用聚合
   };
+  const [viewMode, setViewMode] = useState<'agg' | 'all'>(
+    isReturning ? globalSearchUIState.viewMode : 'agg'
+  );
 
-  const [viewMode, setViewMode] = useState<'agg' | 'all'>(() => {
-    return getDefaultAggregate() ? 'agg' : 'all';
-  });
-
-  // 在"无排序"场景用于每个源批次的预排序：完全匹配标题优先，其次年份倒序，未知年份最后
-  // ✨ 已废弃：后端已实现智能排序，前端无需再次排序
-  const _sortBatchForNoOrder = (items: SearchResult[]) => {
-    const q = currentQueryRef.current.trim();
-    return items.slice().sort((a, b) => {
-      const aExact = (a.title || '').trim() === q;
-      const bExact = (b.title || '').trim() === q;
-      if (aExact && !bExact) return -1;
-      if (!aExact && bExact) return 1;
-
-      const aNum = Number.parseInt(a.year as any, 10);
-      const bNum = Number.parseInt(b.year as any, 10);
-      const aValid = !Number.isNaN(aNum);
-      const bValid = !Number.isNaN(bNum);
-      if (aValid && !bValid) return -1;
-      if (!aValid && bValid) return 1;
-      if (aValid && bValid) return bNum - aNum; // 年份倒序
-      return 0;
-    });
-  };
 
   // 简化的年份排序：unknown/空值始终在最后
   const compareYear = (
@@ -500,84 +489,48 @@ function SearchPageClient() {
       document.body.removeEventListener('scroll', handleScroll);
     };
   }, []);
-
   // 图片预加载：提取前 30 张搜索结果的图片
   const searchImageUrls = useMemo(() => {
     return searchResults.slice(0, 30).map(item => item.poster).filter(Boolean);
   }, [searchResults]);
   useImagePreload(searchImageUrls, !isLoading && searchResults.length > 0);
-
   useEffect(() => {
-    // 当搜索参数变化时更新搜索状态
-    const query = searchParams.get('q') || '';
-    currentQueryRef.current = query.trim();
-
-    if (query) {
-      setSearchQuery(query);
-      setNormalizedQuery(''); // 重置
-      // 新搜索：关闭旧连接并清空结果
-      if (eventSourceRef.current) {
-        try {
-          eventSourceRef.current.close();
-        } catch {}
-        eventSourceRef.current = null;
-      }
-      setSearchResults([]);
-      setTotalSources(0);
-      setCompletedSources(0);
-      // 清理缓冲
-      pendingResultsRef.current = [];
-      if (flushTimerRef.current) {
-        clearTimeout(flushTimerRef.current);
-        flushTimerRef.current = null;
-      }
-      setIsLoading(true);
-      setShowResults(true);
-
-      const trimmed = query.trim();
-
-      // 每次搜索时重新读取设置，确保使用最新的配置
-      let currentFluidSearch = useFluidSearch;
-      if (typeof window !== 'undefined') {
-        const savedFluidSearch = localStorage.getItem('fluidSearch');
-        if (savedFluidSearch !== null) {
-          currentFluidSearch = JSON.parse(savedFluidSearch);
-        } else {
-          const defaultFluidSearch =
-            (window as any).RUNTIME_CONFIG?.FLUID_SEARCH !== false;
-          currentFluidSearch = defaultFluidSearch;
-        }
-      }
-
-      // 如果读取的配置与当前状态不同，更新状态
-      if (currentFluidSearch !== useFluidSearch) {
-        setUseFluidSearch(currentFluidSearch);
-      }
-      // 直接使用rust 后端 search
-      invoke<SearchResult[]>('search', { query: trimmed })
-        .then((results) => {
-          if (currentQueryRef.current !== trimmed) return;
-          setSearchResults(results || []);
-          setTotalSources(1);
-          setCompletedSources(1);
-          setIsLoading(false);
-        })
-        .catch((err) => {
-          console.error('Tauri search error:', err);
-          setIsLoading(false);
-        });
-      setShowSuggestions(false);
-
-      // 保存到搜索历史 (事件监听会自动更新界面)
-      invoke('add_search_history', { keyword: query }).then(() => {
-        window.dispatchEvent(new CustomEvent('searchHistoryUpdated', { detail: {} }));
-      }).catch(console.error);
-    } else {
+    if (!qParam) {
       setShowResults(false);
-      setShowSuggestions(false);
+      return;
     }
-  }, [searchParams]);
 
+    // ✅ 返回搜索页：直接恢复，不做任何事
+    if (
+      qParam === globalSearchUIState.query &&
+      searchCache.has(qParam)
+    ) {
+      setSearchResults(searchCache.get(qParam)!);
+      setIsLoading(false);
+      setShowResults(true);
+      return;
+    }
+
+    setIsLoading(true);
+    setShowResults(true);
+
+    invoke<SearchResult[]>('search', { query: qParam })
+      .then((results) => {
+        const safeResults = results || [];
+        searchCache.set(qParam, safeResults);
+        setSearchResults(safeResults);
+      })
+      .catch(console.error)
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [qParam]);
+  useEffect(() => {
+    globalSearchUIState.query = qParam;
+    globalSearchUIState.viewMode = viewMode;
+    globalSearchUIState.filterAgg = filterAgg;
+    globalSearchUIState.filterAll = filterAll;
+  }, [qParam, viewMode, filterAgg, filterAll]);
   // 组件卸载时，关闭可能存在的连接
   useEffect(() => {
     return () => {
@@ -617,17 +570,9 @@ function SearchPageClient() {
   // 搜索表单提交时触发，处理搜索逻辑
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = searchQuery.trim().replace(/\s+/g, ' ');
+    const trimmed = qParam.trim();
     if (!trimmed) return;
-
-    // 回显搜索框
-    setSearchQuery(trimmed);
-    setIsLoading(true);
-    setShowResults(true);
-    setShowSuggestions(false);
-
     router.push(`/search?q=${encodeURIComponent(trimmed)}`);
-    // 其余由 searchParams 变化的 effect 处理
   };
 
   const handleSuggestionSelect = (suggestion: string) => {
