@@ -10,6 +10,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { BangumiCalendarData, DoubanItem, DoubanResult, RustFavorite,RustPlayRecord } from '@/lib/types';
 import { subscribeToDataUpdates } from '@/lib/utils';
 import { useImagePreload } from '@/hooks/useImagePreload';
+import { useCachedData } from '@/hooks/usePageCache';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
@@ -69,51 +70,71 @@ function HomeClient() {
   // 自动预加载（延迟 500ms，避免阻塞首屏渲染）
   useImagePreload(allImageUrls, !loading);
 
+  // 定义首页数据类型
+  type HomeData = {
+    hotMovies: DoubanItem[];
+    hotTvShows: DoubanItem[];
+    hotVarietyShows: DoubanItem[];
+    bangumiCalendarData: BangumiCalendarData[];
+  };
+
+  // 数据获取函数
+  const fetchHomeData = async (): Promise<HomeData> => {
+    const [moviesData, tvShowsData, varietyShowsData, bangumiCalendarData] =
+      await Promise.all([
+        invoke<DoubanResult>('get_douban_categories', {
+          params: {
+            kind: 'movie',
+            category: '热门',
+            type: '全部',
+          },
+        }),
+        invoke<DoubanResult>('get_douban_categories', {
+          params: {
+            kind: 'tv',
+            category: 'tv',
+            type: 'tv',
+          },
+        }),
+        invoke<DoubanResult>('get_douban_categories', {
+          params: {
+            kind: 'tv',
+            category: 'show',
+            type: 'show',
+          },
+        }),
+        invoke<BangumiCalendarData[]>('get_bangumi_calendar_data'),
+      ]);
+
+    return {
+      hotMovies: moviesData.code === 200 ? moviesData.list : [],
+      hotTvShows: tvShowsData.code === 200 ? tvShowsData.list : [],
+      hotVarietyShows: varietyShowsData.code === 200 ? varietyShowsData.list : [],
+      bangumiCalendarData: bangumiCalendarData || [],
+    };
+  };
+
+  // 使用缓存（启用 stale-while-revalidate）
+  const { fetchData } = useCachedData<HomeData>('home', fetchHomeData, {
+    staleWhileRevalidate: true,
+    onUpdate: (freshData) => {
+      // 后台更新完成后，静默更新状态
+      setHotMovies(freshData.hotMovies);
+      setHotTvShows(freshData.hotTvShows);
+      setHotVarietyShows(freshData.hotVarietyShows);
+      setBangumiCalendarData(freshData.bangumiCalendarData);
+    },
+  });
+
   useEffect(() => {
-    const fetchRecommendData = async () => {
+    const loadHomeData = async () => {
       try {
         setLoading(true);
-
-        // 并行获取热门电影、热门剧集和热门综艺
-        const [moviesData, tvShowsData, varietyShowsData, bangumiCalendarData] =
-          await Promise.all([
-            invoke<DoubanResult>('get_douban_categories', {
-              params: {
-                kind: 'movie',
-                category: '热门',
-                type: '全部',
-              },
-            }),
-            invoke<DoubanResult>('get_douban_categories', {
-              params: {
-                kind: 'tv',
-                category: 'tv',
-                type: 'tv',
-              },
-            }),
-            invoke<DoubanResult>('get_douban_categories', {
-              params: {
-                kind: 'tv',
-                category: 'show',
-                type: 'show',
-              },
-            }),
-            invoke<BangumiCalendarData[]>('get_bangumi_calendar_data'),
-          ]);
-
-        if (moviesData.code === 200) {
-          setHotMovies(moviesData.list);
-        }
-
-        if (tvShowsData.code === 200) {
-          setHotTvShows(tvShowsData.list);
-        }
-
-        if (varietyShowsData.code === 200) {
-          setHotVarietyShows(varietyShowsData.list);
-        }
-
-        setBangumiCalendarData(bangumiCalendarData);
+        const data = await fetchData();
+        setHotMovies(data.hotMovies);
+        setHotTvShows(data.hotTvShows);
+        setHotVarietyShows(data.hotVarietyShows);
+        setBangumiCalendarData(data.bangumiCalendarData);
       } catch (error) {
         console.error('获取推荐数据失败:', error);
       } finally {
@@ -121,7 +142,7 @@ function HomeClient() {
       }
     };
 
-    fetchRecommendData();
+    loadHomeData();
   }, []);
 
   // 处理收藏数据更新的函数

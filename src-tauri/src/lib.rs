@@ -5,6 +5,7 @@ mod storage;
 use db::db_client;
 use db::db_init;
 use db::image_cache::ImageCacheManager;
+use db::page_cache::PageCacheManager;
 use storage::StorageManager;
 use tauri::Manager;
 
@@ -67,6 +68,14 @@ pub fn run() {
                 .expect("failed to init image cache table");
             app.manage(image_cache_manager);
 
+            // 初始化页面缓存管理器
+            let page_cache_conn = db_init::init_db(app.handle());
+            let page_cache_manager = PageCacheManager::new(page_cache_conn);
+            page_cache_manager
+                .init_table()
+                .expect("failed to init page cache table");
+            app.manage(page_cache_manager);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -117,6 +126,13 @@ pub fn run() {
             // 图片缓存
             db::image_cache::get_cached_image,
             db::image_cache::save_cached_image,
+            // 页面缓存
+            db::page_cache::get_page_cache,
+            db::page_cache::set_page_cache,
+            db::page_cache::delete_page_cache,
+            db::page_cache::cleanup_expired_page_cache,
+            db::page_cache::clear_all_page_cache,
+            db::page_cache::get_page_cache_stats,
             // 番
             commands::bangumi::get_bangumi_calendar_data,
             // douban

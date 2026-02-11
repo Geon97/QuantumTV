@@ -8,6 +8,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { BangumiCalendarData,DoubanItem, DoubanResult } from '@/lib/types';
 import { useImagePreload } from '@/hooks/useImagePreload';
 import { useSourceFilter } from '@/hooks/useSourceFilter';
+import { useCachedData } from '@/hooks/usePageCache';
 
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
 import DoubanCustomSelector from '@/components/DoubanCustomSelector';
@@ -97,6 +98,63 @@ function DoubanPageClient() {
   // 图片预加载：提取前 30 张图片
   const imageUrls = doubanData.slice(0, 30).map(item => item.poster).filter(Boolean);
   useImagePreload(imageUrls, !loading && doubanData.length > 0);
+
+  // 判断是否为默认状态（可以使用缓存）
+  const isDefaultState = useCallback(() => {
+    if (type === 'movie') {
+      return primarySelection === '热门' && secondarySelection === '全部';
+    }
+    if (type === 'tv') {
+      return primarySelection === '最近热门' && secondarySelection === 'tv';
+    }
+    if (type === 'show') {
+      return primarySelection === '最近热门' && secondarySelection === 'show';
+    }
+    if (type === 'anime') {
+      return primarySelection === '每日放送';
+    }
+    return false;
+  }, [type, primarySelection, secondarySelection]);
+
+  // 缓存数据获取函数（仅用于默认状态）
+  const fetchDefaultDoubanData = useCallback(async (): Promise<DoubanResult> => {
+    // 内联生成请求参数
+    let params;
+    if (type === 'tv' || type === 'show') {
+      params = {
+        kind: 'tv' as const,
+        category: type,
+        type: secondarySelection,
+        pageLimit: 25,
+        pageStart: 0,
+      };
+    } else {
+      params = {
+        kind: type as 'tv' | 'movie',
+        category: primarySelection,
+        type: secondarySelection,
+        pageLimit: 25,
+        pageStart: 0,
+      };
+    }
+    return await invoke<DoubanResult>('get_douban_categories', { params });
+  }, [type, primarySelection, secondarySelection]);
+
+  // 使用缓存（仅在默认状态时启用）
+  const { fetchData: fetchCachedData } = useCachedData<DoubanResult>(
+    `douban_${type}`,
+    fetchDefaultDoubanData,
+    {
+      enabled: isDefaultState(),
+      staleWhileRevalidate: true,
+      onUpdate: (freshData) => {
+        // 后台更新完成后，如果仍在默认状态，静默更新数据
+        if (isDefaultState() && freshData.code === 200) {
+          setDoubanData(freshData.list);
+        }
+      },
+    }
+  );
 
   // 选中的源分类
   const [selectedSourceCategory, setSelectedSourceCategory] =
@@ -296,7 +354,10 @@ function DoubanPageClient() {
 
       let data: DoubanResult;
 
-      if (type === 'custom') {
+      // 如果是默认状态，尝试使用缓存
+      if (isDefaultState() && type !== 'custom' && type !== 'anime') {
+        data = await fetchCachedData();
+      } else if (type === 'custom') {
         // 自定义分类模式：根据选中的一级和二级选项获取对应的分类
         const selectedCategory = customCategories.find(
           (cat) =>

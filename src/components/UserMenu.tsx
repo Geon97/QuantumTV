@@ -6,9 +6,11 @@ import { invoke } from '@tauri-apps/api/core';
 import {
   Check,
   ChevronDown,
+  Database,
   ExternalLink,
   Settings,
   Shield,
+  Trash2,
   User,
   X,
 } from 'lucide-react';
@@ -17,6 +19,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { UpdateStatus } from '@/lib/types';
+import { usePageCache, CacheStats } from '@/hooks/usePageCache';
 
 import { VersionPanel } from './VersionPanel';
 
@@ -137,6 +140,11 @@ export const UserMenu: React.FC = () => {
     remoteTimestamp?: string;
   } | null>(null);
   const [isChecking, setIsChecking] = useState(true);
+
+  // 缓存管理相关状态
+  const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
+  const [isClearingCache, setIsClearingCache] = useState(false);
+  const { getStats, clearAll, cleanupExpired } = usePageCache();
 
   // 确保组件已挂载
   useEffect(() => {
@@ -313,10 +321,56 @@ export const UserMenu: React.FC = () => {
   const handleSettings = () => {
     setIsOpen(false);
     setIsSettingsOpen(true);
+    // 加载缓存统计
+    loadCacheStats();
   };
 
   const handleCloseSettings = () => {
     setIsSettingsOpen(false);
+  };
+
+  // 加载缓存统计
+  const loadCacheStats = async () => {
+    try {
+      const stats = await getStats();
+      setCacheStats(stats);
+    } catch (error) {
+      console.error('加载缓存统计失败:', error);
+    }
+  };
+
+  // 清空所有缓存
+  const handleClearAllCache = async () => {
+    if (!confirm('确定要清空所有页面缓存吗？这将删除首页、电影、剧集等所有缓存数据。')) {
+      return;
+    }
+
+    setIsClearingCache(true);
+    try {
+      await clearAll();
+      await loadCacheStats();
+      alert('缓存已清空');
+    } catch (error) {
+      console.error('清空缓存失败:', error);
+      alert('清空缓存失败');
+    } finally {
+      setIsClearingCache(false);
+    }
+  };
+
+  // 清理过期缓存
+  const handleCleanupExpiredCache = async () => {
+    setIsClearingCache(true);
+    try {
+      const count = await cleanupExpired();
+      await loadCacheStats();
+      alert(`已清理 ${count} 个过期缓存`);
+    } catch (error) {
+      console.error('清理过期缓存失败:', error);
+      alert('清理过期缓存失败');
+    } finally {
+      setIsClearingCache(false);
+    }
   };
 
   // 设置相关的处理函数
@@ -851,6 +905,71 @@ export const UserMenu: React.FC = () => {
                   <div className='absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform peer-checked:translate-x-5'></div>
                 </div>
               </label>
+            </div>
+
+            {/* 分割线 */}
+            <div className='border-t border-gray-200 dark:border-gray-700'></div>
+
+            {/* 缓存管理 */}
+            <div className='space-y-3'>
+              <div className='flex items-center gap-2'>
+                <Database className='w-4 h-4 text-gray-500 dark:text-gray-400' />
+                <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                  缓存管理
+                </h4>
+              </div>
+
+              {cacheStats && (
+                <div className='grid grid-cols-3 gap-2 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg'>
+                  <div className='text-center'>
+                    <div className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
+                      {cacheStats.total}
+                    </div>
+                    <div className='text-xs text-gray-500 dark:text-gray-400'>
+                      总缓存
+                    </div>
+                  </div>
+                  <div className='text-center'>
+                    <div className='text-lg font-semibold text-green-600 dark:text-green-400'>
+                      {cacheStats.valid}
+                    </div>
+                    <div className='text-xs text-gray-500 dark:text-gray-400'>
+                      有效
+                    </div>
+                  </div>
+                  <div className='text-center'>
+                    <div className='text-lg font-semibold text-orange-600 dark:text-orange-400'>
+                      {cacheStats.expired}
+                    </div>
+                    <div className='text-xs text-gray-500 dark:text-gray-400'>
+                      过期
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className='flex gap-2'>
+                <button
+                  onClick={handleCleanupExpiredCache}
+                  disabled={isClearingCache}
+                  className='flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-800 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+                >
+                  <Trash2 className='w-4 h-4' />
+                  清理过期
+                </button>
+                <button
+                  onClick={handleClearAllCache}
+                  disabled={isClearingCache}
+                  className='flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+                >
+                  <Trash2 className='w-4 h-4' />
+                  清空所有
+                </button>
+              </div>
+
+              <p className='text-xs text-gray-500 dark:text-gray-400'>
+                缓存有效期 6 小时，包含首页、电影、剧集、动漫、综艺等页面数据
+              </p>
             </div>
           </div>
         </div>

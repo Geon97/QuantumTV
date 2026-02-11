@@ -11,6 +11,7 @@ import { AdminConfig } from '@/lib/admin.types';
 import { GlobalErrorIndicator } from '../components/GlobalErrorIndicator';
 import NavbarGate from '../components/NavbarGate';
 import ParticleBackground from '../components/ParticleBackground';
+import { PageCacheInit } from '../components/PageCacheInit';
 import { SiteProvider } from '../components/SiteProvider';
 import { ThemeProvider } from '../components/ThemeProvider';
 import TopNavbar from '../components/TopNavbar';
@@ -160,6 +161,7 @@ export default async function RootLayout({
           disableTransitionOnChange
         >
           <SiteProvider siteName={siteName} announcement={announcement}>
+            <PageCacheInit />
             <ParticleBackground />
             <NavbarGate>
               <TopNavbar />
