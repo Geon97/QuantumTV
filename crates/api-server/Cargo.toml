@@ -1,6 +1,6 @@
 [package]
 name = "quantumtv-api"
-version = "0.2.6"
+version = "0.3.0"
 edition = "2021"
 description = "QuantumTV API Server (Axum)"
 

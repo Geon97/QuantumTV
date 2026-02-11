@@ -3073,7 +3073,7 @@ dependencies = [
 
 [[package]]
 name = "quantumtv"
-version = "0.2.6"
+version = "0.3.0"
 dependencies = [
  "image",
  "moka",
@@ -3097,7 +3097,7 @@ dependencies = [
 
 [[package]]
 name = "quantumtv-core"
-version = "0.2.6"
+version = "0.3.0"
 dependencies = [
  "image",
  "moka",
