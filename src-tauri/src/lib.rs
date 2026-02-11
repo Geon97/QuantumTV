@@ -95,6 +95,8 @@ pub fn run() {
             commands::video::fetch_url,
             commands::video::fetch_binary,
             commands::video::get_douban_data,
+            commands::video::prefer_best_source_command,
+            commands::video::test_video_source_command,
             // 版本
             commands::version::get_current_version,
             commands::version::version_for_updates,

@@ -9,12 +9,12 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
 import {
+  PreferBestSourceResponse,
   RustFavorite,
   RustPlayRecord,
   RustSkipConfig,
   SearchResult,
 } from '@/lib/types';
-import { getVideoResolutionFromM3u8 } from '@/lib/utils';
 import { generateStorageKey, subscribeToDataUpdates } from '@/lib/utils';
 import { useProxyImage } from '@/hooks/useProxyImage';
 
@@ -229,206 +229,6 @@ function PlayPageClient() {
 
   // -----------------------------------------------------------------------------
   // 工具函数（Utils）
-  // TODO: 将这些工具函数移到 Rust 端
-
-  // 播放源优选函数 移到 Rust 端
-  const preferBestSource = async (
-    sources: SearchResult[],
-  ): Promise<SearchResult> => {
-    if (sources.length === 1) return sources[0];
-
-    // 将播放源均分为两批，并发测速各批，避免一次性过多请求
-    const batchSize = Math.ceil(sources.length / 2);
-    const allResults: Array<{
-      source: SearchResult;
-      testResult: { quality: string; loadSpeed: string; pingTime: number };
-    } | null> = [];
-
-    for (let start = 0; start < sources.length; start += batchSize) {
-      const batchSources = sources.slice(start, start + batchSize);
-      const batchResults = await Promise.all(
-        batchSources.map(async (source) => {
-          try {
-            // 检查是否有第一集的播放地址
-            if (!source.episodes || source.episodes.length === 0) {
-              console.warn(`播放源 ${source.source_name} 没有可用的播放地址`);
-              return null;
-            }
-
-            const episodeUrl =
-              source.episodes.length > 1
-                ? source.episodes[1]
-                : source.episodes[0];
-            const testResult = await getVideoResolutionFromM3u8(episodeUrl);
-
-            return {
-              source,
-              testResult,
-            };
-          } catch {
-            return null;
-          }
-        }),
-      );
-      allResults.push(...batchResults);
-    }
-
-    // 等待所有测速完成，包含成功和失败的结果
-    // 保存所有测速结果到 precomputedVideoInfo，供 EpisodeSelector 使用（包含错误结果）
-    const newVideoInfoMap = new Map<
-      string,
-      {
-        quality: string;
-        loadSpeed: string;
-        pingTime: number;
-        hasError?: boolean;
-      }
-    >();
-    allResults.forEach((result, index) => {
-      const source = sources[index];
-      const sourceKey = `${source.source}-${source.id}`;
-
-      if (result) {
-        // 成功的结果
-        newVideoInfoMap.set(sourceKey, result.testResult);
-      }
-    });
-
-    // 过滤出成功的结果用于优选计算
-    const successfulResults = allResults.filter(Boolean) as Array<{
-      source: SearchResult;
-      testResult: { quality: string; loadSpeed: string; pingTime: number };
-    }>;
-
-    setPrecomputedVideoInfo(newVideoInfoMap);
-
-    if (successfulResults.length === 0) {
-      console.warn('所有播放源测速都失败，使用第一个播放源');
-      return sources[0];
-    }
-
-    // 找出所有有效速度的最大值，用于线性映射
-    const validSpeeds = successfulResults
-      .map((result) => {
-        const speedStr = result.testResult.loadSpeed;
-        if (speedStr === '未知' || speedStr === '测量中...') return 0;
-
-        const match = speedStr.match(/^([\d.]+)\s*(KB\/s|MB\/s)$/);
-        if (!match) return 0;
-
-        const value = parseFloat(match[1]);
-        const unit = match[2];
-        return unit === 'MB/s' ? value * 1024 : value; // 统一转换为 KB/s
-      })
-      .filter((speed) => speed > 0);
-
-    const maxSpeed = validSpeeds.length > 0 ? Math.max(...validSpeeds) : 1024; // 默认1MB/s作为基准
-
-    // 找出所有有效延迟的最小值和最大值，用于线性映射
-    const validPings = successfulResults
-      .map((result) => result.testResult.pingTime)
-      .filter((ping) => ping > 0);
-
-    const minPing = validPings.length > 0 ? Math.min(...validPings) : 50;
-    const maxPing = validPings.length > 0 ? Math.max(...validPings) : 1000;
-
-    // 计算每个结果的评分
-    const resultsWithScore = successfulResults.map((result) => ({
-      ...result,
-      score: calculateSourceScore(
-        result.testResult,
-        maxSpeed,
-        minPing,
-        maxPing,
-      ),
-    }));
-
-    // 按综合评分排序，选择最佳播放源
-    resultsWithScore.sort((a, b) => b.score - a.score);
-
-    console.log('播放源评分排序结果:');
-    resultsWithScore.forEach((result, index) => {
-      console.log(
-        `${index + 1}. ${
-          result.source.source_name
-        } - 评分: ${result.score.toFixed(2)} (${result.testResult.quality}, ${
-          result.testResult.loadSpeed
-        }, ${result.testResult.pingTime}ms)`,
-      );
-    });
-
-    return resultsWithScore[0].source;
-  };
-
-  // 计算播放源综合评分  移到 Rust 端
-  const calculateSourceScore = (
-    testResult: {
-      quality: string;
-      loadSpeed: string;
-      pingTime: number;
-    },
-    maxSpeed: number,
-    minPing: number,
-    maxPing: number,
-  ): number => {
-    let score = 0;
-
-    // 分辨率评分 (40% 权重)
-    const qualityScore = (() => {
-      switch (testResult.quality) {
-        case '4K':
-          return 100;
-        case '2K':
-          return 85;
-        case '1080p':
-          return 75;
-        case '720p':
-          return 60;
-        case '480p':
-          return 40;
-        case 'SD':
-          return 20;
-        default:
-          return 0;
-      }
-    })();
-    score += qualityScore * 0.4;
-
-    // 下载速度评分 (40% 权重) - 基于最大速度线性映射
-    const speedScore = (() => {
-      const speedStr = testResult.loadSpeed;
-      if (speedStr === '未知' || speedStr === '测量中...') return 30;
-
-      // 解析速度值
-      const match = speedStr.match(/^([\d.]+)\s*(KB\/s|MB\/s)$/);
-      if (!match) return 30;
-
-      const value = parseFloat(match[1]);
-      const unit = match[2];
-      const speedKBps = unit === 'MB/s' ? value * 1024 : value;
-
-      // 基于最大速度线性映射，最高100分
-      const speedRatio = speedKBps / maxSpeed;
-      return Math.min(100, Math.max(0, speedRatio * 100));
-    })();
-    score += speedScore * 0.4;
-
-    // 网络延迟评分 (20% 权重) - 基于延迟范围线性映射
-    const pingScore = (() => {
-      const ping = testResult.pingTime;
-      if (ping <= 0) return 0; // 无效延迟给默认分
-
-      // 如果所有延迟都相同，给满分
-      if (maxPing === minPing) return 100;
-
-      // 线性映射：最低延迟=100分，最高延迟=0分
-      const pingRatio = (maxPing - ping) / (maxPing - minPing);
-      return Math.min(100, Math.max(0, pingRatio * 100));
-    })();
-    score += pingScore * 0.2;
-
-    return Math.round(score * 100) / 100; // 保留两位小数
-  };
 
   // 更新视频地址
   const updateVideoUrl = (
@@ -553,7 +353,10 @@ function PlayPageClient() {
       localStorage.setItem(storageKey, JSON.stringify(newConfig));
 
       if (!newConfig.enable && !newConfig.intro_time && !newConfig.outro_time) {
-        const key = generateStorageKey(currentSourceRef.current, currentIdRef.current);
+        const key = generateStorageKey(
+          currentSourceRef.current,
+          currentIdRef.current,
+        );
         await invoke('delete_skip_config', { key });
         localStorage.removeItem(storageKey);
         showToast('已清除跳过设置', 'info');
@@ -615,7 +418,10 @@ function PlayPageClient() {
           },
         });
       } else {
-        const key = generateStorageKey(currentSourceRef.current, currentIdRef.current);
+        const key = generateStorageKey(
+          currentSourceRef.current,
+          currentIdRef.current,
+        );
         await invoke('save_skip_config', {
           config: {
             key,
@@ -679,7 +485,7 @@ function PlayPageClient() {
     constructor(config: any) {
       this.config = config;
       this.enableAdBlock = config.enableAdBlock || false;
-      
+
       // 在构造函数中立即初始化 stats
       this.stats = {
         aborted: false,
@@ -710,7 +516,7 @@ function PlayPageClient() {
     load(context: any, config: any, callbacks: any) {
       this.context = context;
       this.callbacks = callbacks;
-      
+
       // 确保 stats 存在（以防万一）
       if (this.stats) {
         this.stats.loading.start = performance.now();
@@ -727,27 +533,27 @@ function PlayPageClient() {
         headersOpt: null,
       })
         .then((result) => {
-          // 关键修复：先检查 this.stats 是否为 null (即 loader 是否已被销毁)
+          // 先检查 this.stats 是否为 null (即 loader 是否已被销毁)
           if (!this.stats || this.stats.aborted) return;
 
-
           this.stats.loading.end = performance.now();
-          this.stats.loading.first = this.stats.loading.start; 
-          
+          this.stats.loading.first = this.stats.loading.start;
+
           const data = new Uint8Array(result.body);
           this.stats.loaded = data.byteLength;
           this.stats.total = data.byteLength;
           const duration = this.stats.loading.end - this.stats.loading.start;
-          duration > 0 ? (this.stats.loaded * 8 / 1000 / 1000) / (duration / 1000) : 0;
+          duration > 0
+            ? (this.stats.loaded * 8) / 1000 / 1000 / (duration / 1000)
+            : 0;
 
           let responseData: any = data.buffer;
 
-          if (
-            context.type === 'manifest' ||
-            context.type === 'level'
-          ) {
+          if (context.type === 'manifest' || context.type === 'level') {
             const text = new TextDecoder().decode(data);
-            const filteredText = this.enableAdBlock ? filterAdsFromM3U8(text) : text;
+            const filteredText = this.enableAdBlock
+              ? filterAdsFromM3U8(text)
+              : text;
             responseData = filteredText;
           }
 
@@ -759,13 +565,10 @@ function PlayPageClient() {
           callbacks.onSuccess(response, this.stats, context);
         })
         .catch((error) => {
-          // 关键修复：同样在错误处理中检查 this.stats 是否存在
+          // 同样在错误处理中检查 this.stats 是否存在
           if (!this.stats || this.stats.aborted) return;
-          
-          callbacks.onError(
-            { code: 0, text: error.toString() },
-            context
-          );
+
+          callbacks.onError({ code: 0, text: error.toString() }, context);
         });
     }
   }
@@ -832,7 +635,7 @@ function PlayPageClient() {
 
       setLoading(true);
 
-      // ✅ 优化（Rust 端）: 使用 get_video_detail_optimized 进行快速路径
+      // 使用 get_video_detail_optimized 进行快速路径
       // 如果指定了 source 和 id，使用优化命令并行获取详情和搜索相似源
       if (currentSource && currentId && !needPreferRef.current) {
         setLoadingStage('fetching');
@@ -883,7 +686,7 @@ function PlayPageClient() {
             const searchQuery = searchTitle || videoTitle;
             if (searchQuery) {
               fetchSourcesData(searchQuery)
-                .then(results => {
+                .then((results) => {
                   if (results.length > 0) {
                     setAvailableSources(results);
                   }
@@ -949,14 +752,41 @@ function PlayPageClient() {
         if (optimizationEnabled && searchResults.length > 1) {
           setTimeout(async () => {
             try {
-              const bestSource = await preferBestSource(searchResults);
-              if (bestSource) {
+              const response = await invoke<PreferBestSourceResponse>(
+                'prefer_best_source_command',
+                { sources: searchResults },
+              );
+
+              if (response.best_source) {
+                // 设置预计算的视频信息
+                const newVideoInfoMap = new Map<
+                  string,
+                  {
+                    quality: string;
+                    loadSpeed: string;
+                    pingTime: number;
+                    hasError?: boolean;
+                  }
+                >();
+
+                response.test_results.forEach(([key, result]) => {
+                  newVideoInfoMap.set(key, {
+                    quality: result.quality,
+                    loadSpeed: result.load_speed,
+                    pingTime: result.ping_time,
+                    hasError: result.has_error,
+                  });
+                });
+
+                setPrecomputedVideoInfo(newVideoInfoMap);
+
                 setAvailableSources([
-                  bestSource,
+                  response.best_source,
                   ...searchResults.filter(
-                    s =>
+                    (s) =>
                       !(
-                        s.source === bestSource.source && s.id === bestSource.id
+                        s.source === response.best_source.source &&
+                        s.id === response.best_source.id
                       ),
                   ),
                 ]);
@@ -983,9 +813,11 @@ function PlayPageClient() {
       if (!currentSource || !currentId) return;
 
       try {
-        const allRecords = await invoke<RustPlayRecord[]>('get_all_play_records');
+        const allRecords = await invoke<RustPlayRecord[]>(
+          'get_all_play_records',
+        );
         const key = generateStorageKey(currentSource, currentId);
-        const record = allRecords.find(r => r.key === key);
+        const record = allRecords.find((r) => r.key === key);
 
         if (record) {
           const targetIndex = record.episode_index - 1;
@@ -1025,7 +857,10 @@ function PlayPageClient() {
         } else {
           // 如果 localStorage 没有，再尝试从数据库读取
           const key = generateStorageKey(currentSource, currentId);
-          const config = await invoke<RustSkipConfig | null>('get_skip_config', { key });
+          const config = await invoke<RustSkipConfig | null>(
+            'get_skip_config',
+            { key },
+          );
           if (config) {
             setSkipConfig({
               enable: config.enable,
@@ -1033,11 +868,14 @@ function PlayPageClient() {
               outro_time: config.outro_time,
             });
             // 同步到 localStorage
-            localStorage.setItem(storageKey, JSON.stringify({
-              enable: config.enable,
-              intro_time: config.intro_time,
-              outro_time: config.outro_time,
-            }));
+            localStorage.setItem(
+              storageKey,
+              JSON.stringify({
+                enable: config.enable,
+                intro_time: config.intro_time,
+                outro_time: config.outro_time,
+              }),
+            );
           }
         }
       } catch (err) {
@@ -1066,7 +904,10 @@ function PlayPageClient() {
       // 清除前一个历史记录
       if (currentSourceRef.current && currentIdRef.current) {
         try {
-          const key = generateStorageKey(currentSourceRef.current, currentIdRef.current);
+          const key = generateStorageKey(
+            currentSourceRef.current,
+            currentIdRef.current,
+          );
           await invoke('delete_play_record', { key });
           console.log('已清除前一个播放记录');
         } catch (err) {
@@ -1077,7 +918,10 @@ function PlayPageClient() {
       // 清除并设置下一个跳过片头片尾配置
       if (currentSourceRef.current && currentIdRef.current) {
         try {
-          const oldKey = generateStorageKey(currentSourceRef.current, currentIdRef.current);
+          const oldKey = generateStorageKey(
+            currentSourceRef.current,
+            currentIdRef.current,
+          );
           await invoke('delete_skip_config', { key: oldKey });
           const newKey = generateStorageKey(newSource, newId);
           await invoke('save_skip_config', {
@@ -1299,7 +1143,10 @@ function PlayPageClient() {
     }
 
     try {
-      const key = generateStorageKey(currentSourceRef.current, currentIdRef.current);
+      const key = generateStorageKey(
+        currentSourceRef.current,
+        currentIdRef.current,
+      );
       await invoke('save_play_record', {
         record: {
           key,
@@ -1318,7 +1165,7 @@ function PlayPageClient() {
 
       // 触发事件通知其他组件
       window.dispatchEvent(
-        new CustomEvent('playRecordsUpdated', { detail: {} })
+        new CustomEvent('playRecordsUpdated', { detail: {} }),
       );
 
       lastSaveTimeRef.current = Date.now();
@@ -1384,7 +1231,7 @@ function PlayPageClient() {
       try {
         const allFavorites = await invoke<RustFavorite[]>('get_play_favorites');
         const key = generateStorageKey(currentSource, currentId);
-        const fav = allFavorites.some(f => f.key === key);
+        const fav = allFavorites.some((f) => f.key === key);
         setFavorited(fav);
       } catch (err) {
         console.error('检查收藏状态失败:', err);
@@ -1396,19 +1243,16 @@ function PlayPageClient() {
   useEffect(() => {
     if (!currentSource || !currentId) return;
 
-    const unsubscribe = subscribeToDataUpdates(
-      'favoritesUpdated',
-      async () => {
-        try {
-          const allFavorites = await invoke<RustFavorite[]>('get_play_favorites');
-          const key = generateStorageKey(currentSource, currentId);
-          const isFav = allFavorites.some(f => f.key === key);
-          setFavorited(isFav);
-        } catch (err) {
-          console.error('检查收藏状态失败:', err);
-        }
-      },
-    );
+    const unsubscribe = subscribeToDataUpdates('favoritesUpdated', async () => {
+      try {
+        const allFavorites = await invoke<RustFavorite[]>('get_play_favorites');
+        const key = generateStorageKey(currentSource, currentId);
+        const isFav = allFavorites.some((f) => f.key === key);
+        setFavorited(isFav);
+      } catch (err) {
+        console.error('检查收藏状态失败:', err);
+      }
+    });
 
     return unsubscribe;
   }, [currentSource, currentId]);
@@ -1424,7 +1268,10 @@ function PlayPageClient() {
       return;
 
     try {
-      const key = generateStorageKey(currentSourceRef.current, currentIdRef.current);
+      const key = generateStorageKey(
+        currentSourceRef.current,
+        currentIdRef.current,
+      );
       if (favorited) {
         // 如果已收藏，删除收藏
         await invoke('delete_play_favorite', { key });
@@ -1447,9 +1294,7 @@ function PlayPageClient() {
         setFavorited(true);
       }
       // 触发事件通知其他组件
-      window.dispatchEvent(
-        new CustomEvent('favoritesUpdated', { detail: {} })
-      );
+      window.dispatchEvent(new CustomEvent('favoritesUpdated', { detail: {} }));
     } catch (err) {
       console.error('切换收藏失败:', err);
     }
@@ -1559,7 +1404,6 @@ function PlayPageClient() {
             if (video.hls) {
               video.hls.destroy();
             }
-
 
             const hls = new Hls({
               debug: false, // 关闭日志
@@ -2203,7 +2047,9 @@ function PlayPageClient() {
                     <div className='flex flex-col items-center gap-3'>
                       {/* <div className='w-10 h-10 border-4 border-green-500 border-t-transparent rounded-full animate-spin' /> */}
                       {videoLoadingStage === 'sourceChanging' && (
-                        <span className='text-white/80 text-sm'>切换播放源...</span>
+                        <span className='text-white/80 text-sm'>
+                          切换播放源...
+                        </span>
                       )}
                     </div>
                   </div>
@@ -2336,7 +2182,6 @@ function PlayPageClient() {
     </PageLayout>
   );
 }
-
 
 // FavoriteIcon 组件
 const FavoriteIcon = ({ filled }: { filled: boolean }) => {

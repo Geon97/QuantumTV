@@ -16,6 +16,7 @@ use tokio::sync::Semaphore;
 use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 use quantumtv_core::types::SearchResult;
+use quantumtv_core::{prefer_best_source, test_video_source, SourceTestResult};
 
 pub struct VideoCacheManager {
     pub cache: Cache<String, Vec<u8>>,
@@ -1412,4 +1413,34 @@ pub async fn get_douban_data(
         };
         Ok(serde_json::to_value(detail).unwrap())
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PreferBestSourceResponse {
+    pub best_source: SearchResult,
+    pub test_results: Vec<(String, SourceTestResult)>,
+}
+
+/// 从多个播放源中选择最佳源
+#[tauri::command]
+pub async fn prefer_best_source_command(
+    sources: Vec<SearchResult>,
+) -> Result<PreferBestSourceResponse, String> {
+    let client = get_video_client();
+
+    let (best_source, test_results) = prefer_best_source(client, sources).await?;
+
+    Ok(PreferBestSourceResponse {
+        best_source,
+        test_results,
+    })
+}
+
+/// 测试单个视频源质量
+#[tauri::command]
+pub async fn test_video_source_command(
+    m3u8_url: String,
+) -> Result<SourceTestResult, String> {
+    let client = get_video_client();
+    test_video_source(client, &m3u8_url).await
 }

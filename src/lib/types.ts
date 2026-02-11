@@ -1,4 +1,4 @@
-import { AdminConfig } from "@/lib/admin.types";
+import { AdminConfig } from '@/lib/admin.types';
 
 export interface ApiSite {
   key: string;
@@ -40,7 +40,7 @@ export interface IStorage {
   setPlayRecord(
     userName: string,
     key: string,
-    record: PlayRecord
+    record: PlayRecord,
   ): Promise<void>;
   getAllPlayRecords(userName: string): Promise<{ [key: string]: PlayRecord }>;
   deletePlayRecord(userName: string, key: string): Promise<void>;
@@ -77,13 +77,13 @@ export interface IStorage {
   getSkipConfig(
     userName: string,
     source: string,
-    id: string
+    id: string,
   ): Promise<SkipConfig | null>;
   setSkipConfig(
     userName: string,
     source: string,
     id: string,
-    config: SkipConfig
+    config: SkipConfig,
   ): Promise<void>;
   deleteSkipConfig(userName: string, source: string, id: string): Promise<void>;
   getAllSkipConfigs(userName: string): Promise<{ [key: string]: SkipConfig }>;
@@ -192,4 +192,16 @@ export interface BangumiCalendarData {
       grid?: string;
     };
   }[];
+}
+// Rust 返回类型定义
+export interface SourceTestResult {
+  quality: string;
+  load_speed: string;
+  ping_time: number;
+  has_error: boolean;
+}
+
+export interface PreferBestSourceResponse {
+  best_source: SearchResult;
+  test_results: Array<[string, SourceTestResult]>;
 }

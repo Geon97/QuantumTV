@@ -1,5 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 
+import { invoke } from '@tauri-apps/api/core';
 import { useRouter } from 'next/navigation';
 import React, {
   useCallback,
@@ -9,8 +10,7 @@ import React, {
   useState,
 } from 'react';
 
-import { SearchResult } from '@/lib/types';
-import { getVideoResolutionFromM3u8 } from '@/lib/utils';
+import { SearchResult, SourceTestResult } from '@/lib/types';
 import { useProxyImage } from '@/hooks/useProxyImage';
 
 // 定义视频信息类型
@@ -145,8 +145,19 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     setAttemptedSources((prev) => new Set(prev).add(sourceKey));
 
     try {
-      const info = await getVideoResolutionFromM3u8(episodeUrl);
-      setVideoInfoMap((prev) => new Map(prev).set(sourceKey, info));
+      const result = await invoke<SourceTestResult>('test_video_source_command', {
+        m3u8Url: episodeUrl,
+      });
+
+      // 转换字段名：Rust 使用 snake_case，前端使用 camelCase
+      setVideoInfoMap((prev) =>
+        new Map(prev).set(sourceKey, {
+          quality: result.quality,
+          loadSpeed: result.load_speed,
+          pingTime: result.ping_time,
+          hasError: result.has_error,
+        }),
+      );
     } catch {
       // 失败时保存错误状态
       setVideoInfoMap((prev) =>
