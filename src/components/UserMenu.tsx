@@ -201,14 +201,26 @@ export const UserMenu: React.FC = () => {
         setEnableOptimization(JSON.parse(savedEnableOptimization));
       }
 
-      const savedFluidSearch = localStorage.getItem('fluidSearch');
-      const defaultFluidSearch =
-        (window as any).RUNTIME_CONFIG?.FLUID_SEARCH !== false;
-      if (savedFluidSearch !== null) {
-        setFluidSearch(JSON.parse(savedFluidSearch));
-      } else if (defaultFluidSearch !== undefined) {
-        setFluidSearch(defaultFluidSearch);
-      }
+      // 读取流式搜索设置 - 从 Tauri 后端读取
+      const loadFluidSearchSetting = async () => {
+        try {
+          const enabled = await invoke<boolean>('get_fluid_search');
+          setFluidSearch(enabled);
+        } catch (error) {
+          console.error('读取流式搜索设置失败:', error);
+          // 降级到 localStorage
+          const savedFluidSearch = localStorage.getItem('fluidSearch');
+          const defaultFluidSearch =
+            (window as any).RUNTIME_CONFIG?.FLUID_SEARCH !== false;
+          if (savedFluidSearch !== null) {
+            setFluidSearch(JSON.parse(savedFluidSearch));
+          } else if (defaultFluidSearch !== undefined) {
+            setFluidSearch(defaultFluidSearch);
+          }
+        }
+      };
+
+      loadFluidSearchSetting();
 
       const savedLiveDirectConnect = localStorage.getItem('liveDirectConnect');
       if (savedLiveDirectConnect !== null) {
@@ -329,8 +341,17 @@ export const UserMenu: React.FC = () => {
     }
   };
 
-  const handleFluidSearchToggle = (value: boolean) => {
+  const handleFluidSearchToggle = async (value: boolean) => {
     setFluidSearch(value);
+
+    // 保存到 Tauri 后端
+    try {
+      await invoke('set_fluid_search', { enabled: value });
+    } catch (error) {
+      console.error('保存流式搜索设置失败:', error);
+    }
+
+    // 同时保存到 localStorage 作为备份
     if (typeof window !== 'undefined') {
       localStorage.setItem('fluidSearch', JSON.stringify(value));
     }
@@ -376,7 +397,7 @@ export const UserMenu: React.FC = () => {
     }
   };
 
-  const handleResetSettings = () => {
+  const handleResetSettings = async () => {
     const defaultDoubanProxyType =
       (window as any).RUNTIME_CONFIG?.DOUBAN_PROXY_TYPE ||
       'cmliussss-cdn-tencent';
@@ -399,6 +420,13 @@ export const UserMenu: React.FC = () => {
     setDoubanImageProxyType(defaultDoubanImageProxyType);
     setDoubanImageProxyUrl(defaultDoubanImageProxyUrl);
     setPlayerBufferMode('standard');
+
+    // 保存流式搜索到 Tauri 后端
+    try {
+      await invoke('set_fluid_search', { enabled: defaultFluidSearch });
+    } catch (error) {
+      console.error('重置流式搜索设置失败:', error);
+    }
 
     if (typeof window !== 'undefined') {
       localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));

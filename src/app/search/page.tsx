@@ -427,17 +427,19 @@ function SearchPageClient() {
     // 初始加载搜索历史
     invoke<string[]>('get_search_history').then(setSearchHistory).catch(console.error);
 
-    // 读取流式搜索设置
-    if (typeof window !== 'undefined') {
-      const savedFluidSearch = localStorage.getItem('fluidSearch');
-      const defaultFluidSearch =
-        (window as any).RUNTIME_CONFIG?.FLUID_SEARCH !== false;
-      if (savedFluidSearch !== null) {
-        setUseFluidSearch(JSON.parse(savedFluidSearch));
-      } else if (defaultFluidSearch !== undefined) {
-        setUseFluidSearch(defaultFluidSearch);
+    // 读取流式搜索设置 - 从 Tauri 后端读取
+    const loadFluidSearchSetting = async () => {
+      try {
+        const enabled = await invoke<boolean>('get_fluid_search');
+        setUseFluidSearch(enabled);
+      } catch (error) {
+        console.error('读取流式搜索设置失败:', error);
+        // 降级到默认值
+        setUseFluidSearch(true);
       }
-    }
+    };
+
+    loadFluidSearchSetting();
 
     // 监听搜索历史更新事件
     const unsubscribe = subscribeToDataUpdates(
@@ -631,20 +633,37 @@ function SearchPageClient() {
   };
 
   // 搜索表单提交时触发，处理搜索逻辑
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = qParam.trim();
+    const trimmed = searchQuery.trim();
     if (!trimmed) return;
+
+    // 保存搜索历史
+    try {
+      await invoke('add_search_history', { keyword: trimmed });
+      window.dispatchEvent(new CustomEvent('searchHistoryUpdated', { detail: {} }));
+    } catch (err) {
+      console.error('Failed to save search history:', err);
+    }
+
     router.push(`/search?q=${encodeURIComponent(trimmed)}`);
   };
 
-  const handleSuggestionSelect = (suggestion: string) => {
+  const handleSuggestionSelect = async (suggestion: string) => {
     setSearchQuery(suggestion);
     setShowSuggestions(false);
 
     // 自动执行搜索
     setIsLoading(true);
     setShowResults(true);
+
+    // 保存搜索历史
+    try {
+      await invoke('add_search_history', { keyword: suggestion });
+      window.dispatchEvent(new CustomEvent('searchHistoryUpdated', { detail: {} }));
+    } catch (err) {
+      console.error('Failed to save search history:', err);
+    }
 
     router.push(`/search?q=${encodeURIComponent(suggestion)}`);
     // 其余由 searchParams 变化的 effect 处理
@@ -705,7 +724,7 @@ function SearchPageClient() {
                 isVisible={showSuggestions}
                 onSelect={handleSuggestionSelect}
                 onClose={() => setShowSuggestions(false)}
-                onEnterKey={() => {
+                onEnterKey={async () => {
                   // 当用户按回车键时，使用搜索框的实际内容进行搜索
                   const trimmed = searchQuery.trim().replace(/\s+/g, ' ');
                   if (!trimmed) return;
@@ -715,6 +734,14 @@ function SearchPageClient() {
                   setIsLoading(true);
                   setShowResults(true);
                   setShowSuggestions(false);
+
+                  // 保存搜索历史
+                  try {
+                    await invoke('add_search_history', { keyword: trimmed });
+                    window.dispatchEvent(new CustomEvent('searchHistoryUpdated', { detail: {} }));
+                  } catch (err) {
+                    console.error('Failed to save search history:', err);
+                  }
 
                   router.push(`/search?q=${encodeURIComponent(trimmed)}`);
                 }}
@@ -883,8 +910,17 @@ function SearchPageClient() {
                 {searchHistory.map((item) => (
                   <div key={item} className='relative group'>
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         setSearchQuery(item);
+
+                        // 更新搜索历史时间戳
+                        try {
+                          await invoke('add_search_history', { keyword: item.trim() });
+                          window.dispatchEvent(new CustomEvent('searchHistoryUpdated', { detail: {} }));
+                        } catch (err) {
+                          console.error('Failed to update search history:', err);
+                        }
+
                         router.push(
                           `/search?q=${encodeURIComponent(item.trim())}`,
                         );

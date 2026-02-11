@@ -142,3 +142,47 @@ pub async fn save_config(config: Value, state: State<'_, StorageManager>) -> Res
 pub async fn reset_config(state: State<'_, StorageManager>) -> Result<(), String> {
     state.reset_config()
 }
+
+#[tauri::command]
+pub async fn get_fluid_search(state: State<'_, StorageManager>) -> Result<bool, String> {
+    let data = state.get_data()?;
+
+    // Try to get FluidSearch from config
+    if let Some(site_config) = data.config.get("SiteConfig") {
+        if let Some(fluid_search) = site_config.get("FluidSearch") {
+            if let Some(value) = fluid_search.as_bool() {
+                return Ok(value);
+            }
+        }
+    }
+
+    // Default to true
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn set_fluid_search(
+    enabled: bool,
+    state: State<'_, StorageManager>,
+) -> Result<(), String> {
+    let mut data = state.get_data()?;
+
+    // Ensure config structure exists
+    if !data.config.is_object() {
+        data.config = serde_json::json!({});
+    }
+
+    let config_obj = data.config.as_object_mut().unwrap();
+
+    // Ensure SiteConfig exists
+    if !config_obj.contains_key("SiteConfig") {
+        config_obj.insert("SiteConfig".to_string(), serde_json::json!({}));
+    }
+
+    let site_config = config_obj.get_mut("SiteConfig").unwrap();
+    if let Some(site_config_obj) = site_config.as_object_mut() {
+        site_config_obj.insert("FluidSearch".to_string(), serde_json::json!(enabled));
+    }
+
+    state.update_config(data.config)
+}

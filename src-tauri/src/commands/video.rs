@@ -400,7 +400,11 @@ pub async fn search(
                 _ => {
                     // 如果启用了流式搜索，即使失败也要发送事件
                     if let Some(app_handle) = &app_handle_opt {
-                        if let Some(window) = app_handle.get_webview_window("main") {
+                        // 尝试获取窗口 - 兼容桌面端和移动端
+                        let window = app_handle.get_webview_window("main")
+                            .or_else(|| app_handle.webview_windows().values().next().cloned());
+
+                        if let Some(window) = window {
                             let mut count = completed.lock().await;
                             *count += 1;
                             let _ = window.emit(
@@ -423,7 +427,11 @@ pub async fn search(
                 Ok(Ok(text)) => text,
                 _ => {
                     if let Some(app_handle) = &app_handle_opt {
-                        if let Some(window) = app_handle.get_webview_window("main") {
+                        // 尝试获取窗口 - 兼容桌面端和移动端
+                        let window = app_handle.get_webview_window("main")
+                            .or_else(|| app_handle.webview_windows().values().next().cloned());
+
+                        if let Some(window) = window {
                             let mut count = completed.lock().await;
                             *count += 1;
                             let _ = window.emit(
@@ -477,7 +485,11 @@ pub async fn search(
 
             // 如果启用了流式搜索，立即发送该源的搜索结果给前端
             if let Some(app_handle) = &app_handle_opt {
-                if let Some(window) = app_handle.get_webview_window("main") {
+                // 尝试获取窗口 - 兼容桌面端和移动端
+                let window = app_handle.get_webview_window("main")
+                    .or_else(|| app_handle.webview_windows().values().next().cloned());
+
+                if let Some(window) = window {
                     let mut count = completed.lock().await;
                     *count += 1;
                     let _ = window.emit(
@@ -544,7 +556,11 @@ pub async fn search(
 
     // 如果启用了流式搜索，发送搜索完成事件
     if use_streaming {
-        if let Some(window) = app_handle.get_webview_window("main") {
+        // 尝试获取窗口 - 兼容桌面端和移动端
+        let window = app_handle.get_webview_window("main")
+            .or_else(|| app_handle.webview_windows().values().next().cloned());
+
+        if let Some(window) = window {
             let _ = window.emit(
                 "search-stream-completed",
                 serde_json::json!({

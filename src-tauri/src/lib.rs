@@ -75,6 +75,8 @@ pub fn run() {
             commands::config::save_config,
             commands::config::reset_config,
             commands::config::get_config_data,
+            commands::config::get_fluid_search,
+            commands::config::set_fluid_search,
             commands::search::get_search_suggestions,
             // 视频
             commands::video::search,
