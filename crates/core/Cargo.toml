@@ -1,0 +1,19 @@
+[package]
+name = "quantumtv-core"
+version = "0.2.6"
+edition = "2021"
+description = "QuantumTV 核心业务逻辑库"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+urlencoding = { workspace = true }
+scraper = { workspace = true }
+regex = { workspace = true }
+uuid = { workspace = true }
+url = { workspace = true }
+rusqlite = { workspace = true }
+image = { workspace = true }
+moka = { workspace = true }

@@ -1,6 +1,5 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 Dockerfile
-.dockerignore
 # dependencies
 /node_modules
 .DS_Store
@@ -59,7 +58,7 @@ public/manifest.json
 /src-tauri/gen/android/app/build
 /src-tauri/gen/android/build
 /src-tauri/gen/android/local.properties
-
+/target
 # Security: keys and secrets
 *.jks
 *.keystore

@@ -3077,6 +3077,7 @@ version = "0.2.6"
 dependencies = [
  "image",
  "moka",
+ "quantumtv-core",
  "regex",
  "reqwest",
  "rusqlite",
@@ -3088,6 +3089,24 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-plugin-http",
  "tauri-plugin-opener",
+ "tokio",
+ "url",
+ "urlencoding",
+ "uuid",
+]
+
+[[package]]
+name = "quantumtv-core"
+version = "0.2.6"
+dependencies = [
+ "image",
+ "moka",
+ "regex",
+ "reqwest",
+ "rusqlite",
+ "scraper",
+ "serde",
+ "serde_json",
  "tokio",
  "url",
  "urlencoding",

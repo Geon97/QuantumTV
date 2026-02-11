@@ -1,0 +1,23 @@
+[package]
+name = "quantumtv-api"
+version = "0.2.6"
+edition = "2021"
+description = "QuantumTV API Server (Axum)"
+
+[dependencies]
+# 核心业务逻辑
+quantumtv-core = { path = "../core" }
+
+# Axum web framework
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Workspace dependencies
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

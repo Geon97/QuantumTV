@@ -15,6 +15,7 @@ use tauri::{Emitter, Manager, State};
 use tokio::sync::Semaphore;
 use tokio::time::{timeout, Duration};
 use uuid::Uuid;
+use quantumtv_core::types::SearchResult;
 
 pub struct VideoCacheManager {
     pub cache: Cache<String, Vec<u8>>,
@@ -68,21 +69,6 @@ impl SearchCacheManager {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SearchResult {
-    pub id: String,
-    pub title: String,
-    pub poster: String,
-    pub episodes: Vec<String>,
-    pub episodes_titles: Vec<String>,
-    pub source: String,
-    pub source_name: String,
-    pub class: Option<String>,
-    pub year: Option<String>,
-    pub desc: Option<String>,
-    pub type_name: Option<String>,
-    pub douban_id: Option<i32>,
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GetVideoDetailOptimizedResponse {

@@ -1,0 +1,47 @@
+# Docker 构建忽略文件
+
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+.next/
+out/
+
+# Tauri 桌面应用（不需要打包到 API 服务器）
+src-tauri/
+
+# Rust 构建产物
+target/
+**/*.rs.bk
+**/Cargo.lock
+
+# Git
+.git/
+.gitignore
+.github/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 前端源码（API 服务器不需要）
+src/
+public/
+
+# 配置文件
+.env
+.env.local
+*.log
+.husky/
+
+# 文档
+*.md
+ARCHITECTURE.md
+.husky/
+
