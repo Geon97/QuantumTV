@@ -94,6 +94,7 @@ pub fn run() {
             commands::video::proxy_image,
             commands::video::fetch_url,
             commands::video::fetch_binary,
+            commands::video::fetch_m3u8,
             commands::video::get_douban_data,
             commands::video::prefer_best_source_command,
             commands::video::test_video_source_command,

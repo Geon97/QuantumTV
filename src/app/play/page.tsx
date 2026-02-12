@@ -316,27 +316,6 @@ function PlayPageClient() {
       }
     }
   };
-  // TODO
-  // 去广告相关函数 移到 Rust 端,减少前端负担
-  function filterAdsFromM3U8(m3u8Content: string): string {
-    if (!m3u8Content) return '';
-
-    // 按行分割M3U8内容
-    const lines = m3u8Content.split('\n');
-    const filteredLines = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      // 只过滤#EXT-X-DISCONTINUITY标识
-      if (!line.includes('#EXT-X-DISCONTINUITY')) {
-        filteredLines.push(line);
-      }
-    }
-
-    return filteredLines.join('\n');
-  }
-
   // 跳过片头片尾配置相关函数
   const handleSkipConfigChange = async (newConfig: {
     enable: boolean;
@@ -526,50 +505,74 @@ function PlayPageClient() {
 
       const { url } = context;
 
-      // 使用 Tauri fetch_binary 命令（自动缓存和预取）
-      invoke<{ status: number; body: number[] }>('fetch_binary', {
-        url,
-        method: 'GET',
-        headersOpt: null,
-      })
-        .then((result) => {
-          // 先检查 this.stats 是否为 null (即 loader 是否已被销毁)
-          if (!this.stats || this.stats.aborted) return;
-
-          this.stats.loading.end = performance.now();
-          this.stats.loading.first = this.stats.loading.start;
-
-          const data = new Uint8Array(result.body);
-          this.stats.loaded = data.byteLength;
-          this.stats.total = data.byteLength;
-          const duration = this.stats.loading.end - this.stats.loading.start;
-          duration > 0
-            ? (this.stats.loaded * 8) / 1000 / 1000 / (duration / 1000)
-            : 0;
-
-          let responseData: any = data.buffer;
-
-          if (context.type === 'manifest' || context.type === 'level') {
-            const text = new TextDecoder().decode(data);
-            const filteredText = this.enableAdBlock
-              ? filterAdsFromM3U8(text)
-              : text;
-            responseData = filteredText;
-          }
-
-          const response = {
-            url,
-            data: responseData,
-          };
-
-          callbacks.onSuccess(response, this.stats, context);
+      // 对于 M3U8 manifest 和 level，使用 Rust 端的 fetch_m3u8 命令（支持去广告）
+      if (context.type === 'manifest' || context.type === 'level') {
+        invoke<string>('fetch_m3u8', {
+          url,
+          enableAdBlock: this.enableAdBlock,
+          headersOpt: null,
         })
-        .catch((error) => {
-          // 同样在错误处理中检查 this.stats 是否存在
-          if (!this.stats || this.stats.aborted) return;
+          .then((m3u8Content) => {
+            // 先检查 this.stats 是否为 null (即 loader 是否已被销毁)
+            if (!this.stats || this.stats.aborted) return;
 
-          callbacks.onError({ code: 0, text: error.toString() }, context);
-        });
+            this.stats.loading.end = performance.now();
+            this.stats.loading.first = this.stats.loading.start;
+
+            // M3U8 内容已经在 Rust 端处理完成（包括去广告）
+            const textBytes = new TextEncoder().encode(m3u8Content);
+            this.stats.loaded = textBytes.byteLength;
+            this.stats.total = textBytes.byteLength;
+
+            const response = {
+              url,
+              data: m3u8Content,
+            };
+
+            callbacks.onSuccess(response, this.stats, context);
+          })
+          .catch((error) => {
+            // 同样在错误处理中检查 this.stats 是否存在
+            if (!this.stats || this.stats.aborted) return;
+
+            callbacks.onError({ code: 0, text: error.toString() }, context);
+          });
+      } else {
+        // 对于 TS 分片等二进制内容，继续使用 fetch_binary
+        invoke<{ status: number; body: number[] }>('fetch_binary', {
+          url,
+          method: 'GET',
+          headersOpt: null,
+        })
+          .then((result) => {
+            // 先检查 this.stats 是否为 null (即 loader 是否已被销毁)
+            if (!this.stats || this.stats.aborted) return;
+
+            this.stats.loading.end = performance.now();
+            this.stats.loading.first = this.stats.loading.start;
+
+            const data = new Uint8Array(result.body);
+            this.stats.loaded = data.byteLength;
+            this.stats.total = data.byteLength;
+            const duration = this.stats.loading.end - this.stats.loading.start;
+            duration > 0
+              ? (this.stats.loaded * 8) / 1000 / 1000 / (duration / 1000)
+              : 0;
+
+            const response = {
+              url,
+              data: data.buffer,
+            };
+
+            callbacks.onSuccess(response, this.stats, context);
+          })
+          .catch((error) => {
+            // 同样在错误处理中检查 this.stats 是否存在
+            if (!this.stats || this.stats.aborted) return;
+
+            callbacks.onError({ code: 0, text: error.toString() }, context);
+          });
+      }
     }
   }
   // 当集数索引变化时自动更新视频地址

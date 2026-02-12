@@ -989,6 +989,64 @@ pub async fn fetch_binary(
     Ok(FetchBinaryResponse { status, body })
 }
 
+/// 获取 M3U8 内容并可选地进行去广告处理
+///
+/// # 参数
+/// - `url`: M3U8 文件的 URL
+/// - `enable_ad_block`: 是否启用去广告功能，默认为 false
+/// - `headers_opt`: 可选的自定义 HTTP 请求头
+///
+/// # 返回
+/// 处理后的 M3U8 文本内容
+#[tauri::command]
+pub async fn fetch_m3u8(
+    url: String,
+    enable_ad_block: Option<bool>,
+    headers_opt: Option<std::collections::HashMap<String, String>>,
+) -> Result<String, String> {
+    // 准备 HTTP 请求头
+    let mut final_headers = HeaderMap::new();
+    if let Some(h) = headers_opt {
+        for (k, v) in h {
+            if let Ok(name) = reqwest::header::HeaderName::from_bytes(k.as_bytes()) {
+                if let Ok(value) = HeaderValue::from_str(&v) {
+                    final_headers.insert(name, value);
+                }
+            }
+        }
+    }
+
+    // 添加默认 User-Agent
+    if !final_headers.contains_key(USER_AGENT) {
+        final_headers.insert(
+            USER_AGENT,
+            HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+        );
+    }
+
+    // 为特定域名添加 Referer
+    if url.contains("doubanio.com") || url.contains("douban.com") {
+        final_headers.insert(REFERER, HeaderValue::from_static("https://www.douban.com/"));
+    }
+
+    // 执行带重试的 HTTP 请求
+    let resp = fetch_with_retry(&url, reqwest::Method::GET, final_headers).await?;
+    let body_bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+
+    // 解码为 UTF-8 文本
+    let content = String::from_utf8(body_bytes.to_vec())
+        .map_err(|e| format!("无法将 M3U8 内容解码为 UTF-8: {}", e))?;
+
+    // 如果启用了去广告，则调用 core 中的过滤函数
+    let result = if enable_ad_block.unwrap_or(false) {
+        quantumtv_core::filter_ads_from_m3_u8(content)
+    } else {
+        content
+    };
+
+    Ok(result)
+}
+
 // 预测并预取后续分片
 async fn prefetch_next_segments(
     current_url: String,
