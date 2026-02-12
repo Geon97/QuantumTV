@@ -10,6 +10,18 @@ pub struct ConfigSubscribtion {
     pub auto_update: bool,
     pub last_check: String,
 }
+
+impl Default for ConfigSubscribtion {
+    fn default() -> Self {
+        Self {
+            url: String::new(),
+            auto_update: false,
+            last_check: String::new(),
+        }
+    }
+}
+/// 旧的 SiteConfig 结构（仅用于迁移时反序列化，不再构造）
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SiteConfig {
     pub site_name: String,
@@ -47,6 +59,15 @@ pub struct UserConfig {
     pub users: Vec<User>,
     pub tags: Vec<Tags>,
 }
+
+impl Default for UserConfig {
+    fn default() -> Self {
+        Self {
+            users: vec![],
+            tags: vec![],
+        }
+    }
+}
 #[derive(Debug, Serialize, Deserialize)]
 pub enum From {
     Config,
@@ -79,11 +100,14 @@ pub struct CustomCategory {
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AdminConfig {
+    #[serde(default)]
     pub config_subscribtion: ConfigSubscribtion,
+    #[serde(default)]
     pub config_file: String,
-    pub site_config: SiteConfig,
+    #[serde(default)]
     pub user_config: UserConfig,
     pub source_config: Vec<SourceConfig>,
+    #[serde(default)]
     pub custom_categories: Vec<CustomCategory>,
 }
 fn get_local_mode_config() -> AdminConfig {
@@ -93,18 +117,6 @@ fn get_local_mode_config() -> AdminConfig {
             url: "".to_string(),
             auto_update: false,
             last_check: "".to_string(),
-        },
-        site_config: SiteConfig {
-            site_name: "QuantumTV".to_string(),
-            announcement: "本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。".to_string(),
-            search_downstream_max_page: 5,
-            site_interface_cache_time: 7200,
-            douban_proxy_type: "cmliussss-cdn-tencent".to_string(),
-            douban_proxy: "".to_string(),
-            douban_image_proxy_type: "cmliussss-cdn-tencent".to_string(),
-            douban_image_proxy: "".to_string(),
-            disable_yellow_filter: false,
-            fluid_search: true,
         },
         user_config: UserConfig {
             users: vec![User {
@@ -141,50 +153,6 @@ pub async fn save_config(config: Value, state: State<'_, StorageManager>) -> Res
 #[tauri::command]
 pub async fn reset_config(state: State<'_, StorageManager>) -> Result<(), String> {
     state.reset_config()
-}
-
-#[tauri::command]
-pub async fn get_fluid_search(state: State<'_, StorageManager>) -> Result<bool, String> {
-    let data = state.get_data()?;
-
-    // Try to get FluidSearch from config
-    if let Some(site_config) = data.config.get("SiteConfig") {
-        if let Some(fluid_search) = site_config.get("FluidSearch") {
-            if let Some(value) = fluid_search.as_bool() {
-                return Ok(value);
-            }
-        }
-    }
-
-    // Default to true
-    Ok(true)
-}
-
-#[tauri::command]
-pub async fn set_fluid_search(
-    enabled: bool,
-    state: State<'_, StorageManager>,
-) -> Result<(), String> {
-    let mut data = state.get_data()?;
-
-    // Ensure config structure exists
-    if !data.config.is_object() {
-        data.config = serde_json::json!({});
-    }
-
-    let config_obj = data.config.as_object_mut().unwrap();
-
-    // Ensure SiteConfig exists
-    if !config_obj.contains_key("SiteConfig") {
-        config_obj.insert("SiteConfig".to_string(), serde_json::json!({}));
-    }
-
-    let site_config = config_obj.get_mut("SiteConfig").unwrap();
-    if let Some(site_config_obj) = site_config.as_object_mut() {
-        site_config_obj.insert("FluidSearch".to_string(), serde_json::json!(enabled));
-    }
-
-    state.update_config(data.config)
 }
 
 /// 获取播放器配置（去广告、优选等）
@@ -243,4 +211,141 @@ impl Default for PlayerConfig {
             optimization_enabled: true,
         }
     }
+}
+
+/// 用户偏好配置结构（统一配置，包含原 SiteConfig 字段）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
+pub struct UserPreferences {
+    // 应用基础设置（原 SiteConfig）
+    /// 站点名称
+    pub site_name: String,
+    /// 公告内容
+    pub announcement: String,
+    /// 搜索下游最大页数
+    pub search_downstream_max_page: u32,
+    /// 站点接口缓存时间（秒）
+    pub site_interface_cache_time: u32,
+    /// 是否禁用黄色过滤
+    pub disable_yellow_filter: bool,
+
+    // 豆瓣设置
+    /// 豆瓣数据源类型
+    pub douban_data_source: String,
+    /// 豆瓣代理URL
+    pub douban_proxy_url: String,
+    /// 豆瓣图片代理类型
+    pub douban_image_proxy_type: String,
+    /// 豆瓣图片代理URL
+    pub douban_image_proxy_url: String,
+
+    // 用户偏好设置
+    /// 是否启用优选和测速
+    pub enable_optimization: bool,
+    /// 是否启用流式搜索
+    pub fluid_search: bool,
+    /// 播放器缓冲模式
+    pub player_buffer_mode: String,
+    /// 已查看的公告内容
+    pub has_seen_announcement: String,
+}
+
+impl Default for UserPreferences {
+    fn default() -> Self {
+        Self {
+            // 应用基础设置默认值
+            site_name: "QuantumTV".to_string(),
+            announcement: "本应用仅提供影视信息搜索服务，所有内容均来自第三方网站。".to_string(),
+            search_downstream_max_page: 5,
+            site_interface_cache_time: 7200,
+            disable_yellow_filter: false,
+
+            // 豆瓣设置默认值
+            douban_data_source: "cmliussss-cdn-tencent".to_string(),
+            douban_proxy_url: String::new(),
+            douban_image_proxy_type: "cmliussss-cdn-tencent".to_string(),
+            douban_image_proxy_url: String::new(),
+
+            // 用户偏好设置默认值
+            enable_optimization: true,
+            fluid_search: true,
+            player_buffer_mode: "standard".to_string(),
+            has_seen_announcement: String::new(),
+        }
+    }
+}
+
+/// 获取用户偏好配置（统一配置，自动从 SiteConfig 迁移）
+#[tauri::command]
+pub async fn get_user_preferences(state: State<'_, StorageManager>) -> Result<UserPreferences, String> {
+    let data = state.get_data()?;
+
+    // 尝试从配置中获取用户偏好
+    if let Some(user_prefs) = data.config.get("UserPreferences") {
+        if let Ok(prefs) = serde_json::from_value::<UserPreferences>(user_prefs.clone()) {
+            return Ok(prefs);
+        }
+    }
+
+    // 如果 UserPreferences 不存在或解析失败，
+    let mut prefs = UserPreferences::default();
+
+    if let Some(site_config) = data.config.get("SiteConfig") {
+        if let Some(site_name) = site_config.get("SiteName").and_then(|v| v.as_str()) {
+            prefs.site_name = site_name.to_string();
+        }
+        if let Some(announcement) = site_config.get("Announcement").and_then(|v| v.as_str()) {
+            prefs.announcement = announcement.to_string();
+        }
+        if let Some(max_page) = site_config.get("SearchDownstreamMaxPage").and_then(|v| v.as_u64()) {
+            prefs.search_downstream_max_page = max_page as u32;
+        }
+        if let Some(cache_time) = site_config.get("SiteInterfaceCacheTime").and_then(|v| v.as_u64()) {
+            prefs.site_interface_cache_time = cache_time as u32;
+        }
+        if let Some(disable_filter) = site_config.get("DisableYellowFilter").and_then(|v| v.as_bool()) {
+            prefs.disable_yellow_filter = disable_filter;
+        }
+        if let Some(douban_type) = site_config.get("DoubanProxyType").and_then(|v| v.as_str()) {
+            prefs.douban_data_source = douban_type.to_string();
+        }
+        if let Some(douban_proxy) = site_config.get("DoubanProxy").and_then(|v| v.as_str()) {
+            prefs.douban_proxy_url = douban_proxy.to_string();
+        }
+        if let Some(image_type) = site_config.get("DoubanImageProxyType").and_then(|v| v.as_str()) {
+            prefs.douban_image_proxy_type = image_type.to_string();
+        }
+        if let Some(image_proxy) = site_config.get("DoubanImageProxy").and_then(|v| v.as_str()) {
+            prefs.douban_image_proxy_url = image_proxy.to_string();
+        }
+        if let Some(fluid_search) = site_config.get("FluidSearch").and_then(|v| v.as_bool()) {
+            prefs.fluid_search = fluid_search;
+        }
+    }
+
+    Ok(prefs)
+}
+
+/// 保存用户偏好配置
+#[tauri::command]
+pub async fn set_user_preferences(
+    preferences: UserPreferences,
+    state: State<'_, StorageManager>,
+) -> Result<(), String> {
+    let mut data = state.get_data()?;
+
+    // 确保配置结构存在
+    if !data.config.is_object() {
+        data.config = serde_json::json!({});
+    }
+
+    let config_obj = data.config.as_object_mut().unwrap();
+
+    // 保存用户偏好配置
+    config_obj.insert(
+        "UserPreferences".to_string(),
+        serde_json::to_value(preferences).map_err(|e| e.to_string())?,
+    );
+
+    state.update_config(data.config)
 }

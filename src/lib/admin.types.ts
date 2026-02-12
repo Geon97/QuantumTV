@@ -5,17 +5,23 @@ export interface AdminConfig {
     LastCheck: string;
   };
   ConfigFile: string;
-  SiteConfig: {
-    SiteName: string;
-    Announcement: string;
-    SearchDownstreamMaxPage: number;
-    SiteInterfaceCacheTime: number;
-    DoubanProxyType: string;
-    DoubanProxy: string;
-    DoubanImageProxyType: string;
-    DoubanImageProxy: string;
-    DisableYellowFilter: boolean;
-    FluidSearch: boolean;
+  UserPreferences: {
+    // 应用基础设置
+    site_name: string;
+    announcement: string;
+    search_downstream_max_page: number;
+    site_interface_cache_time: number;
+    disable_yellow_filter: boolean;
+    // 豆瓣设置
+    douban_data_source: string;
+    douban_proxy_url: string;
+    douban_image_proxy_type: string;
+    douban_image_proxy_url: string;
+    // 用户偏好设置
+    enable_optimization: boolean;
+    fluid_search: boolean;
+    player_buffer_mode: string;
+    has_seen_announcement: string;
   };
   UserConfig: {
     Users: {

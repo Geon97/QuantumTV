@@ -114,7 +114,7 @@ const ConfigImportExportModal = ({
       if (
         parsed.SourceConfig !== undefined ||
         parsed.ConfigSubscribtion !== undefined ||
-        parsed.SiteConfig !== undefined
+        parsed.UserPreferences !== undefined
       ) {
         // 合并到默认配置，确保所有字段都存在
         const defaultConfig = getDefaultConfig();
@@ -125,7 +125,7 @@ const ConfigImportExportModal = ({
             ...defaultConfig.ConfigSubscribtion,
             ...parsed.ConfigSubscribtion,
           },
-          SiteConfig: { ...defaultConfig.SiteConfig, ...parsed.SiteConfig },
+          UserPreferences: { ...defaultConfig.UserPreferences, ...parsed.UserPreferences },
           UserConfig: parsed.UserConfig || defaultConfig.UserConfig,
           SourceConfig: Array.isArray(parsed.SourceConfig)
             ? parsed.SourceConfig.map((s: any) => ({
@@ -405,8 +405,6 @@ const ConfigImportExportModal = ({
     document.body,
   );
 };
-// localStorage 配置键
-const LOCAL_CONFIG_KEY = 'quantumtv_admin_config';
 
 // 获取默认配置
 function getDefaultConfig(): AdminConfig {
@@ -417,17 +415,20 @@ function getDefaultConfig(): AdminConfig {
       AutoUpdate: false,
       LastCheck: '',
     },
-    SiteConfig: {
-      SiteName: 'QuantumTV',
-      Announcement: '本应用仅提供影视信息搜索服务，所有内容均来自第三方网站。',
-      SearchDownstreamMaxPage: 5,
-      SiteInterfaceCacheTime: 7200,
-      DoubanProxyType: 'cmliussss-cdn-tencent',
-      DoubanProxy: '',
-      DoubanImageProxyType: 'cmliussss-cdn-tencent',
-      DoubanImageProxy: '',
-      DisableYellowFilter: false,
-      FluidSearch: true,
+    UserPreferences: {
+      site_name: 'QuantumTV',
+      announcement: '本应用仅提供影视信息搜索服务，所有内容均来自第三方网站。',
+      search_downstream_max_page: 5,
+      site_interface_cache_time: 7200,
+      disable_yellow_filter: false,
+      douban_data_source: 'cmliussss-cdn-tencent',
+      douban_proxy_url: '',
+      douban_image_proxy_type: 'cmliussss-cdn-tencent',
+      douban_image_proxy_url: '',
+      enable_optimization: true,
+      fluid_search: true,
+      player_buffer_mode: 'standard',
+      has_seen_announcement: '',
     },
     UserConfig: {
       Users: [{ username: 'admin', role: 'owner', banned: false }],
@@ -1560,15 +1561,7 @@ function AdminPageContent() {
   const loadConfig = async () => {
     setIsLoading(true);
     try {
-      let configToUse: AdminConfig | null = null;
-
-      // 尝试从 localStorage 读取
-      // const stored = localStorage.getItem(LOCAL_CONFIG_KEY);
-      // if (stored) {
-      //   configToUse = JSON.parse(stored);
-      // }
-
-      // 从 Tauri 后端加载
+      // 从 Tauri 后端加载配置
       try {
         const tauriData = await invoke<AdminConfig>('get_config');
         // 如果 Tauri 后端有配置且有 SourceConfig
@@ -1577,24 +1570,17 @@ function AdminPageContent() {
           tauriData.SourceConfig &&
           tauriData.SourceConfig.length > 0
         ) {
-          configToUse = tauriData;
-          // 同步到 localStorage
-          localStorage.setItem(LOCAL_CONFIG_KEY, JSON.stringify(tauriData));
-        } else if (configToUse) {
-          // 如果 localStorage 有配置但 Tauri 后端没有，同步到 Tauri 后端
-          await invoke('save_config', { config: configToUse });
-          console.log('配置已从 localStorage 同步到 Tauri 后端');
+          setConfig(tauriData);
+        } else {
+          // 如果没有配置，使用默认配置
+          const defaultConfig = getDefaultConfig();
+          setConfig(defaultConfig);
         }
       } catch (tauriError) {
         console.warn('从 Tauri 后端加载配置失败:', tauriError);
-      }
-
-      if (configToUse) {
-        setConfig(configToUse);
-      } else {
+        // 加载失败时使用默认配置
         const defaultConfig = getDefaultConfig();
         setConfig(defaultConfig);
-        localStorage.setItem(LOCAL_CONFIG_KEY, JSON.stringify(defaultConfig));
       }
     } catch (error) {
       console.error('加载配置失败:', error);
@@ -1607,20 +1593,13 @@ function AdminPageContent() {
 
   const saveConfig = useCallback(async (newConfig: AdminConfig) => {
     try {
-      // 保存到 localStorage
-      localStorage.setItem(LOCAL_CONFIG_KEY, JSON.stringify(newConfig));
+      // 保存到 Tauri 后端
+      await invoke('save_config', { config: newConfig });
       setConfig(newConfig);
-
-      // 同步到 Tauri 后端
-      try {
-        await invoke('save_config', { config: newConfig });
-        console.log('配置已同步到 Tauri 后端');
-      } catch (tauriError) {
-        console.warn('同步到 Tauri 后端失败:', tauriError);
-      }
+      console.log('配置已保存到 Tauri 后端');
     } catch (error) {
       console.error('保存配置失败:', error);
-      showAlert('error', '保存失败', '请检查浏览器存储空间');
+      showAlert('error', '保存失败', '请检查配置格式');
     }
   }, []);
 

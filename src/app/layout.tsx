@@ -6,7 +6,7 @@ import React from 'react';
 
 import './globals.css';
 
-import { AdminConfig } from '@/lib/admin.types';
+import { UserPreferences } from '@/lib/types';
 
 import { GlobalErrorIndicator } from '../components/GlobalErrorIndicator';
 import NavbarGate from '../components/NavbarGate';
@@ -41,8 +41,8 @@ export async function generateMetadata(): Promise<Metadata> {
   // 静态导出时不调用，使用环境变量
   if (!isStatic && storageType !== 'localstorage') {
     try {
-      const config = await invoke<AdminConfig>('get_config_data');
-      siteName = config.SiteConfig.SiteName;
+      const prefs = await invoke<UserPreferences>('get_user_preferences');
+      siteName = prefs.site_name;
     } catch {
       // 静态构建时可能失败，使用默认值
     }
@@ -90,23 +90,19 @@ export default async function RootLayout({
   // 静态导出时不调用，使用环境变量
   if (!isStatic && storageType !== 'localstorage') {
     try {
-      const config = await invoke<AdminConfig>('get_config_data');
-      siteName = config.SiteConfig.SiteName;
-      announcement = config.SiteConfig.Announcement;
+      const prefs = await invoke<UserPreferences>('get_user_preferences');
+      siteName = prefs.site_name;
+      announcement = prefs.announcement;
 
-      doubanProxyType = config.SiteConfig.DoubanProxyType;
-      doubanProxy = config.SiteConfig.DoubanProxy;
-      doubanImageProxyType = config.SiteConfig.DoubanImageProxyType;
-      doubanImageProxy = config.SiteConfig.DoubanImageProxy;
-      disableYellowFilter = config.SiteConfig.DisableYellowFilter;
-      customCategories = config.CustomCategories.filter(
-        (category) => !category.disabled,
-      ).map((category) => ({
-        name: category.name || '',
-        type: category.type,
-        query: category.query,
-      }));
-      fluidSearch = config.SiteConfig.FluidSearch;
+      doubanProxyType = prefs.douban_data_source;
+      doubanProxy = prefs.douban_proxy_url;
+      doubanImageProxyType = prefs.douban_image_proxy_type;
+      doubanImageProxy = prefs.douban_image_proxy_url;
+      disableYellowFilter = prefs.disable_yellow_filter;
+      fluidSearch = prefs.fluid_search;
+
+      // Note: customCategories are no longer part of UserPreferences
+      // They should be managed separately if needed
     } catch {
       // 静态构建时可能失败，使用默认值
     }

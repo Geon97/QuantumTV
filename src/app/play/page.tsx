@@ -2004,6 +2004,7 @@ function PlayPageClient() {
                 sourceSearchLoading={sourceSearchLoading}
                 sourceSearchError={sourceSearchError}
                 precomputedVideoInfo={precomputedVideoInfo}
+                optimizationEnabled={optimizationEnabled}
               />
             </div>
           </div>

@@ -424,11 +424,11 @@ function SearchPageClient() {
       .then(setSearchHistory)
       .catch(console.error);
 
-    // 读取流式搜索设置 - 从 Tauri 后端读取
+    // 读取流式搜索设置 - 从用户偏好配置读取
     const loadFluidSearchSetting = async () => {
       try {
-        const enabled = await invoke<boolean>('get_fluid_search');
-        setUseFluidSearch(enabled);
+        const prefs = await invoke<{ fluid_search: boolean }>('get_user_preferences');
+        setUseFluidSearch(prefs.fluid_search);
       } catch (error) {
         console.error('读取流式搜索设置失败:', error);
         // 降级到默认值

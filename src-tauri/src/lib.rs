@@ -84,10 +84,10 @@ pub fn run() {
             commands::config::save_config,
             commands::config::reset_config,
             commands::config::get_config_data,
-            commands::config::get_fluid_search,
-            commands::config::set_fluid_search,
             commands::config::get_player_config,
             commands::config::set_player_config,
+            commands::config::get_user_preferences,
+            commands::config::set_user_preferences,
             commands::search::get_search_suggestions,
             // 视频
             commands::video::search,

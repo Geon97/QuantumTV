@@ -34,14 +34,24 @@ function HomeClient() {
 
   // 检查公告弹窗状态
   useEffect(() => {
-    if (typeof window !== 'undefined' && announcement) {
-      const hasSeenAnnouncement = localStorage.getItem('hasSeenAnnouncement');
-      if (hasSeenAnnouncement !== announcement) {
-        setShowAnnouncement(true);
-      } else {
-        setShowAnnouncement(Boolean(!hasSeenAnnouncement && announcement));
+    const checkAnnouncement = async () => {
+      if (typeof window !== 'undefined' && announcement) {
+        try {
+          const prefs = await invoke<{ has_seen_announcement: string }>('get_user_preferences');
+          const hasSeenAnnouncement = prefs.has_seen_announcement;
+          if (hasSeenAnnouncement !== announcement) {
+            setShowAnnouncement(true);
+          } else {
+            setShowAnnouncement(Boolean(!hasSeenAnnouncement && announcement));
+          }
+        } catch (error) {
+          console.error('读取公告状态失败:', error);
+          // 出错时默认显示公告
+          setShowAnnouncement(true);
+        }
       }
-    }
+    };
+    checkAnnouncement();
   }, [announcement]);
 
   // 收藏夹数据
@@ -204,9 +214,21 @@ function HomeClient() {
     return unsubscribe;
   }, [activeTab]);
 
-  const handleCloseAnnouncement = (announcement: string) => {
+  const handleCloseAnnouncement = async (announcement: string) => {
     setShowAnnouncement(false);
-    localStorage.setItem('hasSeenAnnouncement', announcement); // 记录已查看弹窗
+    try {
+      // 获取当前用户偏好
+      const prefs = await invoke<any>('get_user_preferences');
+      // 更新已查看的公告
+      await invoke('set_user_preferences', {
+        preferences: {
+          ...prefs,
+          has_seen_announcement: announcement,
+        },
+      });
+    } catch (error) {
+      console.error('保存公告状态失败:', error);
+    }
   };
 
   // 骨架屏组件

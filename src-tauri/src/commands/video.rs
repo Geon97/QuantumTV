@@ -346,12 +346,12 @@ pub async fn search(
     let data = storage.get_data()?;
     let config = &data.config;
 
-    // 读取 FluidSearch 配置，判断是否启用流式搜索
+    // 读取 FluidSearch 配置，判断是否启用流式搜索（从 UserPreferences 读取）
     let fluid_search = config
-        .get("SiteConfig")
-        .and_then(|v| v.get("FluidSearch"))
+        .get("UserPreferences")
+        .and_then(|v| v.get("fluid_search"))
         .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+        .unwrap_or(true);
 
     // 仅在启用 FluidSearch 时才使用流式输出
     let use_streaming = fluid_search;
@@ -385,8 +385,8 @@ pub async fn search(
 
     let total_sources = sites.len() as i32;
     let disable_yellow_filter = config
-        .get("SiteConfig")
-        .and_then(|v| v.get("DisableYellowFilter"))
+        .get("UserPreferences")
+        .and_then(|v| v.get("disable_yellow_filter"))
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
@@ -1573,7 +1573,7 @@ pub async fn test_video_source_command(
 pub async fn initialize_player_view(
     source: String,
     id: String,
-    title: Option<String>,
+    _title: Option<String>,
     storage: State<'_, StorageManager>,
     cache: State<'_, SearchCacheManager>,
     db: State<'_, crate::db::db_client::Db>,

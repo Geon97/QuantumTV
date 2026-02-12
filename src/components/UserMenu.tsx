@@ -94,7 +94,6 @@ export const UserMenu: React.FC = () => {
   const [doubanProxyUrl, setDoubanProxyUrl] = useState('');
   const [enableOptimization, setEnableOptimization] = useState(true);
   const [fluidSearch, setFluidSearch] = useState(true);
-  const [liveDirectConnect, setLiveDirectConnect] = useState(false);
   const [playerBufferMode, setPlayerBufferMode] = useState<
     'standard' | 'enhanced' | 'max'
   >('standard');
@@ -105,6 +104,7 @@ export const UserMenu: React.FC = () => {
     'cmliussss-cdn-tencent',
   );
   const [doubanImageProxyUrl, setDoubanImageProxyUrl] = useState('');
+  const [hasSeenAnnouncement, setHasSeenAnnouncement] = useState('');
   const [isDoubanDropdownOpen, setIsDoubanDropdownOpen] = useState(false);
   const [isDoubanImageProxyDropdownOpen, setIsDoubanImageProxyDropdownOpen] =
     useState(false);
@@ -150,82 +150,43 @@ export const UserMenu: React.FC = () => {
     setMounted(true);
   }, []);
 
-  // 从 localStorage 读取设置
+  // 从 Rust 读取用户偏好配置
   useEffect(() => {
+    const loadUserPreferences = async () => {
+      try {
+        const prefs = await invoke<{
+          douban_data_source: string;
+          douban_proxy_url: string;
+          douban_image_proxy_type: string;
+          douban_image_proxy_url: string;
+          enable_optimization: boolean;
+          fluid_search: boolean;
+          player_buffer_mode: string;
+          has_seen_announcement: string;
+        }>('get_user_preferences');
+
+        setDoubanDataSource(prefs.douban_data_source);
+        setDoubanProxyUrl(prefs.douban_proxy_url);
+        setDoubanImageProxyType(prefs.douban_image_proxy_type);
+        setDoubanImageProxyUrl(prefs.douban_image_proxy_url);
+        setEnableOptimization(prefs.enable_optimization);
+        setFluidSearch(prefs.fluid_search);
+        setHasSeenAnnouncement(prefs.has_seen_announcement);
+
+        // 类型守卫：确保 player_buffer_mode 是有效值
+        const validBufferModes = ['standard', 'enhanced', 'max'] as const;
+        const bufferMode = validBufferModes.includes(prefs.player_buffer_mode as any)
+          ? (prefs.player_buffer_mode as 'standard' | 'enhanced' | 'max')
+          : 'standard';
+        setPlayerBufferMode(bufferMode);
+      } catch (error) {
+        console.error('读取用户偏好配置失败:', error);
+        // 使用默认值
+      }
+    };
+
     if (typeof window !== 'undefined') {
-      const savedDoubanDataSource = localStorage.getItem('doubanDataSource');
-      const defaultDoubanProxyType =
-        (window as any).RUNTIME_CONFIG?.DOUBAN_PROXY_TYPE ||
-        'cmliussss-cdn-tencent';
-      if (savedDoubanDataSource !== null) {
-        setDoubanDataSource(savedDoubanDataSource);
-      } else if (defaultDoubanProxyType) {
-        setDoubanDataSource(defaultDoubanProxyType);
-      }
-
-      const savedDoubanProxyUrl = localStorage.getItem('doubanProxyUrl');
-      const defaultDoubanProxy =
-        (window as any).RUNTIME_CONFIG?.DOUBAN_PROXY || '';
-      if (savedDoubanProxyUrl !== null) {
-        setDoubanProxyUrl(savedDoubanProxyUrl);
-      } else if (defaultDoubanProxy) {
-        setDoubanProxyUrl(defaultDoubanProxy);
-      }
-
-      const savedDoubanImageProxyType = localStorage.getItem(
-        'doubanImageProxyType',
-      );
-      const defaultDoubanImageProxyType =
-        (window as any).RUNTIME_CONFIG?.DOUBAN_IMAGE_PROXY_TYPE ||
-        'cmliussss-cdn-tencent';
-      if (savedDoubanImageProxyType !== null) {
-        setDoubanImageProxyType(savedDoubanImageProxyType);
-      } else if (defaultDoubanImageProxyType) {
-        setDoubanImageProxyType(defaultDoubanImageProxyType);
-      }
-
-      const savedDoubanImageProxyUrl = localStorage.getItem(
-        'doubanImageProxyUrl',
-      );
-      const defaultDoubanImageProxyUrl =
-        (window as any).RUNTIME_CONFIG?.DOUBAN_IMAGE_PROXY || '';
-      if (savedDoubanImageProxyUrl !== null) {
-        setDoubanImageProxyUrl(savedDoubanImageProxyUrl);
-      } else if (defaultDoubanImageProxyUrl) {
-        setDoubanImageProxyUrl(defaultDoubanImageProxyUrl);
-      }
-
-      const savedEnableOptimization =
-        localStorage.getItem('enableOptimization');
-      if (savedEnableOptimization !== null) {
-        setEnableOptimization(JSON.parse(savedEnableOptimization));
-      }
-
-      // 读取流式搜索设置 - 从 Tauri 后端读取
-      const loadFluidSearchSetting = async () => {
-        try {
-          const enabled = await invoke<boolean>('get_fluid_search');
-          setFluidSearch(enabled);
-        } catch (error) {
-          console.error('读取流式搜索设置失败:', error);
-          // 降级到 localStorage
-          const savedFluidSearch = localStorage.getItem('fluidSearch');
-          const defaultFluidSearch =
-            (window as any).RUNTIME_CONFIG?.FLUID_SEARCH !== false;
-          if (savedFluidSearch !== null) {
-            setFluidSearch(JSON.parse(savedFluidSearch));
-          } else if (defaultFluidSearch !== undefined) {
-            setFluidSearch(defaultFluidSearch);
-          }
-        }
-      };
-
-      loadFluidSearchSetting();
-
-      const savedLiveDirectConnect = localStorage.getItem('liveDirectConnect');
-      if (savedLiveDirectConnect !== null) {
-        setLiveDirectConnect(JSON.parse(savedLiveDirectConnect));
-      }
+      loadUserPreferences();
     }
   }, []);
 
@@ -369,56 +330,86 @@ export const UserMenu: React.FC = () => {
     }
   };
 
+  // 统一保存用户偏好配置到 Rust
+  const saveUserPreferences = async (
+    updates: Partial<{
+      douban_data_source: string;
+      douban_proxy_url: string;
+      douban_image_proxy_type: string;
+      douban_image_proxy_url: string;
+      enable_optimization: boolean;
+      fluid_search: boolean;
+      player_buffer_mode: string;
+      has_seen_announcement: string;
+    }>,
+  ) => {
+    try {
+      // 获取当前完整配置（包括所有字段）
+      const fullPrefs = await invoke<{
+        site_name: string;
+        announcement: string;
+        search_downstream_max_page: number;
+        site_interface_cache_time: number;
+        disable_yellow_filter: boolean;
+        douban_data_source: string;
+        douban_proxy_url: string;
+        douban_image_proxy_type: string;
+        douban_image_proxy_url: string;
+        enable_optimization: boolean;
+        fluid_search: boolean;
+        player_buffer_mode: string;
+        has_seen_announcement: string;
+      }>('get_user_preferences');
+
+      // 合并当前 UI 状态和更新
+      const currentPrefs = {
+        ...fullPrefs, // 保留所有字段
+        douban_data_source: doubanDataSource,
+        douban_proxy_url: doubanProxyUrl,
+        douban_image_proxy_type: doubanImageProxyType,
+        douban_image_proxy_url: doubanImageProxyUrl,
+        enable_optimization: enableOptimization,
+        fluid_search: fluidSearch,
+        player_buffer_mode: playerBufferMode,
+        has_seen_announcement: hasSeenAnnouncement,
+        ...updates, // 应用更新
+      };
+
+      await invoke('set_user_preferences', { preferences: currentPrefs });
+    } catch (error) {
+      console.error('保存用户偏好配置失败:', error);
+    }
+  };
+
   // 设置相关的处理函数
   const handleDoubanProxyUrlChange = (value: string) => {
     setDoubanProxyUrl(value);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('doubanProxyUrl', value);
-    }
+    saveUserPreferences({ douban_proxy_url: value });
   };
 
   const handleOptimizationToggle = (value: boolean) => {
     setEnableOptimization(value);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('enableOptimization', JSON.stringify(value));
-    }
+    saveUserPreferences({ enable_optimization: value });
   };
 
   const handleFluidSearchToggle = async (value: boolean) => {
     setFluidSearch(value);
-
-    // 保存到 Tauri 后端
-    try {
-      await invoke('set_fluid_search', { enabled: value });
-    } catch (error) {
-      console.error('保存流式搜索设置失败:', error);
-    }
-
-    // 同时保存到 localStorage 作为备份
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('fluidSearch', JSON.stringify(value));
-    }
+    saveUserPreferences({ fluid_search: value });
   };
 
   const handleDoubanDataSourceChange = (value: string) => {
     setDoubanDataSource(value);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('doubanDataSource', value);
-    }
+    saveUserPreferences({ douban_data_source: value });
   };
 
   const handleDoubanImageProxyTypeChange = (value: string) => {
     setDoubanImageProxyType(value);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('doubanImageProxyType', value);
-    }
+    saveUserPreferences({ douban_image_proxy_type: value });
   };
 
   const handleDoubanImageProxyUrlChange = (value: string) => {
     setDoubanImageProxyUrl(value);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('doubanImageProxyUrl', value);
-    }
+    saveUserPreferences({ douban_image_proxy_url: value });
   };
 
   // 获取感谢信息
@@ -456,30 +447,22 @@ export const UserMenu: React.FC = () => {
 
     setEnableOptimization(true);
     setFluidSearch(defaultFluidSearch);
-    setLiveDirectConnect(false);
     setDoubanProxyUrl(defaultDoubanProxy);
     setDoubanDataSource(defaultDoubanProxyType);
     setDoubanImageProxyType(defaultDoubanImageProxyType);
     setDoubanImageProxyUrl(defaultDoubanImageProxyUrl);
     setPlayerBufferMode('standard');
 
-    // 保存流式搜索到 Tauri 后端
-    try {
-      await invoke('set_fluid_search', { enabled: defaultFluidSearch });
-    } catch (error) {
-      console.error('重置流式搜索设置失败:', error);
-    }
-
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('enableOptimization', JSON.stringify(true));
-      localStorage.setItem('fluidSearch', JSON.stringify(defaultFluidSearch));
-      localStorage.setItem('liveDirectConnect', JSON.stringify(false));
-      localStorage.setItem('doubanProxyUrl', defaultDoubanProxy);
-      localStorage.setItem('doubanDataSource', defaultDoubanProxyType);
-      localStorage.setItem('doubanImageProxyType', defaultDoubanImageProxyType);
-      localStorage.setItem('doubanImageProxyUrl', defaultDoubanImageProxyUrl);
-      localStorage.setItem('playerBufferMode', 'standard');
-    }
+    // 保存所有配置到 Rust
+    await saveUserPreferences({
+      enable_optimization: true,
+      fluid_search: defaultFluidSearch,
+      douban_proxy_url: defaultDoubanProxy,
+      douban_data_source: defaultDoubanProxyType,
+      douban_image_proxy_type: defaultDoubanImageProxyType,
+      douban_image_proxy_url: defaultDoubanImageProxyUrl,
+      player_buffer_mode: 'standard',
+    });
   };
 
   // 菜单面板内容
@@ -935,7 +918,7 @@ export const UserMenu: React.FC = () => {
               </div>
 
               <p className='text-xs text-gray-500 dark:text-gray-400'>
-                缓存有效期 6 小时，包含首页、电影、剧集、动漫、综艺等页面数据
+                缓存有效期 24 小时，包含首页、电影、剧集、动漫、综艺等页面数据
               </p>
             </div>
           </div>

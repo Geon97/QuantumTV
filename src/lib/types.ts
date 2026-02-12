@@ -27,6 +27,27 @@ export interface PlayerConfig {
   optimization_enabled: boolean;
 }
 
+// 用户偏好配置类型（统一配置，包含原 SiteConfig 字段）
+export interface UserPreferences {
+  site_name: string;
+  announcement: string;
+  search_downstream_max_page: number;
+  site_interface_cache_time: number;
+  disable_yellow_filter: boolean;
+
+  // 豆瓣设置
+  douban_data_source: string;
+  douban_proxy_url: string;
+  douban_image_proxy_type: string;
+  douban_image_proxy_url: string;
+
+  // 用户偏好设置
+  enable_optimization: boolean;
+  fluid_search: boolean;
+  player_buffer_mode: string;
+  has_seen_announcement: string;
+}
+
 // 播放器初始化状态类型
 export interface PlayerInitialState {
   detail: SearchResult;

@@ -13,7 +13,7 @@ impl PageCacheManager {
     pub fn new(conn: Connection) -> Self {
         Self {
             conn: Arc::new(std::sync::Mutex::new(conn)),
-            ttl_seconds: 6 * 3600, // 6 小时
+            ttl_seconds: 24 * 3600, // 24 小时
         }
     }
 

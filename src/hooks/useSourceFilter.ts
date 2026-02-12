@@ -80,32 +80,26 @@ export function useSourceFilter(): UseSourceFilterReturn {
     setIsLoadingSources(true);
     setError(null);
     try {
-      // 检测存储类型 - 静态导出/Tauri模式下使用 localstorage
+      // 检测存储类型 - 静态导出/Tauri模式下使用 Rust API
       const runtimeStorageType =
         typeof window !== 'undefined'
           ? (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage'
           : 'localstorage';
 
       if (runtimeStorageType === 'localstorage') {
-        // Tauri/静态导出模式：从 localStorage 读取配置
-        const LOCAL_CONFIG_KEY = 'quantumtv_admin_config';
-        const stored = localStorage.getItem(LOCAL_CONFIG_KEY);
-        if (stored) {
-          const config = JSON.parse(stored);
-          const sourceConfig = config.SourceConfig || [];
-          const enabledSources = sourceConfig
-            .filter((s: any) => !s.disabled)
-            .map((s: any) => ({
-              key: s.key,
-              api: s.api,
-              name: s.name,
-              detail: s.detail,
-              is_adult: s.is_adult,
-            }));
-          setSources(enabledSources);
-        } else {
-          setSources([]);
-        }
+        // Tauri/静态导出模式：从 Rust 后端读取配置
+        const config = await invoke<any>('get_config');
+        const sourceConfig = config.SourceConfig || [];
+        const enabledSources = sourceConfig
+          .filter((s: any) => !s.disabled)
+          .map((s: any) => ({
+            key: s.key,
+            api: s.api,
+            name: s.name,
+            detail: s.detail,
+            is_adult: s.is_adult,
+          }));
+        setSources(enabledSources);
       } else {
         // 云端模式：使用 API
         const response = await fetch('/api/search/resources', {
