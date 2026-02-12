@@ -1211,7 +1211,7 @@ dependencies = [
 
 [[package]]
 name = "quantumtv-api"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "axum",
  "quantumtv-core",
@@ -1226,7 +1226,7 @@ dependencies = [
 
 [[package]]
 name = "quantumtv-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "image",
  "moka",
