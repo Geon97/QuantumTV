@@ -43,9 +43,9 @@ const nextConfig = {
     return config;
   },
   trailingSlash: true,
-  experimental: {
-    optimizeCss: true,
-  },
+  // experimental: {
+  //   optimizeCss: true, // Requires 'critters' package - disabled to avoid errors
+  // },
     async headers() {
     return [
       {
