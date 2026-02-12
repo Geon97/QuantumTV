@@ -45,7 +45,9 @@ import { createPortal } from 'react-dom';
 
 import { AdminConfig } from '@/lib/admin.types';
 
-import DatabaseImportExport, { ConfirmModal } from '@/components/DatabaseImportExport';
+import DatabaseImportExport, {
+  ConfirmModal,
+} from '@/components/DatabaseImportExport';
 import PageLayout from '@/components/PageLayout';
 
 // 配置迁移弹窗组件
@@ -54,7 +56,11 @@ interface ConfigImportExportModalProps {
   onClose: () => void;
   config: AdminConfig | null;
   onImport: (config: AdminConfig) => void;
-  showAlert: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void;
+  showAlert: (
+    type: 'success' | 'error' | 'warning',
+    title: string,
+    message?: string,
+  ) => void;
 }
 
 const ConfigImportExportModal = ({
@@ -105,30 +111,52 @@ const ConfigImportExportModal = ({
       let finalConfig: AdminConfig;
 
       // 情况1: 完整的 AdminConfig 格式
-      if (parsed.SourceConfig !== undefined || parsed.ConfigSubscribtion !== undefined || parsed.SiteConfig !== undefined) {
+      if (
+        parsed.SourceConfig !== undefined ||
+        parsed.ConfigSubscribtion !== undefined ||
+        parsed.SiteConfig !== undefined
+      ) {
         // 合并到默认配置，确保所有字段都存在
         const defaultConfig = getDefaultConfig();
         finalConfig = {
           ...defaultConfig,
           ...parsed,
-          ConfigSubscribtion: { ...defaultConfig.ConfigSubscribtion, ...parsed.ConfigSubscribtion },
+          ConfigSubscribtion: {
+            ...defaultConfig.ConfigSubscribtion,
+            ...parsed.ConfigSubscribtion,
+          },
           SiteConfig: { ...defaultConfig.SiteConfig, ...parsed.SiteConfig },
           UserConfig: parsed.UserConfig || defaultConfig.UserConfig,
           SourceConfig: Array.isArray(parsed.SourceConfig)
-            ? parsed.SourceConfig.map((s: any) => ({ ...s, from: s.from || 'custom' }))
+            ? parsed.SourceConfig.map((s: any) => ({
+                ...s,
+                from: s.from || 'custom',
+              }))
             : defaultConfig.SourceConfig,
           CustomCategories: Array.isArray(parsed.CustomCategories)
-            ? parsed.CustomCategories.map((c: any) => ({ ...c, from: c.from || 'custom' }))
+            ? parsed.CustomCategories.map((c: any) => ({
+                ...c,
+                from: c.from || 'custom',
+              }))
             : defaultConfig.CustomCategories,
         };
 
         // 如果 SourceConfig 为空但 ConfigFile 有内容，尝试从 ConfigFile 中解析
-        if ((!finalConfig.SourceConfig || finalConfig.SourceConfig.length === 0) && parsed.ConfigFile) {
+        if (
+          (!finalConfig.SourceConfig ||
+            finalConfig.SourceConfig.length === 0) &&
+          parsed.ConfigFile
+        ) {
           try {
             const configFileContent = JSON.parse(parsed.ConfigFile);
             // 处理 api_site 对象格式
-            if (configFileContent.api_site && typeof configFileContent.api_site === 'object') {
-              finalConfig.SourceConfig = Object.entries(configFileContent.api_site).map(([key, value]: [string, any]) => ({
+            if (
+              configFileContent.api_site &&
+              typeof configFileContent.api_site === 'object'
+            ) {
+              finalConfig.SourceConfig = Object.entries(
+                configFileContent.api_site,
+              ).map(([key, value]: [string, any]) => ({
                 key: key,
                 name: value.name || key,
                 api: value.api,
@@ -139,23 +167,36 @@ const ConfigImportExportModal = ({
               }));
             }
             // 处理 sites 数组格式
-            else if (configFileContent.sites && Array.isArray(configFileContent.sites)) {
-              finalConfig.SourceConfig = configFileContent.sites.map((s: any) => ({
-                key: s.key || s.name?.toLowerCase().replace(/\s+/g, '_') || `source_${Date.now()}`,
-                name: s.name || '未命名源',
-                api: s.api,
-                detail: s.detail || '',
-                from: 'config' as const,
-                disabled: s.disabled || false,
-                is_adult: s.is_adult || false,
-              }));
+            else if (
+              configFileContent.sites &&
+              Array.isArray(configFileContent.sites)
+            ) {
+              finalConfig.SourceConfig = configFileContent.sites.map(
+                (s: any) => ({
+                  key:
+                    s.key ||
+                    s.name?.toLowerCase().replace(/\s+/g, '_') ||
+                    `source_${Date.now()}`,
+                  name: s.name || '未命名源',
+                  api: s.api,
+                  detail: s.detail || '',
+                  from: 'config' as const,
+                  disabled: s.disabled || false,
+                  is_adult: s.is_adult || false,
+                }),
+              );
             }
             // 处理 SourceConfig 数组格式
-            else if (configFileContent.SourceConfig && Array.isArray(configFileContent.SourceConfig)) {
-              finalConfig.SourceConfig = configFileContent.SourceConfig.map((s: any) => ({
-                ...s,
-                from: s.from || 'config',
-              }));
+            else if (
+              configFileContent.SourceConfig &&
+              Array.isArray(configFileContent.SourceConfig)
+            ) {
+              finalConfig.SourceConfig = configFileContent.SourceConfig.map(
+                (s: any) => ({
+                  ...s,
+                  from: s.from || 'config',
+                }),
+              );
             }
           } catch {
             console.warn('无法解析 ConfigFile 内容');
@@ -170,7 +211,10 @@ const ConfigImportExportModal = ({
           finalConfig = {
             ...defaultConfig,
             SourceConfig: parsed.map((s: any) => ({
-              key: s.key || s.name?.toLowerCase().replace(/\s+/g, '_') || `source_${Date.now()}`,
+              key:
+                s.key ||
+                s.name?.toLowerCase().replace(/\s+/g, '_') ||
+                `source_${Date.now()}`,
               name: s.name || '未命名源',
               api: s.api,
               detail: s.detail || '',
@@ -191,7 +235,10 @@ const ConfigImportExportModal = ({
         finalConfig = {
           ...defaultConfig,
           SourceConfig: parsed.sites.map((s: any) => ({
-            key: s.key || s.name?.toLowerCase().replace(/\s+/g, '_') || `source_${Date.now()}`,
+            key:
+              s.key ||
+              s.name?.toLowerCase().replace(/\s+/g, '_') ||
+              `source_${Date.now()}`,
             name: s.name || '未命名源',
             api: s.api,
             detail: s.detail || '',
@@ -206,20 +253,26 @@ const ConfigImportExportModal = ({
         const defaultConfig = getDefaultConfig();
         finalConfig = {
           ...defaultConfig,
-          SourceConfig: Object.entries(parsed.api_site).map(([key, value]: [string, any]) => ({
-            key: key,
-            name: value.name || key,
-            api: value.api,
-            detail: value.detail || '',
-            from: 'config' as const,
-            disabled: value.disabled || false,
-            is_adult: value.is_adult || false,
-          })),
+          SourceConfig: Object.entries(parsed.api_site).map(
+            ([key, value]: [string, any]) => ({
+              key: key,
+              name: value.name || key,
+              api: value.api,
+              detail: value.detail || '',
+              from: 'config' as const,
+              disabled: value.disabled || false,
+              is_adult: value.is_adult || false,
+            }),
+          ),
         };
       }
       // 情况5: 无法识别的格式
       else {
-        showAlert('error', '无法识别的配置格式', '请确保包含 SourceConfig、sites 或 api_site 字段');
+        showAlert(
+          'error',
+          '无法识别的配置格式',
+          '请确保包含 SourceConfig、sites 或 api_site 字段',
+        );
         return;
       }
       // 确保 finalConfig 已定义
@@ -349,7 +402,7 @@ const ConfigImportExportModal = ({
         />
       </div>
     </div>,
-    document.body
+    document.body,
   );
 };
 // localStorage 配置键
@@ -460,7 +513,9 @@ export const AlertModal = ({
             {title}
           </h3>
           {message && (
-            <p className='text-sm text-gray-600 dark:text-gray-400'>{message}</p>
+            <p className='text-sm text-gray-600 dark:text-gray-400'>
+              {message}
+            </p>
           )}
           <button
             onClick={onClose}
@@ -471,7 +526,7 @@ export const AlertModal = ({
         </div>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 };
 
@@ -498,7 +553,9 @@ const CollapsibleTab = ({
     >
       <div className='flex items-center gap-3'>
         {icon}
-        <span className='font-semibold text-base text-gray-900 dark:text-gray-100'>{title}</span>
+        <span className='font-semibold text-base text-gray-900 dark:text-gray-100'>
+          {title}
+        </span>
       </div>
       {isExpanded ? (
         <ChevronUp className='w-5 h-5 text-gray-500' />
@@ -528,8 +585,14 @@ const SortableSourceItem = ({
   onDelete,
   onEdit,
 }: SortableSourceItemProps) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: source.key });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: source.key });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -600,18 +663,30 @@ const SortableSourceItem = ({
 interface SourceConfigProps {
   config: AdminConfig | null;
   onSave: (config: AdminConfig) => void;
-  showAlert: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void;
+  showAlert: (
+    type: 'success' | 'error' | 'warning',
+    title: string,
+    message?: string,
+  ) => void;
 }
 
 const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
   const [sources, setSources] = useState<any[]>([]);
   const [editingSource, setEditingSource] = useState<any | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [newSource, setNewSource] = useState({ key: '', name: '', api: '', detail: '', is_adult: false });
+  const [newSource, setNewSource] = useState({
+    key: '',
+    name: '',
+    api: '',
+    detail: '',
+    is_adult: false,
+  });
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } })
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 5 },
+    }),
   );
 
   useEffect(() => {
@@ -639,7 +714,7 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
 
   const handleToggle = (key: string) => {
     const newSources = sources.map((s) =>
-      s.key === key ? { ...s, disabled: !s.disabled } : s
+      s.key === key ? { ...s, disabled: !s.disabled } : s,
     );
     setSources(newSources);
     saveChanges(newSources);
@@ -661,7 +736,10 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
       showAlert('error', '源标识已存在');
       return;
     }
-    const newSources = [...sources, { ...newSource, from: 'custom', disabled: false }];
+    const newSources = [
+      ...sources,
+      { ...newSource, from: 'custom', disabled: false },
+    ];
     setSources(newSources);
     saveChanges(newSources);
     setNewSource({ key: '', name: '', api: '', detail: '', is_adult: false });
@@ -676,7 +754,7 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
   const handleSaveEdit = () => {
     if (!editingSource) return;
     const newSources = sources.map((s) =>
-      s.key === editingSource.key ? editingSource : s
+      s.key === editingSource.key ? editingSource : s,
     );
     setSources(newSources);
     saveChanges(newSources);
@@ -688,7 +766,8 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
     <div className='space-y-4'>
       <div className='flex justify-between items-center'>
         <p className='text-sm text-gray-600 dark:text-gray-400'>
-          共 {sources.length} 个视频源，{sources.filter((s) => !s.disabled).length} 个已启用
+          共 {sources.length} 个视频源，
+          {sources.filter((s) => !s.disabled).length} 个已启用
         </p>
         <button
           onClick={() => setIsAddModalOpen(true)}
@@ -705,7 +784,10 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
         modifiers={[restrictToVerticalAxis, restrictToParentElement]}
         onDragEnd={handleDragEnd}
       >
-        <SortableContext items={sources.map((s) => s.key)} strategy={verticalListSortingStrategy}>
+        <SortableContext
+          items={sources.map((s) => s.key)}
+          strategy={verticalListSortingStrategy}
+        >
           <div className='space-y-2'>
             {sources.map((source) => (
               <SortableSourceItem
@@ -747,7 +829,9 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
                 <input
                   type='text'
                   value={newSource.key}
-                  onChange={(e) => setNewSource({ ...newSource, key: e.target.value })}
+                  onChange={(e) =>
+                    setNewSource({ ...newSource, key: e.target.value })
+                  }
                   className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100'
                   placeholder='例如: source1'
                 />
@@ -759,7 +843,9 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
                 <input
                   type='text'
                   value={newSource.name}
-                  onChange={(e) => setNewSource({ ...newSource, name: e.target.value })}
+                  onChange={(e) =>
+                    setNewSource({ ...newSource, name: e.target.value })
+                  }
                   className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100'
                   placeholder='例如: 视频源1'
                 />
@@ -771,7 +857,9 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
                 <input
                   type='text'
                   value={newSource.api}
-                  onChange={(e) => setNewSource({ ...newSource, api: e.target.value })}
+                  onChange={(e) =>
+                    setNewSource({ ...newSource, api: e.target.value })
+                  }
                   className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100'
                   placeholder='https://example.com/api.php/provide/vod'
                 />
@@ -781,10 +869,15 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
                   type='checkbox'
                   id='is_adult'
                   checked={newSource.is_adult}
-                  onChange={(e) => setNewSource({ ...newSource, is_adult: e.target.checked })}
+                  onChange={(e) =>
+                    setNewSource({ ...newSource, is_adult: e.target.checked })
+                  }
                   className='w-4 h-4 rounded border-gray-300'
                 />
-                <label htmlFor='is_adult' className='text-sm text-gray-700 dark:text-gray-300'>
+                <label
+                  htmlFor='is_adult'
+                  className='text-sm text-gray-700 dark:text-gray-300'
+                >
                   成人内容 (18+)
                 </label>
               </div>
@@ -827,7 +920,9 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
                 <input
                   type='text'
                   value={editingSource.name}
-                  onChange={(e) => setEditingSource({ ...editingSource, name: e.target.value })}
+                  onChange={(e) =>
+                    setEditingSource({ ...editingSource, name: e.target.value })
+                  }
                   className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100'
                 />
               </div>
@@ -838,7 +933,9 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
                 <input
                   type='text'
                   value={editingSource.api}
-                  onChange={(e) => setEditingSource({ ...editingSource, api: e.target.value })}
+                  onChange={(e) =>
+                    setEditingSource({ ...editingSource, api: e.target.value })
+                  }
                   className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100'
                 />
               </div>
@@ -847,10 +944,18 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
                   type='checkbox'
                   id='edit_is_adult'
                   checked={editingSource.is_adult}
-                  onChange={(e) => setEditingSource({ ...editingSource, is_adult: e.target.checked })}
+                  onChange={(e) =>
+                    setEditingSource({
+                      ...editingSource,
+                      is_adult: e.target.checked,
+                    })
+                  }
                   className='w-4 h-4 rounded border-gray-300'
                 />
-                <label htmlFor='edit_is_adult' className='text-sm text-gray-700 dark:text-gray-300'>
+                <label
+                  htmlFor='edit_is_adult'
+                  className='text-sm text-gray-700 dark:text-gray-300'
+                >
                   成人内容 (18+)
                 </label>
               </div>
@@ -880,13 +985,21 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
 interface CategoryConfigProps {
   config: AdminConfig | null;
   onSave: (config: AdminConfig) => void;
-  showAlert: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void;
+  showAlert: (
+    type: 'success' | 'error' | 'warning',
+    title: string,
+    message?: string,
+  ) => void;
 }
 
 const CategoryConfig = ({ config, onSave, showAlert }: CategoryConfigProps) => {
   const [categories, setCategories] = useState<any[]>([]);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [newCategory, setNewCategory] = useState({ name: '', query: '', type: 'movie' as 'movie' | 'tv' });
+  const [newCategory, setNewCategory] = useState({
+    name: '',
+    query: '',
+    type: 'movie' as 'movie' | 'tv',
+  });
 
   useEffect(() => {
     // 确保当 config 变化时始终同步 categories 状态
@@ -902,7 +1015,7 @@ const CategoryConfig = ({ config, onSave, showAlert }: CategoryConfigProps) => {
 
   const handleToggle = (index: number) => {
     const newCategories = categories.map((c, i) =>
-      i === index ? { ...c, disabled: !c.disabled } : c
+      i === index ? { ...c, disabled: !c.disabled } : c,
     );
     setCategories(newCategories);
     saveChanges(newCategories);
@@ -920,7 +1033,10 @@ const CategoryConfig = ({ config, onSave, showAlert }: CategoryConfigProps) => {
       showAlert('error', '请填写完整信息');
       return;
     }
-    const newCategories = [...categories, { ...newCategory, from: 'custom', disabled: false }];
+    const newCategories = [
+      ...categories,
+      { ...newCategory, from: 'custom', disabled: false },
+    ];
     setCategories(newCategories);
     saveChanges(newCategories);
     setNewCategory({ name: '', query: '', type: 'movie' });
@@ -954,7 +1070,9 @@ const CategoryConfig = ({ config, onSave, showAlert }: CategoryConfigProps) => {
                 <span className='text-sm font-medium text-gray-900 dark:text-gray-100'>
                   {category.name || category.query}
                 </span>
-                <span className={`px-1.5 py-0.5 text-xs rounded ${category.type === 'movie' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400'}`}>
+                <span
+                  className={`px-1.5 py-0.5 text-xs rounded ${category.type === 'movie' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400'}`}
+                >
                   {category.type === 'movie' ? '电影' : '电视剧'}
                 </span>
               </div>
@@ -1007,7 +1125,9 @@ const CategoryConfig = ({ config, onSave, showAlert }: CategoryConfigProps) => {
                 <input
                   type='text'
                   value={newCategory.name}
-                  onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })}
+                  onChange={(e) =>
+                    setNewCategory({ ...newCategory, name: e.target.value })
+                  }
                   className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100'
                   placeholder='例如: 漫威电影'
                 />
@@ -1019,7 +1139,9 @@ const CategoryConfig = ({ config, onSave, showAlert }: CategoryConfigProps) => {
                 <input
                   type='text'
                   value={newCategory.query}
-                  onChange={(e) => setNewCategory({ ...newCategory, query: e.target.value })}
+                  onChange={(e) =>
+                    setNewCategory({ ...newCategory, query: e.target.value })
+                  }
                   className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100'
                   placeholder='例如: 漫威'
                 />
@@ -1030,7 +1152,12 @@ const CategoryConfig = ({ config, onSave, showAlert }: CategoryConfigProps) => {
                 </label>
                 <select
                   value={newCategory.type}
-                  onChange={(e) => setNewCategory({ ...newCategory, type: e.target.value as 'movie' | 'tv' })}
+                  onChange={(e) =>
+                    setNewCategory({
+                      ...newCategory,
+                      type: e.target.value as 'movie' | 'tv',
+                    })
+                  }
                   className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100'
                 >
                   <option value='movie'>电影</option>
@@ -1059,15 +1186,22 @@ const CategoryConfig = ({ config, onSave, showAlert }: CategoryConfigProps) => {
   );
 };
 
-
 // 配置订阅组件
 interface ConfigSubscriptionProps {
   config: AdminConfig | null;
   onSave: (config: AdminConfig) => void;
-  showAlert: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void;
+  showAlert: (
+    type: 'success' | 'error' | 'warning',
+    title: string,
+    message?: string,
+  ) => void;
 }
 
-const ConfigSubscription = ({ config, onSave, showAlert }: ConfigSubscriptionProps) => {
+const ConfigSubscription = ({
+  config,
+  onSave,
+  showAlert,
+}: ConfigSubscriptionProps) => {
   const [subscriptionUrl, setSubscriptionUrl] = useState('');
   const [autoUpdate, setAutoUpdate] = useState(false);
   const [lastCheckTime, setLastCheckTime] = useState<string | null>(null);
@@ -1128,7 +1262,11 @@ const ConfigSubscription = ({ config, onSave, showAlert }: ConfigSubscriptionPro
       showAlert('success', '拉取成功', '配置已更新到编辑器中，请确认后保存');
     } catch (error) {
       console.error('拉取配置失败:', error);
-      showAlert('error', '拉取失败', error instanceof Error ? error.message : '网络错误');
+      showAlert(
+        'error',
+        '拉取失败',
+        error instanceof Error ? error.message : '网络错误',
+      );
     } finally {
       setIsFetching(false);
     }
@@ -1159,9 +1297,15 @@ const ConfigSubscription = ({ config, onSave, showAlert }: ConfigSubscriptionPro
 
         // 智能识别配置格式
         // 情况1: 标准 AdminConfig 格式 (包含 SourceConfig 字段)
-        if (parsedContent.SourceConfig && Array.isArray(parsedContent.SourceConfig)) {
+        if (
+          parsedContent.SourceConfig &&
+          Array.isArray(parsedContent.SourceConfig)
+        ) {
           newConfig.SourceConfig = parsedContent.SourceConfig.map((s: any) => ({
-            key: s.key || s.name?.toLowerCase().replace(/\s+/g, '_') || `source_${Date.now()}`,
+            key:
+              s.key ||
+              s.name?.toLowerCase().replace(/\s+/g, '_') ||
+              `source_${Date.now()}`,
             name: s.name || '未命名源',
             api: s.api,
             detail: s.detail || '',
@@ -1173,7 +1317,10 @@ const ConfigSubscription = ({ config, onSave, showAlert }: ConfigSubscriptionPro
         // 情况2: 包含 sites 字段的格式 (常见的订阅配置格式)
         else if (parsedContent.sites && Array.isArray(parsedContent.sites)) {
           newConfig.SourceConfig = parsedContent.sites.map((s: any) => ({
-            key: s.key || s.name?.toLowerCase().replace(/\s+/g, '_') || `source_${Date.now()}`,
+            key:
+              s.key ||
+              s.name?.toLowerCase().replace(/\s+/g, '_') ||
+              `source_${Date.now()}`,
             name: s.name || '未命名源',
             api: s.api,
             detail: s.detail || '',
@@ -1183,9 +1330,16 @@ const ConfigSubscription = ({ config, onSave, showAlert }: ConfigSubscriptionPro
           }));
         }
         // 情况3: 纯数组格式 - 作为视频源处理
-        else if (Array.isArray(parsedContent) && parsedContent.length > 0 && parsedContent[0].api) {
+        else if (
+          Array.isArray(parsedContent) &&
+          parsedContent.length > 0 &&
+          parsedContent[0].api
+        ) {
           newConfig.SourceConfig = parsedContent.map((s: any) => ({
-            key: s.key || s.name?.toLowerCase().replace(/\s+/g, '_') || `source_${Date.now()}`,
+            key:
+              s.key ||
+              s.name?.toLowerCase().replace(/\s+/g, '_') ||
+              `source_${Date.now()}`,
             name: s.name || '未命名源',
             api: s.api,
             detail: s.detail || '',
@@ -1195,28 +1349,42 @@ const ConfigSubscription = ({ config, onSave, showAlert }: ConfigSubscriptionPro
           }));
         }
         // 情况4: api_site 对象格式 (键值对形式)
-        else if (parsedContent.api_site && typeof parsedContent.api_site === 'object') {
-          newConfig.SourceConfig = Object.entries(parsedContent.api_site).map(([key, value]: [string, any]) => ({
-            key: key,
-            name: value.name || key,
-            api: value.api,
-            detail: value.detail || '',
-            from: 'config' as const,
-            disabled: value.disabled || false,
-            is_adult: value.is_adult || false,
-          }));
+        else if (
+          parsedContent.api_site &&
+          typeof parsedContent.api_site === 'object'
+        ) {
+          newConfig.SourceConfig = Object.entries(parsedContent.api_site).map(
+            ([key, value]: [string, any]) => ({
+              key: key,
+              name: value.name || key,
+              api: value.api,
+              detail: value.detail || '',
+              from: 'config' as const,
+              disabled: value.disabled || false,
+              is_adult: value.is_adult || false,
+            }),
+          );
         }
 
         // 如果解析的内容包含 CustomCategories，合并进去
-        if (parsedContent.CustomCategories && Array.isArray(parsedContent.CustomCategories)) {
-          newConfig.CustomCategories = parsedContent.CustomCategories.map((c: any) => ({
-            ...c,
-            from: 'config' as const,
-          }));
+        if (
+          parsedContent.CustomCategories &&
+          Array.isArray(parsedContent.CustomCategories)
+        ) {
+          newConfig.CustomCategories = parsedContent.CustomCategories.map(
+            (c: any) => ({
+              ...c,
+              from: 'config' as const,
+            }),
+          );
         }
 
         onSave(newConfig);
-        showAlert('success', '保存成功', `已解析 ${newConfig.SourceConfig?.length || 0} 个视频源`);
+        showAlert(
+          'success',
+          '保存成功',
+          `已解析 ${newConfig.SourceConfig?.length || 0} 个视频源`,
+        );
       }
     } catch (error) {
       console.error('保存配置失败:', error);
@@ -1249,7 +1417,10 @@ const ConfigSubscription = ({ config, onSave, showAlert }: ConfigSubscriptionPro
             订阅URL
           </label>
           <div className='text-xs text-gray-500 dark:text-gray-400'>
-            最后更新: {lastCheckTime ? new Date(lastCheckTime).toLocaleString('zh-CN') : '从未更新'}
+            最后更新:{' '}
+            {lastCheckTime
+              ? new Date(lastCheckTime).toLocaleString('zh-CN')
+              : '从未更新'}
           </div>
         </div>
         <div className='flex gap-2'>
@@ -1325,7 +1496,8 @@ const ConfigSubscription = ({ config, onSave, showAlert }: ConfigSubscriptionPro
           placeholder='请输入配置文件内容（JSON 格式）...'
           className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-mono text-sm leading-relaxed resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all'
           style={{
-            fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
+            fontFamily:
+              'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
           }}
           spellCheck={false}
         />
@@ -1391,16 +1563,20 @@ function AdminPageContent() {
       let configToUse: AdminConfig | null = null;
 
       // 尝试从 localStorage 读取
-      const stored = localStorage.getItem(LOCAL_CONFIG_KEY);
-      if (stored) {
-        configToUse = JSON.parse(stored);
-      }
+      // const stored = localStorage.getItem(LOCAL_CONFIG_KEY);
+      // if (stored) {
+      //   configToUse = JSON.parse(stored);
+      // }
 
       // 从 Tauri 后端加载
       try {
         const tauriData = await invoke<AdminConfig>('get_config');
         // 如果 Tauri 后端有配置且有 SourceConfig
-        if (tauriData && tauriData.SourceConfig && tauriData.SourceConfig.length > 0) {
+        if (
+          tauriData &&
+          tauriData.SourceConfig &&
+          tauriData.SourceConfig.length > 0
+        ) {
           configToUse = tauriData;
           // 同步到 localStorage
           localStorage.setItem(LOCAL_CONFIG_KEY, JSON.stringify(tauriData));
@@ -1448,7 +1624,11 @@ function AdminPageContent() {
     }
   }, []);
 
-  const showAlert = (type: 'success' | 'error' | 'warning', title: string, message?: string) => {
+  const showAlert = (
+    type: 'success' | 'error' | 'warning',
+    title: string,
+    message?: string,
+  ) => {
     setAlertModal({ isOpen: true, type, title, message: message || '' });
   };
 
@@ -1498,7 +1678,11 @@ function AdminPageContent() {
           isExpanded={expandedTabs.configSubscription}
           onToggle={() => toggleTab('configSubscription')}
         >
-          <ConfigSubscription config={config} onSave={saveConfig} showAlert={showAlert} />
+          <ConfigSubscription
+            config={config}
+            onSave={saveConfig}
+            showAlert={showAlert}
+          />
         </CollapsibleTab>
 
         {/* 视频源配置 */}
@@ -1508,7 +1692,11 @@ function AdminPageContent() {
           isExpanded={expandedTabs.videoSource}
           onToggle={() => toggleTab('videoSource')}
         >
-          <SourceConfig config={config} onSave={saveConfig} showAlert={showAlert} />
+          <SourceConfig
+            config={config}
+            onSave={saveConfig}
+            showAlert={showAlert}
+          />
         </CollapsibleTab>
 
         {/* 自定义分类 */}
@@ -1518,7 +1706,11 @@ function AdminPageContent() {
           isExpanded={expandedTabs.categoryConfig}
           onToggle={() => toggleTab('categoryConfig')}
         >
-          <CategoryConfig config={config} onSave={saveConfig} showAlert={showAlert} />
+          <CategoryConfig
+            config={config}
+            onSave={saveConfig}
+            showAlert={showAlert}
+          />
         </CollapsibleTab>
         {/* 数据库导入导出 */}
         <CollapsibleTab

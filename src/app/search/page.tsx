@@ -4,13 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { ChevronUp, Search, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import React, {
-  Suspense,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 import { SearchResult } from '@/lib/types';
 import { subscribeToDataUpdates } from '@/lib/utils';
@@ -25,8 +19,18 @@ import VideoCard, { VideoCardHandle } from '@/components/VideoCard';
 const globalSearchUIState = {
   query: '',
   viewMode: 'agg' as 'agg' | 'all',
-  filterAgg: { source: 'all', title: 'all', year: 'all', yearOrder: 'none' as const },
-  filterAll: { source: 'all', title: 'all', year: 'all', yearOrder: 'none' as const },
+  filterAgg: {
+    source: 'all',
+    title: 'all',
+    year: 'all',
+    yearOrder: 'none' as const,
+  },
+  filterAll: {
+    source: 'all',
+    title: 'all',
+    year: 'all',
+    yearOrder: 'none' as const,
+  },
 };
 // 搜索缓存
 const searchCache = new Map<string, SearchResult[]>();
@@ -41,9 +45,7 @@ function SearchPageClient() {
   // 避免渲染时的“初次加载”闪烁
   const qParam = searchParams.get('q') || '';
   const isReturning =
-    qParam &&
-    qParam === globalSearchUIState.query &&
-    searchCache.has(qParam);
+    qParam && qParam === globalSearchUIState.query && searchCache.has(qParam);
   const currentQueryRef = useRef<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [normalizedQuery, setNormalizedQuery] = useState('');
@@ -51,7 +53,7 @@ function SearchPageClient() {
   const [isLoading, setIsLoading] = useState(!isReturning && !!qParam);
   const [showResults, setShowResults] = useState(!!qParam);
   const [searchResults, setSearchResults] = useState<SearchResult[]>(
-    isReturning ? searchCache.get(qParam)! : []
+    isReturning ? searchCache.get(qParam)! : [],
   );
   const [showSuggestions, setShowSuggestions] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -123,36 +125,29 @@ function SearchPageClient() {
   };
   // 过滤器：非聚合与聚合
   const [filterAll, setFilterAll] = useState(
-    isReturning ? globalSearchUIState.filterAll : {
-      source: 'all',
-      title: 'all',
-      year: 'all',
-      yearOrder: 'none' as const,
-    }
+    isReturning
+      ? globalSearchUIState.filterAll
+      : {
+          source: 'all',
+          title: 'all',
+          year: 'all',
+          yearOrder: 'none' as const,
+        },
   );
   const [filterAgg, setFilterAgg] = useState(
-    isReturning ? globalSearchUIState.filterAgg : {
-      source: 'all',
-      title: 'all',
-      year: 'all',
-      yearOrder: 'none' as const,
-    }
+    isReturning
+      ? globalSearchUIState.filterAgg
+      : {
+          source: 'all',
+          title: 'all',
+          year: 'all',
+          yearOrder: 'none' as const,
+        },
   );
 
-  // 获取默认聚合设置：只读取用户本地设置，默认为 true
-  const getDefaultAggregate = () => {
-    if (typeof window !== 'undefined') {
-      const userSetting = localStorage.getItem('defaultAggregateSearch');
-      if (userSetting !== null) {
-        return JSON.parse(userSetting);
-      }
-    }
-    return true; // 默认启用聚合
-  };
   const [viewMode, setViewMode] = useState<'agg' | 'all'>(
-    isReturning ? globalSearchUIState.viewMode : 'agg'
+    isReturning ? globalSearchUIState.viewMode : 'agg',
   );
-
 
   // 简化的年份排序：unknown/空值始终在最后
   const compareYear = (
@@ -425,7 +420,9 @@ function SearchPageClient() {
     !searchParams.get('q') && document.getElementById('searchInput')?.focus();
 
     // 初始加载搜索历史
-    invoke<string[]>('get_search_history').then(setSearchHistory).catch(console.error);
+    invoke<string[]>('get_search_history')
+      .then(setSearchHistory)
+      .catch(console.error);
 
     // 读取流式搜索设置 - 从 Tauri 后端读取
     const loadFluidSearchSetting = async () => {
@@ -494,7 +491,10 @@ function SearchPageClient() {
   }, []);
   // 图片预加载：提取前 30 张搜索结果的图片
   const searchImageUrls = useMemo(() => {
-    return searchResults.slice(0, 30).map(item => item.poster).filter(Boolean);
+    return searchResults
+      .slice(0, 30)
+      .map((item) => item.poster)
+      .filter(Boolean);
   }, [searchResults]);
   useImagePreload(searchImageUrls, !isLoading && searchResults.length > 0);
   useEffect(() => {
@@ -504,10 +504,7 @@ function SearchPageClient() {
     }
 
     // ✅ 返回搜索页：直接恢复，不做任何事
-    if (
-      qParam === globalSearchUIState.query &&
-      searchCache.has(qParam)
-    ) {
+    if (qParam === globalSearchUIState.query && searchCache.has(qParam)) {
       setSearchResults(searchCache.get(qParam)!);
       setIsLoading(false);
       setShowResults(true);
@@ -530,28 +527,38 @@ function SearchPageClient() {
       const setupListeners = async () => {
         try {
           // 监听流式结果事件
-          unlistenStream = await listen<any>('search-stream-result', (event) => {
-            const { results, total_sources, completed_sources } = event.payload;
+          unlistenStream = await listen<any>(
+            'search-stream-result',
+            (event) => {
+              const { results, total_sources, completed_sources } =
+                event.payload;
 
-            setTotalSources(total_sources);
-            setCompletedSources(completed_sources);
+              setTotalSources(total_sources);
+              setCompletedSources(completed_sources);
 
-            // 实时添加结果（去重）
-            if (results && results.length > 0) {
-              setSearchResults((prevResults) => {
-                const existingIds = new Set(prevResults.map((r) => `${r.source}|${r.id}`));
-                const filteredNew = results.filter(
-                  (r: SearchResult) => !existingIds.has(`${r.source}|${r.id}`)
-                );
-                return [...prevResults, ...filteredNew];
-              });
-            }
-          });
+              // 实时添加结果（去重）
+              if (results && results.length > 0) {
+                setSearchResults((prevResults) => {
+                  const existingIds = new Set(
+                    prevResults.map((r) => `${r.source}|${r.id}`),
+                  );
+                  const filteredNew = results.filter(
+                    (r: SearchResult) =>
+                      !existingIds.has(`${r.source}|${r.id}`),
+                  );
+                  return [...prevResults, ...filteredNew];
+                });
+              }
+            },
+          );
 
           // 监听搜索完成事件
-          unlistenCompleted = await listen<any>('search-stream-completed', (event) => {
-            setIsLoading(false);
-          });
+          unlistenCompleted = await listen<any>(
+            'search-stream-completed',
+            (event) => {
+              setIsLoading(false);
+            },
+          );
         } catch (err) {
           console.error('Failed to setup stream listeners:', err);
         }
@@ -641,7 +648,9 @@ function SearchPageClient() {
     // 保存搜索历史
     try {
       await invoke('add_search_history', { keyword: trimmed });
-      window.dispatchEvent(new CustomEvent('searchHistoryUpdated', { detail: {} }));
+      window.dispatchEvent(
+        new CustomEvent('searchHistoryUpdated', { detail: {} }),
+      );
     } catch (err) {
       console.error('Failed to save search history:', err);
     }
@@ -660,7 +669,9 @@ function SearchPageClient() {
     // 保存搜索历史
     try {
       await invoke('add_search_history', { keyword: suggestion });
-      window.dispatchEvent(new CustomEvent('searchHistoryUpdated', { detail: {} }));
+      window.dispatchEvent(
+        new CustomEvent('searchHistoryUpdated', { detail: {} }),
+      );
     } catch (err) {
       console.error('Failed to save search history:', err);
     }
@@ -738,7 +749,9 @@ function SearchPageClient() {
                   // 保存搜索历史
                   try {
                     await invoke('add_search_history', { keyword: trimmed });
-                    window.dispatchEvent(new CustomEvent('searchHistoryUpdated', { detail: {} }));
+                    window.dispatchEvent(
+                      new CustomEvent('searchHistoryUpdated', { detail: {} }),
+                    );
                   } catch (err) {
                     console.error('Failed to save search history:', err);
                   }
@@ -898,7 +911,9 @@ function SearchPageClient() {
                     onClick={async () => {
                       await invoke('clear_search_history');
                       setSearchHistory([]);
-                      window.dispatchEvent(new CustomEvent('searchHistoryUpdated', { detail: {} }));
+                      window.dispatchEvent(
+                        new CustomEvent('searchHistoryUpdated', { detail: {} }),
+                      );
                     }}
                     className='ml-3 text-sm text-gray-500 hover:text-red-500 transition-colors dark:text-gray-400 dark:hover:text-red-500'
                   >
@@ -915,10 +930,19 @@ function SearchPageClient() {
 
                         // 更新搜索历史时间戳
                         try {
-                          await invoke('add_search_history', { keyword: item.trim() });
-                          window.dispatchEvent(new CustomEvent('searchHistoryUpdated', { detail: {} }));
+                          await invoke('add_search_history', {
+                            keyword: item.trim(),
+                          });
+                          window.dispatchEvent(
+                            new CustomEvent('searchHistoryUpdated', {
+                              detail: {},
+                            }),
+                          );
                         } catch (err) {
-                          console.error('Failed to update search history:', err);
+                          console.error(
+                            'Failed to update search history:',
+                            err,
+                          );
                         }
 
                         router.push(
@@ -935,9 +959,17 @@ function SearchPageClient() {
                       onClick={async (e) => {
                         e.stopPropagation();
                         e.preventDefault();
-                        await invoke('delete_search_history', { keyword: item });
-                        setSearchHistory((prev) => prev.filter((h) => h !== item));
-                        window.dispatchEvent(new CustomEvent('searchHistoryUpdated', { detail: {} }));
+                        await invoke('delete_search_history', {
+                          keyword: item,
+                        });
+                        setSearchHistory((prev) =>
+                          prev.filter((h) => h !== item),
+                        );
+                        window.dispatchEvent(
+                          new CustomEvent('searchHistoryUpdated', {
+                            detail: {},
+                          }),
+                        );
                       }}
                       className='absolute -top-1 -right-1 w-4 h-4 opacity-0 group-hover:opacity-100 bg-gray-400 hover:bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] transition-colors'
                     >
