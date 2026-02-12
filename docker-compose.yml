@@ -7,13 +7,23 @@ services:
       dockerfile: docker/Dockerfile
     container_name: quantumtv-api
     ports:
-      - "3000:3000"
+      - '3000:3000'
     environment:
       - RUST_LOG=info
+      # 默认订阅源
+      - PARSES_URL=http://127.0.0.1
+      # 服务器监听地址
+      - SERVER_IP=0.0.0.0
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/']
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    networks:
+      - quantumtv-network
+
+networks:
+  quantumtv-network:
+    driver: bridge
