@@ -337,7 +337,7 @@ function PlayPageClient() {
     return filteredLines.join('\n');
   }
 
-  // 跳过片头片尾配置相关函数 移到 Rust 端
+  // 跳过片头片尾配置相关函数
   const handleSkipConfigChange = async (newConfig: {
     enable: boolean;
     intro_time: number;
@@ -579,6 +579,7 @@ function PlayPageClient() {
 
   // 进入页面时直接获取全部源信息
   useEffect(() => {
+    // 批量获取多个源的详细信息（用于换源时按需加载）
     const fetchSourceDetail = async (
       source: string,
       id: string,
@@ -593,6 +594,22 @@ function PlayPageClient() {
         console.error('获取视频详情失败:', err);
         return null;
       }
+    };
+
+    // 批量获取多个源的详细信息
+    const fetchMultipleSourceDetails = async (
+      sources: Array<{ source: string; id: string }>,
+    ): Promise<SearchResult[]> => {
+      const results = await Promise.allSettled(
+        sources.map(({ source, id }) => fetchSourceDetail(source, id)),
+      );
+
+      return results
+        .filter(
+          (r): r is PromiseFulfilledResult<SearchResult> =>
+            r.status === 'fulfilled' && r.value !== null,
+        )
+        .map((r) => r.value);
     };
 
     const fetchSourcesData = async (query: string): Promise<SearchResult[]> => {
@@ -675,23 +692,64 @@ function PlayPageClient() {
 
             // 设置其他可用源
             if (response.other_sources && response.other_sources.length > 0) {
-              setAvailableSources(response.other_sources);
+              // 如果从缓存获取到了其他源，直接使用
+              setAvailableSources([detailData, ...response.other_sources]);
+
+              // 在后台使用 get_video_detail 批量刷新这些源的详情，确保数据最新
+              // 这样比重新 search 要快得多
+              const sourcesToRefresh = response.other_sources
+                .slice(0, 5) // 只刷新前5个源，避免过多请求
+                .map(s => ({ source: s.source, id: s.id }));
+
+              if (sourcesToRefresh.length > 0) {
+                fetchMultipleSourceDetails(sourcesToRefresh)
+                  .then((refreshedSources) => {
+                    if (refreshedSources.length > 0) {
+                      // 合并刷新后的源和缓存的源
+                      const refreshedMap = new Map(
+                        refreshedSources.map(s => [`${s.source}|${s.id}`, s])
+                      );
+                      const mergedSources = [
+                        detailData,
+                        ...response.other_sources.map(s =>
+                          refreshedMap.get(`${s.source}|${s.id}`) || s
+                        )
+                      ];
+                      setAvailableSources(mergedSources);
+                    }
+                  })
+                  .catch(err => console.error('刷新源详情失败:', err));
+              }
             }
 
             setLoadingStage('ready');
             setLoadingMessage('✨ 准备就绪，即将开始播放...');
             setTimeout(() => setLoading(false), 1000);
 
-            // 在后台异步获取其他源
-            const searchQuery = searchTitle || videoTitle;
-            if (searchQuery) {
-              fetchSourcesData(searchQuery)
-                .then((results) => {
-                  if (results.length > 0) {
-                    setAvailableSources(results);
-                  }
-                })
-                .catch(console.error);
+            // 只有当 other_sources 为空时，才在后台异步搜索其他源
+            // 避免重复搜索，提升性能
+            if (
+              !response.other_sources ||
+              response.other_sources.length === 0
+            ) {
+              const searchQuery = searchTitle || videoTitle;
+              if (searchQuery) {
+                fetchSourcesData(searchQuery)
+                  .then((results) => {
+                    if (results.length > 0) {
+                      // 过滤掉当前源，避免重复
+                      const otherSources = results.filter(
+                        (r) =>
+                          !(
+                            r.source === detailData.source &&
+                            r.id === detailData.id
+                          ),
+                      );
+                      setAvailableSources([detailData, ...otherSources]);
+                    }
+                  })
+                  .catch(console.error);
+              }
             }
             return;
           } else {

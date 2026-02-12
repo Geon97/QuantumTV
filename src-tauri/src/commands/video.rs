@@ -653,7 +653,8 @@ pub async fn get_video_detail_optimized(
     source: String,
     id: String,
     storage: State<'_, StorageManager>,
-    _cache: State<'_, SearchCacheManager>,
+    cache: State<'_, SearchCacheManager>,
+    also_search_similar: Option<bool>,
 ) -> Result<GetVideoDetailOptimizedResponse, String> {
     let data = storage.get_data()?;
     let config = &data.config;
@@ -715,24 +716,36 @@ pub async fn get_video_detail_optimized(
             _ => "".to_string(),
         },
         title: item.vod_name.trim().to_string(),
-        poster: item.vod_pic,
+        poster: item.vod_pic.clone(),
         episodes,
         episodes_titles,
         source: site.key,
         source_name: site.name,
-        class: item.vod_class,
-        year: item.vod_year,
-        desc: item.vod_content.map(|c| clean_html_tags(&c)),
-        type_name: item.type_name,
+        class: item.vod_class.clone(),
+        year: item.vod_year.clone(),
+        desc: item.vod_content.as_ref().map(|c| clean_html_tags(c)),
+        type_name: item.type_name.clone(),
         douban_id: item
             .vod_douban_id
             .and_then(|v| v.as_i64())
             .map(|v| v as i32),
     };
 
-    // 如果需要搜索相似源，暂时返回空列表
-    // 前端可以通过后续的 search 命令获取其他源
-    let other_sources = vec![];
+    // 如果需要搜索相似源，尝试从缓存快速获取
+    let other_sources = if also_search_similar.unwrap_or(false) {
+        // 尝试从缓存获取搜索结果
+        if let Some(cached_results) = cache.get(&detail.title).await {
+            // 过滤掉当前源，返回其他源
+            cached_results
+                .into_iter()
+                .filter(|r| !(r.source == source && r.id == id))
+                .collect()
+        } else {
+            vec![]
+        }
+    } else {
+        vec![]
+    };
 
     Ok(GetVideoDetailOptimizedResponse {
         detail,

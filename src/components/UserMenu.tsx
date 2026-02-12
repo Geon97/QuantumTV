@@ -19,7 +19,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { UpdateStatus } from '@/lib/types';
-import { usePageCache, CacheStats } from '@/hooks/usePageCache';
+import { CacheStats, usePageCache } from '@/hooks/usePageCache';
 
 import { VersionPanel } from './VersionPanel';
 
@@ -91,7 +91,6 @@ export const UserMenu: React.FC = () => {
   }, [isSettingsOpen]);
 
   // 设置相关状态
-  const [defaultAggregateSearch, setDefaultAggregateSearch] = useState(true);
   const [doubanProxyUrl, setDoubanProxyUrl] = useState('');
   const [enableOptimization, setEnableOptimization] = useState(true);
   const [fluidSearch, setFluidSearch] = useState(true);
@@ -154,13 +153,6 @@ export const UserMenu: React.FC = () => {
   // 从 localStorage 读取设置
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const savedAggregateSearch = localStorage.getItem(
-        'defaultAggregateSearch',
-      );
-      if (savedAggregateSearch !== null) {
-        setDefaultAggregateSearch(JSON.parse(savedAggregateSearch));
-      }
-
       const savedDoubanDataSource = localStorage.getItem('doubanDataSource');
       const defaultDoubanProxyType =
         (window as any).RUNTIME_CONFIG?.DOUBAN_PROXY_TYPE ||
@@ -341,7 +333,11 @@ export const UserMenu: React.FC = () => {
 
   // 清空所有缓存
   const handleClearAllCache = async () => {
-    if (!confirm('确定要清空所有页面缓存吗？这将删除首页、电影、剧集等所有缓存数据。')) {
+    if (
+      !confirm(
+        '确定要清空所有页面缓存吗？这将删除首页、电影、剧集等所有缓存数据。',
+      )
+    ) {
       return;
     }
 
@@ -374,13 +370,6 @@ export const UserMenu: React.FC = () => {
   };
 
   // 设置相关的处理函数
-  const handleAggregateToggle = (value: boolean) => {
-    setDefaultAggregateSearch(value);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('defaultAggregateSearch', JSON.stringify(value));
-    }
-  };
-
   const handleDoubanProxyUrlChange = (value: string) => {
     setDoubanProxyUrl(value);
     if (typeof window !== 'undefined') {
@@ -465,7 +454,6 @@ export const UserMenu: React.FC = () => {
     const defaultFluidSearch =
       (window as any).RUNTIME_CONFIG?.FLUID_SEARCH !== false;
 
-    setDefaultAggregateSearch(true);
     setEnableOptimization(true);
     setFluidSearch(defaultFluidSearch);
     setLiveDirectConnect(false);
@@ -483,7 +471,6 @@ export const UserMenu: React.FC = () => {
     }
 
     if (typeof window !== 'undefined') {
-      localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
       localStorage.setItem('enableOptimization', JSON.stringify(true));
       localStorage.setItem('fluidSearch', JSON.stringify(defaultFluidSearch));
       localStorage.setItem('liveDirectConnect', JSON.stringify(false));
@@ -509,20 +496,24 @@ export const UserMenu: React.FC = () => {
         {/* 菜单项 */}
         <div className='py-2'>
           {/* 设置按钮 */}
-          <button onClick={() => {
-            handleSettings();
-            handleCloseMenu();
-          }} className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800 transition-colors text-sm'
+          <button
+            onClick={() => {
+              handleSettings();
+              handleCloseMenu();
+            }}
+            className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800 transition-colors text-sm'
           >
             <Settings className='w-4 h-4 text-slate-500 dark:text-gray-400' />
             <span className='font-medium'>设置</span>
           </button>
 
           {/* 管理面板按钮 */}
-          <button onClick={() => {
-            handleAdminPanel();
-            handleCloseMenu();
-          }} className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800 transition-colors text-sm'
+          <button
+            onClick={() => {
+              handleAdminPanel();
+              handleCloseMenu();
+            }}
+            className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800 transition-colors text-sm'
           >
             <Shield className='w-4 h-4 text-slate-500 dark:text-gray-400' />
             <span className='font-medium'>管理面板</span>
@@ -834,30 +825,6 @@ export const UserMenu: React.FC = () => {
 
             {/* 分割线 */}
             <div className='border-t border-gray-200 dark:border-gray-700'></div>
-
-            {/* 默认聚合搜索结果 */}
-            <div className='flex items-center justify-between'>
-              <div>
-                <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
-                  默认聚合搜索结果
-                </h4>
-                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
-                  搜索时默认按标题和年份聚合显示结果
-                </p>
-              </div>
-              <label className='flex items-center cursor-pointer'>
-                <div className='relative'>
-                  <input
-                    type='checkbox'
-                    className='sr-only peer'
-                    checked={defaultAggregateSearch}
-                    onChange={(e) => handleAggregateToggle(e.target.checked)}
-                  />
-                  <div className='w-11 h-6 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600'></div>
-                  <div className='absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform peer-checked:translate-x-5'></div>
-                </div>
-              </label>
-            </div>
 
             {/* 优选和测速 */}
             <div className='flex items-center justify-between'>
