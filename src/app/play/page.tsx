@@ -9,10 +9,10 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
 import {
+  PlayerConfig,
+  PlayerInitialState,
   PreferBestSourceResponse,
   RustFavorite,
-  RustPlayRecord,
-  RustSkipConfig,
   SearchResult,
 } from '@/lib/types';
 import { generateStorageKey, subscribeToDataUpdates } from '@/lib/utils';
@@ -79,14 +79,8 @@ function PlayPageClient() {
   // 跳过检查的时间间隔控制
   const lastSkipCheckRef = useRef(0);
 
-  // 去广告开关（从 localStorage 继承，默认 true）
-  const [blockAdEnabled, setBlockAdEnabled] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const v = localStorage.getItem('enable_blockad');
-      if (v !== null) return v === 'true';
-    }
-    return true;
-  });
+  // 去广告开关（从 Rust 配置读取，默认 true）
+  const [blockAdEnabled, setBlockAdEnabled] = useState<boolean>(true);
   const blockAdEnabledRef = useRef(blockAdEnabled);
   useEffect(() => {
     blockAdEnabledRef.current = blockAdEnabled;
@@ -165,20 +159,8 @@ function PlayPageClient() {
     null,
   );
 
-  // 优选和测速开关
-  const [optimizationEnabled] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('enableOptimization');
-      if (saved !== null) {
-        try {
-          return JSON.parse(saved);
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-    return true;
-  });
+  // 优选和测速开关（从 Rust 配置读取，默认 true）
+  const [optimizationEnabled, setOptimizationEnabled] = useState<boolean>(true);
 
   // 保存优选时的测速结果，避免EpisodeSelector重复测速
   const [precomputedVideoInfo, setPrecomputedVideoInfo] = useState<
@@ -327,17 +309,12 @@ function PlayPageClient() {
     try {
       setSkipConfig(newConfig);
 
-      // 保存到 localStorage 用于持久化
-      const storageKey = `skip_config_${currentSourceRef.current}_${currentIdRef.current}`;
-      localStorage.setItem(storageKey, JSON.stringify(newConfig));
-
       if (!newConfig.enable && !newConfig.intro_time && !newConfig.outro_time) {
         const key = generateStorageKey(
           currentSourceRef.current,
           currentIdRef.current,
         );
         await invoke('delete_skip_config', { key });
-        localStorage.removeItem(storageKey);
         showToast('已清除跳过设置', 'info');
         artPlayerRef.current.setting.update({
           name: '跳过片头片尾',
@@ -555,9 +532,10 @@ function PlayPageClient() {
             this.stats.loaded = data.byteLength;
             this.stats.total = data.byteLength;
             const duration = this.stats.loading.end - this.stats.loading.start;
-            duration > 0
-              ? (this.stats.loaded * 8) / 1000 / 1000 / (duration / 1000)
-              : 0;
+            this.stats.bwEstimate =
+              duration > 0
+                ? (this.stats.loaded * 8) / 1000 / 1000 / (duration / 1000)
+                : 0;
 
             const response = {
               url,
@@ -655,114 +633,76 @@ function PlayPageClient() {
 
       setLoading(true);
 
-      // 使用 get_video_detail_optimized 进行快速路径
-      // 如果指定了 source 和 id，使用优化命令并行获取详情和搜索相似源
+      // 如果指定了 source 和 id，使用聚合初始化命令
       if (currentSource && currentId && !needPreferRef.current) {
         setLoadingStage('fetching');
-        setLoadingMessage('🎬 正在获取视频详情...');
+        setLoadingMessage('🎬 正在初始化播放器...');
 
         try {
-          const response = await invoke<{
-            detail: SearchResult;
-            other_sources: SearchResult[];
-          }>('get_video_detail_optimized', {
-            source: currentSource,
-            id: currentId,
-            also_search_similar: true,
-          });
+          const initialState = await invoke<PlayerInitialState>(
+            'initialize_player_view',
+            {
+              source: currentSource,
+              id: currentId,
+              title: videoTitle || searchTitle,
+            },
+          );
 
-          const detailData = response.detail;
-          if (detailData) {
-            setNeedPrefer(false);
-            setCurrentSource(detailData.source);
-            setCurrentId(detailData.id);
-            setVideoYear(detailData.year);
-            setVideoTitle(detailData.title || videoTitleRef.current);
-            setVideoCover(detailData.poster);
-            setVideoDoubanId(detailData.douban_id || 0);
-            setDetail(detailData);
-            if (currentEpisodeIndex >= detailData.episodes.length) {
-              setCurrentEpisodeIndex(0);
-            }
+          const detailData = initialState.detail;
+          // 设置视频详情
+          setNeedPrefer(false);
+          setCurrentSource(detailData.source);
+          setCurrentId(detailData.id);
+          setVideoYear(detailData.year);
+          setVideoTitle(detailData.title || videoTitleRef.current);
+          setVideoCover(detailData.poster);
+          setVideoDoubanId(detailData.douban_id || 0);
+          setDetail(detailData);
 
-            const newUrl = new URL(window.location.href);
-            newUrl.searchParams.set('source', detailData.source);
-            newUrl.searchParams.set('id', detailData.id);
-            newUrl.searchParams.set('year', detailData.year);
-            newUrl.searchParams.set('title', detailData.title);
-            newUrl.searchParams.delete('prefer');
-            window.history.replaceState({}, '', newUrl.toString());
-
-            // 设置其他可用源
-            if (response.other_sources && response.other_sources.length > 0) {
-              // 如果从缓存获取到了其他源，直接使用
-              setAvailableSources([detailData, ...response.other_sources]);
-
-              // 在后台使用 get_video_detail 批量刷新这些源的详情，确保数据最新
-              // 这样比重新 search 要快得多
-              const sourcesToRefresh = response.other_sources
-                .slice(0, 5) // 只刷新前5个源，避免过多请求
-                .map(s => ({ source: s.source, id: s.id }));
-
-              if (sourcesToRefresh.length > 0) {
-                fetchMultipleSourceDetails(sourcesToRefresh)
-                  .then((refreshedSources) => {
-                    if (refreshedSources.length > 0) {
-                      // 合并刷新后的源和缓存的源
-                      const refreshedMap = new Map(
-                        refreshedSources.map(s => [`${s.source}|${s.id}`, s])
-                      );
-                      const mergedSources = [
-                        detailData,
-                        ...response.other_sources.map(s =>
-                          refreshedMap.get(`${s.source}|${s.id}`) || s
-                        )
-                      ];
-                      setAvailableSources(mergedSources);
-                    }
-                  })
-                  .catch(err => console.error('刷新源详情失败:', err));
-              }
-            }
-
-            setLoadingStage('ready');
-            setLoadingMessage('✨ 准备就绪，即将开始播放...');
-            setTimeout(() => setLoading(false), 1000);
-
-            // 只有当 other_sources 为空时，才在后台异步搜索其他源
-            // 避免重复搜索，提升性能
-            if (
-              !response.other_sources ||
-              response.other_sources.length === 0
-            ) {
-              const searchQuery = searchTitle || videoTitle;
-              if (searchQuery) {
-                fetchSourcesData(searchQuery)
-                  .then((results) => {
-                    if (results.length > 0) {
-                      // 过滤掉当前源，避免重复
-                      const otherSources = results.filter(
-                        (r) =>
-                          !(
-                            r.source === detailData.source &&
-                            r.id === detailData.id
-                          ),
-                      );
-                      setAvailableSources([detailData, ...otherSources]);
-                    }
-                  })
-                  .catch(console.error);
-              }
-            }
-            return;
-          } else {
-            setError('未找到指定的播放源');
-            setLoading(false);
-            return;
+          // 恢复播放记录
+          if (initialState.play_record) {
+            setCurrentEpisodeIndex(initialState.play_record.episode_index);
+            resumeTimeRef.current = initialState.play_record.play_time;
+          } else if (currentEpisodeIndex >= detailData.episodes.length) {
+            setCurrentEpisodeIndex(0);
           }
+
+          // 设置收藏状态
+          setFavorited(initialState.is_favorited);
+
+          // 设置跳过配置
+          if (initialState.skip_config) {
+            setSkipConfig({
+              enable: initialState.skip_config.enable,
+              intro_time: initialState.skip_config.intro_time,
+              outro_time: initialState.skip_config.outro_time,
+            });
+          }
+
+          // 设置播放器配置
+          setBlockAdEnabled(initialState.block_ad_enabled);
+          setOptimizationEnabled(initialState.optimization_enabled);
+
+          // 更新 URL
+          const newUrl = new URL(window.location.href);
+          newUrl.searchParams.set('source', detailData.source);
+          newUrl.searchParams.set('id', detailData.id);
+          newUrl.searchParams.set('year', detailData.year);
+          newUrl.searchParams.set('title', detailData.title);
+          newUrl.searchParams.delete('prefer');
+          window.history.replaceState({}, '', newUrl.toString());
+
+          // 设置可用源
+          setAvailableSources([detailData, ...initialState.other_sources]);
+
+          setLoadingStage('ready');
+          setLoadingMessage('✨ 准备就绪，即将开始播放...');
+          setTimeout(() => setLoading(false), 1000);
+
+          return;
         } catch (err) {
-          console.error('获取视频详情失败:', err);
-          setError('获取视频详情失败');
+          console.error('初始化播放器失败:', err);
+          setError('初始化播放器失败');
           setLoading(false);
           return;
         }
@@ -866,86 +806,6 @@ function PlayPageClient() {
 
     initAll();
   }, []);
-
-  // 播放记录处理
-  useEffect(() => {
-    // 仅在初次挂载时检查播放记录
-    const initFromHistory = async () => {
-      if (!currentSource || !currentId) return;
-
-      try {
-        const allRecords = await invoke<RustPlayRecord[]>(
-          'get_all_play_records',
-        );
-        const key = generateStorageKey(currentSource, currentId);
-        const record = allRecords.find((r) => r.key === key);
-
-        if (record) {
-          const targetIndex = record.episode_index - 1;
-          const targetTime = record.play_time;
-
-          // 更新当前选集索引
-          if (targetIndex !== currentEpisodeIndex) {
-            setCurrentEpisodeIndex(targetIndex);
-          }
-
-          // 保存待恢复的播放进度，待播放器就绪后跳转
-          resumeTimeRef.current = targetTime;
-        }
-      } catch (err) {
-        console.error('读取播放记录失败:', err);
-      }
-    };
-
-    initFromHistory();
-  }, []);
-
-  // 跳过片头片尾配置处理
-  useEffect(() => {
-    // 仅在初次挂载时检查跳过片头片尾配置
-    const initSkipConfig = async () => {
-      if (!currentSource || !currentId) return;
-
-      try {
-        // 首先从 localStorage 读取
-        const storageKey = `skip_config_${currentSource}_${currentId}`;
-        const localConfig = localStorage.getItem(storageKey);
-
-        if (localConfig) {
-          const config = JSON.parse(localConfig);
-          setSkipConfig(config);
-          console.log('从 localStorage 恢复跳过配置:', config);
-        } else {
-          // 如果 localStorage 没有，再尝试从数据库读取
-          const key = generateStorageKey(currentSource, currentId);
-          const config = await invoke<RustSkipConfig | null>(
-            'get_skip_config',
-            { key },
-          );
-          if (config) {
-            setSkipConfig({
-              enable: config.enable,
-              intro_time: config.intro_time,
-              outro_time: config.outro_time,
-            });
-            // 同步到 localStorage
-            localStorage.setItem(
-              storageKey,
-              JSON.stringify({
-                enable: config.enable,
-                intro_time: config.intro_time,
-                outro_time: config.outro_time,
-              }),
-            );
-          }
-        }
-      } catch (err) {
-        console.error('读取跳过片头片尾配置失败:', err);
-      }
-    };
-
-    initSkipConfig();
-  }, [currentSource, currentId]);
 
   // 处理换源
   const handleSourceChange = async (
@@ -1512,10 +1372,15 @@ function PlayPageClient() {
             html: '去广告',
             icon: '<text x="50%" y="50%" font-size="20" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#ffffff">AD</text>',
             tooltip: blockAdEnabled ? '已开启' : '已关闭',
-            onClick() {
+            async onClick() {
               const newVal = !blockAdEnabled;
               try {
-                localStorage.setItem('enable_blockad', String(newVal));
+                // 保存配置到 Rust
+                const config: PlayerConfig = {
+                  block_ad_enabled: newVal,
+                  optimization_enabled: optimizationEnabled,
+                };
+                await invoke<void>('set_player_config', { config });
                 if (artPlayerRef.current) {
                   resumeTimeRef.current = artPlayerRef.current.currentTime;
                   if (

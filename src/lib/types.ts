@@ -21,6 +21,30 @@ export interface PlayRecord {
   search_title: string; // 搜索时使用的标题
 }
 
+// 播放器配置类型
+export interface PlayerConfig {
+  block_ad_enabled: boolean;
+  optimization_enabled: boolean;
+}
+
+// 播放器初始化状态类型
+export interface PlayerInitialState {
+  detail: SearchResult;
+  other_sources: SearchResult[];
+  play_record: {
+    episode_index: number;
+    play_time: number;
+  } | null;
+  is_favorited: boolean;
+  skip_config: {
+    enable: boolean;
+    intro_time: number;
+    outro_time: number;
+  } | null;
+  block_ad_enabled: boolean;
+  optimization_enabled: boolean;
+}
+
 // 收藏数据结构
 export interface Favorite {
   source_name: string;
@@ -163,13 +187,6 @@ export interface RustPlayRecord {
   total_time: number;
   save_time: number;
   search_title: string;
-}
-
-export interface RustSkipConfig {
-  key: string;
-  enable: boolean;
-  intro_time: number;
-  outro_time: number;
 }
 
 export interface BangumiCalendarData {

@@ -5,6 +5,7 @@ use regex::Regex;
 use reqwest::header::{
     HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, RANGE, REFERER, USER_AGENT,
 };
+use rusqlite::params;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -75,6 +76,41 @@ impl SearchCacheManager {
 pub struct GetVideoDetailOptimizedResponse {
     pub detail: SearchResult,
     pub other_sources: Vec<SearchResult>,
+}
+
+/// 播放器初始化状态响应
+/// 包含播放器启动所需的所有数据，减少 IPC 通信次数
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PlayerInitialState {
+    /// 视频详情
+    pub detail: SearchResult,
+    /// 其他可用源
+    pub other_sources: Vec<SearchResult>,
+    /// 播放记录（集数索引和播放时间）
+    pub play_record: Option<PlayRecordInfo>,
+    /// 是否已收藏
+    pub is_favorited: bool,
+    /// 跳过配置
+    pub skip_config: Option<SkipConfigInfo>,
+    /// 去广告开关
+    pub block_ad_enabled: bool,
+    /// 优选开关
+    pub optimization_enabled: bool,
+}
+
+/// 播放记录信息
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PlayRecordInfo {
+    pub episode_index: i32,
+    pub play_time: i32,
+}
+
+/// 跳过配置信息
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SkipConfigInfo {
+    pub enable: bool,
+    pub intro_time: i32,
+    pub outro_time: i32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -1514,4 +1550,130 @@ pub async fn test_video_source_command(
 ) -> Result<SourceTestResult, String> {
     let client = get_video_client();
     test_video_source(client, &m3u8_url).await
+}
+
+/// 初始化播放器视图 - 聚合所有初始化数据
+///
+/// 一次性返回播放器启动所需的所有数据，减少 IPC 通信次数
+///
+/// # 参数
+/// - `source`: 视频源标识
+/// - `id`: 视频 ID
+/// - `title`: 视频标题（用于搜索相似源）
+///
+/// # 返回
+/// PlayerInitialState 包含：
+/// - 视频详情
+/// - 其他可用源
+/// - 播放记录
+/// - 收藏状态
+/// - 跳过配置
+/// - 播放器配置（去广告、优选开关）
+#[tauri::command]
+pub async fn initialize_player_view(
+    source: String,
+    id: String,
+    title: Option<String>,
+    storage: State<'_, StorageManager>,
+    cache: State<'_, SearchCacheManager>,
+    db: State<'_, crate::db::db_client::Db>,
+) -> Result<PlayerInitialState, String> {
+    // 生成 storage key
+    let key = format!("{}+{}", source, id);
+
+    // 并行执行所有数据获取操作
+    let (detail_result, play_record, is_favorited, skip_config, player_config) = tokio::join!(
+        // 1. 获取视频详情和其他源
+        get_video_detail_optimized(
+            source.clone(),
+            id.clone(),
+            storage.clone(),
+            cache.clone(),
+            Some(true)
+        ),
+        // 2. 读取播放记录
+        async {
+            db.with_conn(|conn| {
+                let mut stmt = conn
+                    .prepare("SELECT episode_index, play_time FROM play_records WHERE key = ?1")?;
+
+                let result = stmt.query_row(params![&key], |row| {
+                    Ok(PlayRecordInfo {
+                        episode_index: row.get(0)?,
+                        play_time: row.get(1)?,
+                    })
+                });
+
+                match result {
+                    Ok(record) => Ok(Some(record)),
+                    Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                    Err(e) => Err(e),
+                }
+            })
+        },
+        // 3. 检查收藏状态
+        async {
+            db.with_conn(|conn| {
+                let mut stmt = conn
+                    .prepare("SELECT COUNT(*) FROM favorites WHERE key = ?1")?;
+
+                let count: i32 = stmt
+                    .query_row(params![&key], |row| row.get(0))?;
+
+                Ok(count > 0)
+            })
+        },
+        // 4. 读取跳过配置
+        async {
+            db.with_conn(|conn| {
+                let mut stmt = conn
+                    .prepare("SELECT enable, intro_time, outro_time FROM skip_configs WHERE key = ?1")?;
+
+                let result = stmt.query_row(params![&key], |row| {
+                    Ok(SkipConfigInfo {
+                        enable: row.get::<_, i32>(0)? != 0,
+                        intro_time: row.get::<_, f64>(1)? as i32,
+                        outro_time: row.get::<_, f64>(2)? as i32,
+                    })
+                });
+
+                match result {
+                    Ok(config) => Ok(Some(config)),
+                    Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                    Err(e) => Err(e),
+                }
+            })
+        },
+        // 5. 读取播放器配置
+        async {
+            let data = storage.get_data().map_err(|e| e.to_string())?;
+
+            // 尝试从配置中获取播放器配置
+            if let Some(player_config) = data.config.get("PlayerConfig") {
+                if let Ok(config) = serde_json::from_value::<crate::commands::config::PlayerConfig>(player_config.clone()) {
+                    return Ok::<(bool, bool), String>((config.block_ad_enabled, config.optimization_enabled));
+                }
+            }
+
+            // 返回默认配置
+            Ok::<(bool, bool), String>((true, true))
+        }
+    );
+
+    // 处理视频详情结果
+    let detail_response = detail_result?;
+    let play_record = play_record?;
+    let is_favorited = is_favorited?;
+    let skip_config = skip_config?;
+    let (block_ad_enabled, optimization_enabled) = player_config?;
+
+    Ok(PlayerInitialState {
+        detail: detail_response.detail,
+        other_sources: detail_response.other_sources,
+        play_record,
+        is_favorited,
+        skip_config,
+        block_ad_enabled,
+        optimization_enabled,
+    })
 }

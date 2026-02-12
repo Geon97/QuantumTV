@@ -186,3 +186,61 @@ pub async fn set_fluid_search(
 
     state.update_config(data.config)
 }
+
+/// 获取播放器配置（去广告、优选等）
+#[tauri::command]
+pub async fn get_player_config(state: State<'_, StorageManager>) -> Result<PlayerConfig, String> {
+    let data = state.get_data()?;
+
+    // 尝试从配置中获取播放器配置
+    if let Some(player_config) = data.config.get("PlayerConfig") {
+        if let Ok(config) = serde_json::from_value::<PlayerConfig>(player_config.clone()) {
+            return Ok(config);
+        }
+    }
+
+    // 返回默认配置
+    Ok(PlayerConfig::default())
+}
+
+/// 保存播放器配置
+#[tauri::command]
+pub async fn set_player_config(
+    config: PlayerConfig,
+    state: State<'_, StorageManager>,
+) -> Result<(), String> {
+    let mut data = state.get_data()?;
+
+    // 确保配置结构存在
+    if !data.config.is_object() {
+        data.config = serde_json::json!({});
+    }
+
+    let config_obj = data.config.as_object_mut().unwrap();
+
+    // 保存播放器配置
+    config_obj.insert(
+        "PlayerConfig".to_string(),
+        serde_json::to_value(config).map_err(|e| e.to_string())?,
+    );
+
+    state.update_config(data.config)
+}
+
+/// 播放器配置结构
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PlayerConfig {
+    /// 去广告开关
+    pub block_ad_enabled: bool,
+    /// 优选开关
+    pub optimization_enabled: bool,
+}
+
+impl Default for PlayerConfig {
+    fn default() -> Self {
+        Self {
+            block_ad_enabled: true,
+            optimization_enabled: true,
+        }
+    }
+}
