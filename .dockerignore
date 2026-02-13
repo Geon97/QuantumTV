@@ -13,7 +13,6 @@ src-tauri/
 # Rust 构建产物
 target/
 **/*.rs.bk
-**/Cargo.lock
 
 # Git
 .git/

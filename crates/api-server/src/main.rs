@@ -13,6 +13,9 @@ use crate::tvbox::{
 static SERVER_IP: LazyLock<String> =
     LazyLock::new(|| std::env::var("SERVER_IP").unwrap_or_else(|_| "127.0.0.1".to_string()));
 
+static BIND_ADDR: LazyLock<String> =
+    LazyLock::new(|| std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0".to_string()));
+
 #[derive(Clone)]
 struct AppState {
     spider_info: Arc<Mutex<SpiderInfo>>,
@@ -83,7 +86,7 @@ async fn main() {
         // 5. 注入状态
         .with_state(state);
 
-    let addr = SocketAddr::from((SERVER_IP.parse::<Ipv4Addr>().unwrap(), 3000));
+    let addr = SocketAddr::from((BIND_ADDR.parse::<Ipv4Addr>().unwrap(), 3000));
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await
