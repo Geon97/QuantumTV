@@ -882,9 +882,7 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
             </span>
           </div>
           <div className='text-sm text-gray-500 dark:text-gray-400 py-2'>
-            {isLoadingCategories
-              ? '加载中...'
-              : '该源暂无分类数据（可能受跨域限制）'}
+            {isLoadingCategories ? '加载中...' : '该源暂无分类数据'}
           </div>
         </div>
       );

@@ -24,7 +24,13 @@ md5 = "0.7"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# 环境变量加载
+dotenvy = "0.15"
+
 # Workspace dependencies
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+urlencoding = { workspace = true }
+url = { workspace = true }
+moka = { workspace = true }
