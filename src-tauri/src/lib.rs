@@ -89,6 +89,7 @@ pub fn run() {
             commands::config::get_user_preferences,
             commands::config::set_user_preferences,
             commands::search::get_search_suggestions,
+            commands::config::is_adult_source,
             // 视频
             commands::video::search,
             commands::video::get_video_detail,

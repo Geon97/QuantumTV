@@ -1,3 +1,4 @@
+pub mod adult;
 pub mod playback;
 pub mod source_selection;
 pub mod types;

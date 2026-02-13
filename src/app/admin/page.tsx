@@ -103,7 +103,7 @@ const ConfigImportExportModal = ({
     showAlert('success', '导出成功', '配置文件已下载');
   };
 
-  const handleImport = () => {
+  const handleImport = async () => {
     try {
       const parsed = JSON.parse(importText);
 
@@ -280,6 +280,23 @@ const ConfigImportExportModal = ({
         showAlert('error', '配置解析失败', '无法解析配置格式');
         return;
       }
+
+      // 批量检测成人内容
+      if (finalConfig.SourceConfig && finalConfig.SourceConfig.length > 0) {
+        try {
+          const names = finalConfig.SourceConfig.map((s) => s.name);
+          const adultFlags = await invoke<boolean[]>('is_adult_source', {
+            names,
+          });
+          finalConfig.SourceConfig = finalConfig.SourceConfig.map((s, idx) => ({
+            ...s,
+            is_adult: s.is_adult || adultFlags[idx],
+          }));
+        } catch (error) {
+          console.warn('批量成人内容检测失败:', error);
+        }
+      }
+
       onImport(finalConfig);
       setImportText('');
       onClose();
@@ -728,7 +745,7 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
     showAlert('success', '删除成功');
   };
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!newSource.key || !newSource.name || !newSource.api) {
       showAlert('error', '请填写完整信息');
       return;
@@ -737,9 +754,21 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
       showAlert('error', '源标识已存在');
       return;
     }
+
+    // 自动检测是否为成人内容
+    let isAdult = newSource.is_adult;
+    try {
+      const results = await invoke<boolean[]>('is_adult_source', {
+        names: [newSource.name],
+      });
+      isAdult = results[0] || newSource.is_adult;
+    } catch (error) {
+      console.warn('成人内容检测失败:', error);
+    }
+
     const newSources = [
       ...sources,
-      { ...newSource, from: 'custom', disabled: false },
+      { ...newSource, is_adult: isAdult, from: 'custom', disabled: false },
     ];
     setSources(newSources);
     saveChanges(newSources);
@@ -752,10 +781,22 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
     setEditingSource({ ...source });
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingSource) return;
+
+    // 自动检测是否为成人内容
+    let updatedSource = { ...editingSource };
+    try {
+      const results = await invoke<boolean[]>('is_adult_source', {
+        names: [editingSource.name],
+      });
+      updatedSource.is_adult = editingSource.is_adult || results[0];
+    } catch (error) {
+      console.warn('成人内容检测失败:', error);
+    }
+
     const newSources = sources.map((s) =>
-      s.key === editingSource.key ? editingSource : s,
+      s.key === editingSource.key ? updatedSource : s,
     );
     setSources(newSources);
     saveChanges(newSources);
@@ -1273,7 +1314,7 @@ const ConfigSubscription = ({
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!configContent.trim()) {
       showAlert('error', '配置内容不能为空');
       return;
@@ -1296,13 +1337,15 @@ const ConfigSubscription = ({
           },
         };
 
+        let sourceConfig: any[] = [];
+
         // 智能识别配置格式
         // 情况1: 标准 AdminConfig 格式 (包含 SourceConfig 字段)
         if (
           parsedContent.SourceConfig &&
           Array.isArray(parsedContent.SourceConfig)
         ) {
-          newConfig.SourceConfig = parsedContent.SourceConfig.map((s: any) => ({
+          sourceConfig = parsedContent.SourceConfig.map((s: any) => ({
             key:
               s.key ||
               s.name?.toLowerCase().replace(/\s+/g, '_') ||
@@ -1317,7 +1360,7 @@ const ConfigSubscription = ({
         }
         // 情况2: 包含 sites 字段的格式 (常见的订阅配置格式)
         else if (parsedContent.sites && Array.isArray(parsedContent.sites)) {
-          newConfig.SourceConfig = parsedContent.sites.map((s: any) => ({
+          sourceConfig = parsedContent.sites.map((s: any) => ({
             key:
               s.key ||
               s.name?.toLowerCase().replace(/\s+/g, '_') ||
@@ -1336,7 +1379,7 @@ const ConfigSubscription = ({
           parsedContent.length > 0 &&
           parsedContent[0].api
         ) {
-          newConfig.SourceConfig = parsedContent.map((s: any) => ({
+          sourceConfig = parsedContent.map((s: any) => ({
             key:
               s.key ||
               s.name?.toLowerCase().replace(/\s+/g, '_') ||
@@ -1354,7 +1397,7 @@ const ConfigSubscription = ({
           parsedContent.api_site &&
           typeof parsedContent.api_site === 'object'
         ) {
-          newConfig.SourceConfig = Object.entries(parsedContent.api_site).map(
+          sourceConfig = Object.entries(parsedContent.api_site).map(
             ([key, value]: [string, any]) => ({
               key: key,
               name: value.name || key,
@@ -1366,6 +1409,24 @@ const ConfigSubscription = ({
             }),
           );
         }
+
+        // 批量检测成人内容
+        if (sourceConfig.length > 0) {
+          try {
+            const names = sourceConfig.map((s) => s.name);
+            const adultFlags = await invoke<boolean[]>('is_adult_source', {
+              names,
+            });
+            sourceConfig = sourceConfig.map((s, idx) => ({
+              ...s,
+              is_adult: s.is_adult || adultFlags[idx],
+            }));
+          } catch (error) {
+            console.warn('批量成人内容检测失败:', error);
+          }
+        }
+
+        newConfig.SourceConfig = sourceConfig;
 
         // 如果解析的内容包含 CustomCategories，合并进去
         if (

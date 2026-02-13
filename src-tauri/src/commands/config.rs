@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::OnceLock;
 use tauri::State;
-
+use quantumtv_core::adult;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ConfigSubscribtion {
     pub url: String,
@@ -348,4 +348,10 @@ pub async fn set_user_preferences(
     );
 
     state.update_config(data.config)
+}
+
+// 是否为成人源 批量判断
+#[tauri::command]
+pub async fn is_adult_source(names: Vec<String>) -> Vec<bool> {
+    names.iter().map(|n| adult::is_adult_source(n)).collect()
 }
