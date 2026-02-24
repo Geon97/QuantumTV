@@ -1075,7 +1075,7 @@ pub async fn fetch_m3u8(
 
     // 如果启用了去广告，则调用 core 中的过滤函数
     let result = if enable_ad_block.unwrap_or(false) {
-        quantumtv_core::filter_ads_from_m3_u8(content)
+        quantumtv_core::filter_ads_from_m3_u8(&content)
     } else {
         content
     };

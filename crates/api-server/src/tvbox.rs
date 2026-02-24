@@ -864,7 +864,7 @@ pub async fn proxy_m3u8_handler(
     };
 
     // 使用 core crate 中的广告过滤函数
-    let filtered = filter_ads_from_m3_u8(content.clone());
+    let filtered = filter_ads_from_m3_u8(&content);
 
     // 重写 M3U8 中的 TS URL 为代理 URL
     let proxy_base = format!("http://{}:3000/api/proxy/ts?url=", SERVER_IP.as_str());
