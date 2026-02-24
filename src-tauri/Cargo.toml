@@ -36,6 +36,7 @@ tauri-plugin-http = "2"
 rusqlite = { version = "0.38.0", features = ["bundled"] }
 image = "0.24"
 moka = { version = "0.12", features = ["future"] }
+log = "0.4"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-global-shortcut = "2"

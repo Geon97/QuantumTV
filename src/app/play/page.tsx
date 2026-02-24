@@ -14,6 +14,7 @@ import {
   PreferBestSourceResponse,
   RustFavorite,
   SearchResult,
+  SkipAction,
 } from '@/lib/types';
 import { generateStorageKey, subscribeToDataUpdates } from '@/lib/utils';
 import { useProxyImage } from '@/hooks/useProxyImage';
@@ -682,6 +683,21 @@ function PlayPageClient() {
           // 设置播放器配置
           setBlockAdEnabled(initialState.block_ad_enabled);
           setOptimizationEnabled(initialState.optimization_enabled);
+
+          // 输出缓存统计信息
+          invoke<Record<string, { entry_count: number; weighted_size: number }>>(
+            'get_cache_stats',
+          )
+            .then((stats) => {
+              console.log(
+                '📊 缓存统计 | 视频缓存:',
+                stats.video.entry_count,
+                '条 | 搜索缓存:',
+                stats.search.entry_count,
+                '条',
+              );
+            })
+            .catch(console.error);
 
           // 更新 URL
           const newUrl = new URL(window.location.href);
@@ -1577,55 +1593,102 @@ function PlayPageClient() {
         setIsVideoLoading(false);
       });
 
-      // 监听视频时间更新事件，实现跳过片头片尾
-      artPlayerRef.current.on('video:timeupdate', () => {
-        if (!skipConfigRef.current.enable) return;
-
+      // 监听视频时间更新事件，实现跳过片头片尾 + 预载下一集
+      artPlayerRef.current.on('video:timeupdate', async () => {
         const currentTime = artPlayerRef.current.currentTime || 0;
         const duration = artPlayerRef.current.duration || 0;
         const now = Date.now();
 
-        // 限制跳过检查频率为1.5秒一次
+        // 限制检查频率为1.5秒一次
         if (now - lastSkipCheckRef.current < 1500) return;
         lastSkipCheckRef.current = now;
 
-        // 跳过片头
-        if (
-          skipConfigRef.current.intro_time > 0 &&
-          currentTime < skipConfigRef.current.intro_time &&
-          currentTime > 0.5 // 避免刚开始播放就触发
-        ) {
-          console.log(
-            '跳过片头: 从',
-            currentTime,
-            '跳到',
-            skipConfigRef.current.intro_time,
-          );
-          artPlayerRef.current.currentTime = skipConfigRef.current.intro_time;
-          artPlayerRef.current.notice.show = `✨ 已跳过片头，跳到 ${formatTime(
-            skipConfigRef.current.intro_time,
-          )}`;
+        // 1. 跳过片头片尾检测 (使用 Rust)
+        if (skipConfigRef.current.enable && duration > 0) {
+          try {
+            const skipAction = await invoke<SkipAction>('check_skip_action', {
+              introTime: skipConfigRef.current.intro_time,
+              outroTime: Math.abs(skipConfigRef.current.outro_time), // 转为正数
+              currentTime,
+              totalDuration: duration,
+            });
+
+            if (
+              typeof skipAction === 'object' &&
+              'SkipIntro' in skipAction &&
+              currentTime > 0.5
+            ) {
+              // 跳过片头
+              const targetTime = skipAction.SkipIntro;
+              console.log('跳过片头: 从', currentTime, '跳到', targetTime);
+              artPlayerRef.current.currentTime = targetTime;
+              artPlayerRef.current.notice.show = `✨ 已跳过片头，跳到 ${formatTime(targetTime)}`;
+            } else if (skipAction === 'SkipOutro' && currentTime < duration - 1) {
+              // 跳过片尾
+              console.log('跳过片尾: 在', currentTime, '触发跳转');
+              if (
+                currentEpisodeIndexRef.current <
+                (detailRef.current?.episodes?.length || 1) - 1
+              ) {
+                artPlayerRef.current.notice.show = `⏭️ 已跳过片尾，自动播放下一集`;
+                setTimeout(() => {
+                  handleNextEpisode();
+                }, 500);
+              } else {
+                artPlayerRef.current.notice.show = `✅ 已跳过片尾（已是最后一集）`;
+                artPlayerRef.current.pause();
+              }
+            }
+          } catch (err) {
+            console.error('跳过检测失败:', err);
+          }
         }
 
-        // 跳过片尾
-        if (
-          skipConfigRef.current.outro_time < 0 &&
-          duration > 0 &&
-          currentTime >= duration + skipConfigRef.current.outro_time &&
-          currentTime < duration - 1 // 避免在最后一秒重复触发
-        ) {
-          console.log('跳过片尾: 在', currentTime, '触发跳转');
+        // 2. 预载下一集逻辑 (播放到85%时触发)
+        if (duration > 0 && currentTime / duration >= 0.85) {
+          const detail = detailRef.current;
+          const currentIdx = currentEpisodeIndexRef.current;
+
           if (
-            currentEpisodeIndexRef.current <
-            (detailRef.current?.episodes?.length || 1) - 1
+            detail &&
+            detail.episodes &&
+            currentIdx < detail.episodes.length - 1
           ) {
-            artPlayerRef.current.notice.show = `⏭️ 已跳过片尾，自动播放下一集`;
-            setTimeout(() => {
-              handleNextEpisode();
-            }, 500);
-          } else {
-            artPlayerRef.current.notice.show = `✅ 已跳过片尾（已是最后一集）`;
-            artPlayerRef.current.pause();
+            // 只预载一次
+            const preloadKey = `${detail.source}_${detail.id}_${currentIdx + 1}`;
+            if (!(window as any).__preloaded) {
+              (window as any).__preloaded = new Set();
+            }
+
+            if (!(window as any).__preloaded.has(preloadKey)) {
+              (window as any).__preloaded.add(preloadKey);
+
+              try {
+                console.log('🚀 预载下一集:', currentIdx + 1);
+                await invoke('preload_next_episode', {
+                  source: detail.source,
+                  id: detail.id,
+                  currentEpisode: currentIdx,
+                  totalEpisodes: detail.episodes.length,
+                });
+                console.log('✅ 预载成功');
+
+                // 输出缓存统计
+                const stats = await invoke<
+                  Record<string, { entry_count: number; weighted_size: number }>
+                >('get_cache_stats');
+                console.log(
+                  '📊 预载后缓存统计 | 视频缓存:',
+                  stats.video.entry_count,
+                  '条 | 搜索缓存:',
+                  stats.search.entry_count,
+                  '条',
+                );
+              } catch (err) {
+                console.error('预载失败:', err);
+                // 预载失败不影响播放
+              }
+            }
           }
         }
       });

@@ -153,6 +153,25 @@ export interface SearchResult {
   douban_id?: number;
 }
 
+/** 聚合后的分组*/
+export interface AggregatedGroup {
+  representative: SearchResult;
+  episodes: number;
+  source_names: string[];
+  douban_id?: number;
+}
+
+/** 搜索过滤器*/
+export interface SearchFilter {
+  source: string;
+  title: string;
+  year: string;
+  year_order: 'none' | 'asc' | 'desc';
+}
+
+/** 跳过动作*/
+export type SkipAction = 'None' | { SkipIntro: number } | 'SkipOutro';
+
 // 豆瓣数据结构
 export interface DoubanItem {
   id: string;

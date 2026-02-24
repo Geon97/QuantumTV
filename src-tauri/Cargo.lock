@@ -3076,6 +3076,7 @@ name = "quantumtv"
 version = "0.3.2"
 dependencies = [
  "image",
+ "log",
  "moka",
  "quantumtv-core",
  "regex",

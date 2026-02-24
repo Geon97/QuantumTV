@@ -89,12 +89,19 @@ pub fn run() {
             commands::config::get_user_preferences,
             commands::config::set_user_preferences,
             commands::search::get_search_suggestions,
+            commands::search::aggregate_search_results_command,
+            commands::search::filter_and_sort_results,
             commands::config::is_adult_source,
+            // 跳过片头片尾
+            commands::skip::check_skip_action,
+            // 预载下一集
+            commands::preload::preload_next_episode,
             // 视频
             commands::video::search,
             commands::video::get_video_detail,
             commands::video::get_video_detail_optimized,
             commands::video::initialize_player_view,
+            commands::video::get_cache_stats,
             commands::video::proxy_image,
             commands::video::fetch_url,
             commands::video::fetch_binary,

@@ -6,7 +6,7 @@ import { ChevronUp, Search, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
-import { SearchResult } from '@/lib/types';
+import { AggregatedGroup, SearchFilter, SearchResult } from '@/lib/types';
 import { subscribeToDataUpdates } from '@/lib/utils';
 import { useImagePreload } from '@/hooks/useImagePreload';
 
@@ -62,15 +62,9 @@ function SearchPageClient() {
   const pendingResultsRef = useRef<SearchResult[]>([]);
   const flushTimerRef = useRef<number | null>(null);
   const [useFluidSearch, setUseFluidSearch] = useState(true);
-  // 聚合卡片 refs 与聚合统计缓存
+  // 聚合卡片 refs
   const groupRefs = useRef<
     Map<string, React.RefObject<VideoCardHandle | null>>
-  >(new Map());
-  const groupStatsRef = useRef<
-    Map<
-      string,
-      { douban_id?: number; episodes?: number; source_names: string[] }
-    >
   >(new Map());
 
   const getGroupRef = (key: string) => {
@@ -82,47 +76,11 @@ function SearchPageClient() {
     return ref;
   };
 
-  const computeGroupStats = (group: SearchResult[]) => {
-    const episodes = (() => {
-      const countMap = new Map<number, number>();
-      group.forEach((g) => {
-        const len = g.episodes?.length || 0;
-        if (len > 0) countMap.set(len, (countMap.get(len) || 0) + 1);
-      });
-      let max = 0;
-      let res = 0;
-      countMap.forEach((v, k) => {
-        if (v > max) {
-          max = v;
-          res = k;
-        }
-      });
-      return res;
-    })();
-    const source_names = Array.from(
-      new Set(group.map((g) => g.source_name).filter(Boolean)),
-    ) as string[];
+  // 聚合结果状态 (from Rust)
+  const [aggregatedGroups, setAggregatedGroups] = useState<
+    Map<string, AggregatedGroup>
+  >(new Map());
 
-    const douban_id = (() => {
-      const countMap = new Map<number, number>();
-      group.forEach((g) => {
-        if (g.douban_id && g.douban_id > 0) {
-          countMap.set(g.douban_id, (countMap.get(g.douban_id) || 0) + 1);
-        }
-      });
-      let max = 0;
-      let res: number | undefined;
-      countMap.forEach((v, k) => {
-        if (v > max) {
-          max = v;
-          res = k;
-        }
-      });
-      return res;
-    })();
-
-    return { episodes, source_names, douban_id };
-  };
   // 过滤器：非聚合与聚合
   const [filterAll, setFilterAll] = useState(
     isReturning
@@ -149,140 +107,42 @@ function SearchPageClient() {
     isReturning ? globalSearchUIState.viewMode : 'agg',
   );
 
-  // 简化的年份排序：unknown/空值始终在最后
-  const compareYear = (
-    aYear: string,
-    bYear: string,
-    order: 'none' | 'asc' | 'desc',
-  ) => {
-    // 如果是无排序状态，返回0（保持原顺序）
-    if (order === 'none') return 0;
-
-    // 处理空值和unknown
-    const aIsEmpty = !aYear || aYear === 'unknown';
-    const bIsEmpty = !bYear || bYear === 'unknown';
-
-    if (aIsEmpty && bIsEmpty) return 0;
-    if (aIsEmpty) return 1; // a 在后
-    if (bIsEmpty) return -1; // b 在后
-
-    // 都是有效年份，按数字比较
-    const aNum = parseInt(aYear, 10);
-    const bNum = parseInt(bYear, 10);
-
-    return order === 'asc' ? aNum - bNum : bNum - aNum;
-  };
-
-  // 聚合后的结果（按标题和年份分组）
-  // ✨ 只聚合相关度较高的结果（标题包含关键词或模糊匹配）
-  const aggregatedResults = useMemo(() => {
-    const query = currentQueryRef.current.trim().toLowerCase();
-    const queryNoSpace = query.replace(/\s+/g, '');
-
-    const normQuery = normalizedQuery
-      ? normalizedQuery.trim().toLowerCase()
-      : query;
-    const normQueryNoSpace = normQuery.replace(/\s+/g, '');
-
-    // 过滤：只保留标题相关的结果
-    const relevantResults = searchResults.filter((item) => {
-      const title = item.title.toLowerCase();
-      const titleNoSpace = title.replace(/\s+/g, '');
-
-      // 包含完整关键词 (检查原词和转换后的词)
-      if (
-        title.includes(query) ||
-        titleNoSpace.includes(queryNoSpace) ||
-        title.includes(normQuery) ||
-        titleNoSpace.includes(normQueryNoSpace)
-      ) {
-        return true;
-      }
-
-      // 顺序包含关键词的所有字符 (检查原词)
-      let queryIndex = 0;
-      for (
-        let i = 0;
-        i < titleNoSpace.length && queryIndex < queryNoSpace.length;
-        i++
-      ) {
-        if (titleNoSpace[i] === queryNoSpace[queryIndex]) {
-          queryIndex++;
-        }
-      }
-      if (queryIndex === queryNoSpace.length) return true;
-
-      // 顺序包含关键词的所有字符 (检查转换后的词)
-      if (normQuery !== query) {
-        let normIndex = 0;
-        for (
-          let i = 0;
-          i < titleNoSpace.length && normIndex < normQueryNoSpace.length;
-          i++
-        ) {
-          if (titleNoSpace[i] === normQueryNoSpace[normIndex]) {
-            normIndex++;
-          }
-        }
-        if (normIndex === normQueryNoSpace.length) return true;
-      }
-
-      return false;
-    });
-
-    const map = new Map<string, SearchResult[]>();
-    const keyOrder: string[] = []; // 记录键出现的顺序
-
-    relevantResults.forEach((item) => {
-      // 使用 title + year + type 作为键，year 必然存在，但依然兜底 'unknown'
-      const key = `${item.title.replaceAll(' ', '')}-${
-        item.year || 'unknown'
-      }-${item.episodes.length === 1 ? 'movie' : 'tv'}`;
-      const arr = map.get(key) || [];
-
-      // 如果是新的键，记录其顺序
-      if (arr.length === 0) {
-        keyOrder.push(key);
-      }
-
-      arr.push(item);
-      map.set(key, arr);
-    });
-
-    // 按出现顺序返回聚合结果
-    return keyOrder.map(
-      (key) => [key, map.get(key)!] as [string, SearchResult[]],
-    );
-  }, [searchResults]);
-
-  // 当聚合结果变化时，如果某个聚合已存在，则调用其卡片 ref 的 set 方法增量更新
+  // 当搜索结果变化时，调用 Rust 进行聚合
   useEffect(() => {
-    aggregatedResults.forEach(([mapKey, group]) => {
-      const stats = computeGroupStats(group);
-      const prev = groupStatsRef.current.get(mapKey);
-      if (!prev) {
-        // 第一次出现，记录初始值，不调用 ref（由初始 props 渲染）
-        groupStatsRef.current.set(mapKey, stats);
-        return;
-      }
-      // 对比变化并调用对应的 set 方法
-      const ref = groupRefs.current.get(mapKey);
-      if (ref && ref.current) {
-        if (prev.episodes !== stats.episodes) {
-          ref.current.setEpisodes(stats.episodes);
-        }
-        const prevNames = (prev.source_names || []).join('|');
-        const nextNames = (stats.source_names || []).join('|');
-        if (prevNames !== nextNames) {
-          ref.current.setSourceNames(stats.source_names);
-        }
-        if (prev.douban_id !== stats.douban_id) {
-          ref.current.setDoubanId(stats.douban_id);
-        }
-        groupStatsRef.current.set(mapKey, stats);
-      }
-    });
-  }, [aggregatedResults]);
+    if (searchResults.length === 0) {
+      setAggregatedGroups(new Map());
+      return;
+    }
+
+    const query = currentQueryRef.current;
+    invoke<Record<string, AggregatedGroup>>(
+      'aggregate_search_results_command',
+      {
+        results: searchResults,
+        query,
+        normalizedQuery: normalizedQuery || null,
+      },
+    )
+      .then((aggregatedMap) => {
+        setAggregatedGroups(new Map(Object.entries(aggregatedMap)));
+
+        // 输出缓存统计信息
+        invoke<Record<string, { entry_count: number; weighted_size: number }>>(
+          'get_cache_stats',
+        )
+          .then((stats) => {
+            console.log(
+              '📊 缓存统计 | 视频缓存:',
+              stats.video.entry_count,
+              '条 | 搜索缓存:',
+              stats.search.entry_count,
+              '条',
+            );
+          })
+          .catch(console.error);
+      })
+      .catch(console.error);
+  }, [searchResults, normalizedQuery]);
 
   // 构建筛选选项
   const filterOptions = useMemo(() => {
@@ -339,81 +199,31 @@ function SearchPageClient() {
     return { categoriesAll, categoriesAgg };
   }, [searchResults]);
 
-  // 非聚合：应用筛选与排序
-  const filteredAllResults = useMemo(() => {
-    const { source, title, year, yearOrder } = filterAll;
-    const filtered = searchResults.filter((item) => {
-      if (source !== 'all' && item.source !== source) return false;
-      if (title !== 'all' && item.title !== title) return false;
-      if (year !== 'all' && item.year !== year) return false;
-      return true;
-    });
+  // 非聚合：应用筛选与排序 (使用 Rust)
+  const [filteredAllResults, setFilteredAllResults] = useState<SearchResult[]>(
+    [],
+  );
 
-    // 如果是无排序状态，直接返回过滤后的原始顺序
-    if (yearOrder === 'none') {
-      return filtered;
+  useEffect(() => {
+    if (searchResults.length === 0) {
+      setFilteredAllResults([]);
+      return;
     }
 
-    // 简化排序：1. 年份排序，2. 年份相同时精确匹配在前，3. 标题排序
-    return filtered.sort((a, b) => {
-      // 首先按年份排序
-      const yearComp = compareYear(a.year, b.year, yearOrder);
-      if (yearComp !== 0) return yearComp;
+    const filter: SearchFilter = {
+      source: filterAll.source,
+      title: filterAll.title,
+      year: filterAll.year,
+      year_order: filterAll.yearOrder as 'none' | 'asc' | 'desc',
+    };
 
-      // 年份相同时，精确匹配在前
-      const aExactMatch = a.title === searchQuery.trim();
-      const bExactMatch = b.title === searchQuery.trim();
-      if (aExactMatch && !bExactMatch) return -1;
-      if (!aExactMatch && bExactMatch) return 1;
-
-      // 最后按标题排序，正序时字母序，倒序时反字母序
-      return yearOrder === 'asc'
-        ? a.title.localeCompare(b.title)
-        : b.title.localeCompare(a.title);
-    });
-  }, [searchResults, filterAll, searchQuery]);
-
-  // 聚合：应用筛选与排序
-  const filteredAggResults = useMemo(() => {
-    const { source, title, year, yearOrder } = filterAgg as any;
-    const filtered = aggregatedResults.filter(([_, group]) => {
-      const gTitle = group[0]?.title ?? '';
-      const gYear = group[0]?.year ?? 'unknown';
-      const hasSource =
-        source === 'all' ? true : group.some((item) => item.source === source);
-      if (!hasSource) return false;
-      if (title !== 'all' && gTitle !== title) return false;
-      if (year !== 'all' && gYear !== year) return false;
-      return true;
-    });
-
-    // 如果是无排序状态，保持按关键字+年份+类型出现的原始顺序
-    if (yearOrder === 'none') {
-      return filtered;
-    }
-
-    // 简化排序：1. 年份排序，2. 年份相同时精确匹配在前，3. 标题排序
-    return filtered.sort((a, b) => {
-      // 首先按年份排序
-      const aYear = a[1][0].year;
-      const bYear = b[1][0].year;
-      const yearComp = compareYear(aYear, bYear, yearOrder);
-      if (yearComp !== 0) return yearComp;
-
-      // 年份相同时，精确匹配在前
-      const aExactMatch = a[1][0].title === searchQuery.trim();
-      const bExactMatch = b[1][0].title === searchQuery.trim();
-      if (aExactMatch && !bExactMatch) return -1;
-      if (!aExactMatch && bExactMatch) return 1;
-
-      // 最后按标题排序，正序时字母序，倒序时反字母序
-      const aTitle = a[1][0].title;
-      const bTitle = b[1][0].title;
-      return yearOrder === 'asc'
-        ? aTitle.localeCompare(bTitle)
-        : bTitle.localeCompare(aTitle);
-    });
-  }, [aggregatedResults, filterAgg, searchQuery]);
+    invoke<SearchResult[]>('filter_and_sort_results', {
+      results: searchResults,
+      filter,
+    })
+      .then(setFilteredAllResults)
+      .catch(console.error);
+  }, [searchResults, filterAll]);
 
   useEffect(() => {
     // 无搜索参数时聚焦搜索框
@@ -427,7 +237,9 @@ function SearchPageClient() {
     // 读取流式搜索设置 - 从用户偏好配置读取
     const loadFluidSearchSetting = async () => {
       try {
-        const prefs = await invoke<{ fluid_search: boolean }>('get_user_preferences');
+        const prefs = await invoke<{ fluid_search: boolean }>(
+          'get_user_preferences',
+        );
         setUseFluidSearch(prefs.fluid_search);
       } catch (error) {
         console.error('读取流式搜索设置失败:', error);
@@ -835,45 +647,40 @@ function SearchPageClient() {
                   className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] sm:gap-x-8'
                 >
                   {viewMode === 'agg'
-                    ? filteredAggResults.map(([mapKey, group]) => {
-                        const title = group[0]?.title || '';
-                        const poster = group[0]?.poster || '';
-                        const year = group[0]?.year || 'unknown';
-                        const { episodes, source_names, douban_id } =
-                          computeGroupStats(group);
-                        const type = episodes === 1 ? 'movie' : 'tv';
+                    ? Array.from(aggregatedGroups.entries()).map(
+                        ([mapKey, group]) => {
+                          const rep = group.representative;
+                          const title = rep.title || '';
+                          const poster = rep.poster || '';
+                          const year = rep.year || 'unknown';
+                          const episodes = group.episodes;
+                          const source_names = group.source_names;
+                          const douban_id = group.douban_id;
+                          const type = episodes === 1 ? 'movie' : 'tv';
 
-                        // 如果该聚合第一次出现，写入初始统计
-                        if (!groupStatsRef.current.has(mapKey)) {
-                          groupStatsRef.current.set(mapKey, {
-                            episodes,
-                            source_names,
-                            douban_id,
-                          });
-                        }
-
-                        return (
-                          <div key={`agg-${mapKey}`} className='w-full'>
-                            <VideoCard
-                              ref={getGroupRef(mapKey)}
-                              from='search'
-                              isAggregate={true}
-                              title={title}
-                              poster={poster}
-                              year={year}
-                              episodes={episodes}
-                              source_names={source_names}
-                              douban_id={douban_id}
-                              query={
-                                searchQuery.trim() !== title
-                                  ? searchQuery.trim()
-                                  : ''
-                              }
-                              type={type}
-                            />
-                          </div>
-                        );
-                      })
+                          return (
+                            <div key={`agg-${mapKey}`} className='w-full'>
+                              <VideoCard
+                                ref={getGroupRef(mapKey)}
+                                from='search'
+                                isAggregate={true}
+                                title={title}
+                                poster={poster}
+                                year={year}
+                                episodes={episodes}
+                                source_names={source_names}
+                                douban_id={douban_id}
+                                query={
+                                  searchQuery.trim() !== title
+                                    ? searchQuery.trim()
+                                    : ''
+                                }
+                                type={type}
+                              />
+                            </div>
+                          );
+                        },
+                      )
                     : filteredAllResults.map((item) => (
                         <div
                           key={`all-${item.source}-${item.id}`}

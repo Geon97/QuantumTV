@@ -19,6 +19,13 @@ use uuid::Uuid;
 use quantumtv_core::types::SearchResult;
 use quantumtv_core::{prefer_best_source, test_video_source, SourceTestResult};
 
+/// 缓存统计信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheStats {
+    pub entry_count: u64,
+    pub weighted_size: u64,
+}
+
 pub struct VideoCacheManager {
     pub cache: Cache<String, Vec<u8>>,
 }
@@ -37,11 +44,23 @@ impl VideoCacheManager {
     }
 
     pub async fn get(&self, url: &str) -> Option<Vec<u8>> {
-        self.cache.get(url).await
+        let result = self.cache.get(url).await;
+        if result.is_some() {
+            log::debug!("视频缓存命中: {}", url);
+        }
+        result
     }
 
     pub async fn set(&self, url: String, data: Vec<u8>) {
+        log::debug!("视频缓存写入: {} ({} bytes)", url, data.len());
         self.cache.insert(url, data).await;
+    }
+
+    pub fn stats(&self) -> CacheStats {
+        CacheStats {
+            entry_count: self.cache.entry_count(),
+            weighted_size: self.cache.weighted_size(),
+        }
     }
 }
 
@@ -61,16 +80,28 @@ impl SearchCacheManager {
 
     pub async fn get(&self, query: &str) -> Option<Vec<SearchResult>> {
         let key = Self::normalize_key(query);
-        self.cache.get(&key).await
+        let result = self.cache.get(&key).await;
+        if result.is_some() {
+            log::debug!("搜索缓存命中: {}", query);
+        }
+        result
     }
 
     pub async fn set(&self, query: String, results: Vec<SearchResult>) {
         let key = Self::normalize_key(&query);
+        log::debug!("搜索缓存写入: {} ({} 条结果)", query, results.len());
         self.cache.insert(key, results).await;
     }
 
     fn normalize_key(query: &str) -> String {
         query.trim().to_lowercase()
+    }
+
+    pub fn stats(&self) -> CacheStats {
+        CacheStats {
+            entry_count: self.cache.entry_count(),
+            weighted_size: self.cache.weighted_size(),
+        }
     }
 }
 
@@ -1700,4 +1731,23 @@ pub async fn initialize_player_view(
         block_ad_enabled,
         optimization_enabled,
     })
+}
+
+/// 获取缓存统计信息
+#[tauri::command]
+pub fn get_cache_stats(
+    video_cache: State<'_, VideoCacheManager>,
+    search_cache: State<'_, SearchCacheManager>,
+) -> Result<HashMap<String, CacheStats>, String> {
+    let mut stats = HashMap::new();
+    stats.insert("video".to_string(), video_cache.stats());
+    stats.insert("search".to_string(), search_cache.stats());
+
+    log::info!(
+        "缓存统计 - 视频: {} 条目, 搜索: {} 条目",
+        stats["video"].entry_count,
+        stats["search"].entry_count
+    );
+
+    Ok(stats)
 }
