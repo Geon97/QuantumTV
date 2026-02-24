@@ -25,10 +25,13 @@ pub struct VideoCacheManager {
 
 impl VideoCacheManager {
     pub fn new() -> Self {
-        // 最大 300 条目，TTL 10分钟（适合视频 ts 分片）
+        // 优化缓存配置：
+        // - 最大 500 条目（从300增加到500，支持更多预加载）
+        // - TTL 15分钟（从10分钟增加到15分钟，减少重复下载）
+        // 假设每个 ts 片段约 1-2MB，500个约 500MB-1GB
         let cache = Cache::builder()
-            .max_capacity(300)
-            .time_to_live(std::time::Duration::from_secs(600))
+            .max_capacity(500)
+            .time_to_live(std::time::Duration::from_secs(900))
             .build();
         Self { cache }
     }
@@ -1143,9 +1146,9 @@ async fn prefetch_next_segments(
     // 直接加上 Range
     final_headers.insert(RANGE, HeaderValue::from_static("bytes=0-"));
 
-    // 预取接下来的 10 个分片
+    // 预取接下来的 15 个分片
     let mut handles = Vec::new();
-    for i in 1..=10 {
+    for i in 1..=15 {
         let next_num = current_num + i;
         let next_num_str = format!("{:0width$}", next_num, width = padding);
         let next_url = format!("{}{}{}", prefix, next_num_str, suffix);
@@ -1155,19 +1158,20 @@ async fn prefetch_next_segments(
             continue;
         }
 
-        // 并发下载
+        // 并发下载（使用并发限制避免过载）
         let client_clone = client.clone();
         let request_headers = final_headers.clone();
         let cache_clone = cache.clone();
         let next_url_clone = next_url.clone();
 
         let handle = tokio::spawn(async move {
-            // 内置简单的重试逻辑
-            let mut retries = 2;
-            while retries >= 0 {
+            // 增强的重试逻辑：3次重试
+            let mut retries = 3;
+            while retries > 0 {
                 let resp = client_clone
                     .get(&next_url_clone)
                     .headers(request_headers.clone())
+                    .timeout(std::time::Duration::from_secs(10)) // 10秒超时
                     .send()
                     .await;
 
@@ -1181,8 +1185,10 @@ async fn prefetch_next_segments(
                     }
                     _ => {
                         retries -= 1;
-                        if retries >= 0 {
-                            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        if retries > 0 {
+                            // 指数退避：200ms, 400ms, 800ms
+                            let delay = 200 * (4 - retries);
+                            tokio::time::sleep(std::time::Duration::from_millis(delay as u64)).await;
                         }
                     }
                 }

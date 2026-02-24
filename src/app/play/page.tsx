@@ -1329,7 +1329,27 @@ function PlayPageClient() {
             const hls = new Hls({
               debug: false, // 关闭日志
               enableWorker: true, // WebWorker 解码，降低主线程压力
-              lowLatencyMode: true, // 开启低延迟 LL-HLS
+              lowLatencyMode: false, // 关闭低延迟模式以优化缓冲
+
+              // 预加载和缓冲优化
+              maxBufferLength: 90, // 最大缓冲90秒（配合Rust预加载15个片段）
+              maxMaxBufferLength: 180, // 极限缓冲180秒
+              maxBufferSize: 150 * 1000 * 1000, // 150MB缓冲大小
+              maxBufferHole: 0.5, // 允许0.5秒的缓冲空洞
+
+              // 预加载策略
+              startLevel: -1, // 自动选择起始质量级别
+              autoStartLoad: true, // 自动开始加载
+              startPosition: -1, // 从当前位置开始
+
+              // 片段加载优化
+              maxFragLookUpTolerance: 0.25, // 片段查找容差优化
+              progressive: true, // 渐进式下载
+
+              // ABR（自适应码率）优化
+              abrEwmaDefaultEstimate: 500000, // 默认带宽估计 500kbps
+              abrBandWidthFactor: 0.95, // 带宽安全系数
+              abrBandWidthUpFactor: 0.7, // 带宽提升因子
 
               /* 自定义loader - 使用 Tauri fetch_binary（带缓存和预取） */
               loader: TauriHlsJsLoader,
