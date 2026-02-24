@@ -356,7 +356,7 @@ pub async fn search(
     // 仅在启用 FluidSearch 时才使用流式输出
     let use_streaming = fluid_search;
 
-    let sites = if let Some(source_config) = config.get("SourceConfig").and_then(|v| v.as_array()) {
+    let mut sites = if let Some(source_config) = config.get("SourceConfig").and_then(|v| v.as_array()) {
         source_config
             .iter()
             .filter_map(|s| {
@@ -383,12 +383,24 @@ pub async fn search(
         return Ok(vec![]);
     }
 
-    let total_sources = sites.len() as i32;
+    // 读取过滤配置
     let disable_yellow_filter = config
         .get("UserPreferences")
         .and_then(|v| v.get("disable_yellow_filter"))
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+
+    // 如果启用过滤（disable_yellow_filter=false），在搜索前就过滤掉18+的源
+    if !disable_yellow_filter {
+        sites.retain(|site| !site.is_adult.unwrap_or(false));
+    }
+
+    // 过滤后如果没有源了，直接返回
+    if sites.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let total_sources = sites.len() as i32;
 
     // 限制并发数：最多同时请求 20 个源，充分利用并发
     let semaphore = Arc::new(Semaphore::new(20));
@@ -408,6 +420,8 @@ pub async fn search(
             None
         };
         let completed = completed.clone();
+        // 克隆过滤配置到闭包中
+        let disable_filter = disable_yellow_filter;
 
         let handle = tokio::spawn(async move {
             let _permit = semaphore.acquire().await.ok()?;
@@ -506,6 +520,15 @@ pub async fn search(
                     .collect::<Vec<SearchResult>>();
             }
 
+            // 在流式输出前进行内容关键词过滤（源已经在搜索前过滤了）
+            if !disable_filter {
+                source_results.retain(|res| {
+                    let type_name = res.type_name.as_deref().unwrap_or("");
+                    // 只需要检查关键词，因为18+源已经在搜索前被过滤掉了
+                    !YELLOW_WORDS.iter().any(|w| type_name.contains(w))
+                });
+            }
+
             // 如果启用了流式搜索，立即发送该源的搜索结果给前端
             if let Some(app_handle) = &app_handle_opt {
                 // 尝试获取窗口 - 兼容桌面端和移动端
@@ -546,15 +569,10 @@ pub async fn search(
     for res in all_results {
         let key = format!("{}|{}", res.source, res.id);
         if seen.insert(key) {
-            // Filter adult if needed
+            // 按关键词筛选成人内容
             if !disable_yellow_filter {
                 let type_name = res.type_name.as_deref().unwrap_or("");
-                let is_adult_site = sites
-                    .iter()
-                    .find(|s| s.key == res.source)
-                    .and_then(|s| s.is_adult)
-                    .unwrap_or(false);
-                if is_adult_site || YELLOW_WORDS.iter().any(|w| type_name.contains(w)) {
+                if YELLOW_WORDS.iter().any(|w| type_name.contains(w)) {
                     continue;
                 }
             }

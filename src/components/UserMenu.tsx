@@ -94,6 +94,7 @@ export const UserMenu: React.FC = () => {
   const [doubanProxyUrl, setDoubanProxyUrl] = useState('');
   const [enableOptimization, setEnableOptimization] = useState(true);
   const [fluidSearch, setFluidSearch] = useState(true);
+  const [filterAdultContent, setFilterAdultContent] = useState(true);
   const [playerBufferMode, setPlayerBufferMode] = useState<
     'standard' | 'enhanced' | 'max'
   >('standard');
@@ -155,6 +156,7 @@ export const UserMenu: React.FC = () => {
     const loadUserPreferences = async () => {
       try {
         const prefs = await invoke<{
+          disable_yellow_filter: boolean;
           douban_data_source: string;
           douban_proxy_url: string;
           douban_image_proxy_type: string;
@@ -171,11 +173,15 @@ export const UserMenu: React.FC = () => {
         setDoubanImageProxyUrl(prefs.douban_image_proxy_url);
         setEnableOptimization(prefs.enable_optimization);
         setFluidSearch(prefs.fluid_search);
+        // disable_yellow_filter=false 表示开启过滤，所以需要反转
+        setFilterAdultContent(!prefs.disable_yellow_filter);
         setHasSeenAnnouncement(prefs.has_seen_announcement);
 
         // 类型守卫：确保 player_buffer_mode 是有效值
         const validBufferModes = ['standard', 'enhanced', 'max'] as const;
-        const bufferMode = validBufferModes.includes(prefs.player_buffer_mode as any)
+        const bufferMode = validBufferModes.includes(
+          prefs.player_buffer_mode as any,
+        )
           ? (prefs.player_buffer_mode as 'standard' | 'enhanced' | 'max')
           : 'standard';
         setPlayerBufferMode(bufferMode);
@@ -339,6 +345,7 @@ export const UserMenu: React.FC = () => {
       douban_image_proxy_url: string;
       enable_optimization: boolean;
       fluid_search: boolean;
+      disable_yellow_filter: boolean;
       player_buffer_mode: string;
       has_seen_announcement: string;
     }>,
@@ -370,6 +377,8 @@ export const UserMenu: React.FC = () => {
         douban_image_proxy_url: doubanImageProxyUrl,
         enable_optimization: enableOptimization,
         fluid_search: fluidSearch,
+        // filterAdultContent=true 表示开启过滤，所以 disable_yellow_filter 要为 false
+        disable_yellow_filter: !filterAdultContent,
         player_buffer_mode: playerBufferMode,
         has_seen_announcement: hasSeenAnnouncement,
         ...updates, // 应用更新
@@ -395,6 +404,12 @@ export const UserMenu: React.FC = () => {
   const handleFluidSearchToggle = async (value: boolean) => {
     setFluidSearch(value);
     saveUserPreferences({ fluid_search: value });
+  };
+
+  const handleFilterAdultContentToggle = async (value: boolean) => {
+    setFilterAdultContent(value);
+    // value=true 表示开启过滤，所以 disable_yellow_filter 要为 false
+    saveUserPreferences({ disable_yellow_filter: !value });
   };
 
   const handleDoubanDataSourceChange = (value: string) => {
@@ -447,6 +462,7 @@ export const UserMenu: React.FC = () => {
 
     setEnableOptimization(true);
     setFluidSearch(defaultFluidSearch);
+    setFilterAdultContent(true);
     setDoubanProxyUrl(defaultDoubanProxy);
     setDoubanDataSource(defaultDoubanProxyType);
     setDoubanImageProxyType(defaultDoubanImageProxyType);
@@ -457,6 +473,7 @@ export const UserMenu: React.FC = () => {
     await saveUserPreferences({
       enable_optimization: true,
       fluid_search: defaultFluidSearch,
+      disable_yellow_filter: false, // false 表示开启过滤
       douban_proxy_url: defaultDoubanProxy,
       douban_data_source: defaultDoubanProxyType,
       douban_image_proxy_type: defaultDoubanImageProxyType,
@@ -850,6 +867,32 @@ export const UserMenu: React.FC = () => {
                     className='sr-only peer'
                     checked={fluidSearch}
                     onChange={(e) => handleFluidSearchToggle(e.target.checked)}
+                  />
+                  <div className='w-11 h-6 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600'></div>
+                  <div className='absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform peer-checked:translate-x-5'></div>
+                </div>
+              </label>
+            </div>
+
+            {/* 18+ 内容过滤 */}
+            <div className='flex items-center justify-between'>
+              <div>
+                <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                  过滤 18+ 内容
+                </h4>
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                  启用后将自动过滤成人内容源
+                </p>
+              </div>
+              <label className='flex items-center cursor-pointer'>
+                <div className='relative'>
+                  <input
+                    type='checkbox'
+                    className='sr-only peer'
+                    checked={filterAdultContent}
+                    onChange={(e) =>
+                      handleFilterAdultContentToggle(e.target.checked)
+                    }
                   />
                   <div className='w-11 h-6 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600'></div>
                   <div className='absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform peer-checked:translate-x-5'></div>
