@@ -1,4 +1,4 @@
-<!-- markdownlint-disable MD033 MD026 MD034 -->
+﻿<!-- markdownlint-disable MD033 MD026 MD034 -->
 
 > ⚖️ 本项目为开源、本地优先的软件，仅用于学习 Rust / Tauri / 现代 Web 技术与技术研究，不提供任何影视内容。
 
@@ -104,6 +104,106 @@ QuantumTV 采用现代化的混合应用架构，在一个代码仓库中管理�
 - `cache_time`: 接口缓存时间（秒）。
 - `api_site`: 资源站列表。`key` 为唯一标识，`api` 为资源站 VOD 接口地址，`name` 为显示名称。
 - `custom_category`: 自定义首页分类。
+
+## TVBox 配置
+
+QuantumTV API 提供 TVBox 标准配置接口：`/api/tvbox`。
+
+- 默认订阅源优先级:
+  `subscriptionUrl` 参数 > `PARSES_FILE` 文件存在 > `PARSES_URL`
+- 常用参数:
+  `forceSpiderRefresh=1` 强制刷新 Spider JAR
+  `subscriptionUrl=<url>` 临时覆盖订阅源
+- 环境变量:
+  `PARSES_FILE` 指向导入的订阅文件（建议绝对路径）
+  `PARSES_URL` 作为文件不存在时的兜底订阅源
+
+示例：
+
+```text
+http://<host>:3000/api/tvbox
+http://<host>:3000/api/tvbox?subscriptionUrl=https://example.com/sub.json
+```
+
+### Docker 部署
+
+使用 `docker compose` 方式部署：
+
+```bash
+docker compose up -d
+```
+
+如果需要手动拉取镜像：
+
+```bash
+docker pull ghcr.io/geon97/quantumtv:latest
+```
+
+`docker-compose.yml` 示例：
+
+```yaml
+version: '3.8'
+
+services:
+  api:
+    image: ghcr.io/geon97/quantumtv:latest
+    container_name: quantumtv-api
+    ports:
+      - '3086:3000'
+    environment:
+      - RUST_LOG=info
+      # 默认订阅源
+      - PARSES_URL=http://127.0.0.1
+      # 默认订阅源文件，如果设置了，则不使用 PARSES_URL
+      # 使用quantumtv app 导入的源文件即可
+      - PARSES_FILE=/data/data.json
+      # 服务器监听地址
+      - SERVER_IP=127.0.0.1
+      - BIND_ADDR=0.0.0.0
+    volumes:
+      # 挂载订阅源文件
+      - ./crates/api-server/data.json:/data/data.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - quantumtv-network
+
+networks:
+  quantumtv-network:
+    driver: bridge
+```
+
+配置说明：
+
+- `image`: 使用已发布镜像版本
+- `ports`: 本地 `3086` 映射到容器 `3000`
+- `environment`: 服务运行参数与订阅源配置
+- `healthcheck`: 服务健康检查
+- `restart`: 容器自动重启策略
+- `networks`: 自定义桥接网络
+
+如果要在容器内使用文件订阅源，建议挂载并指定绝对路径，例如：
+
+```yaml
+services:
+  api:
+    environment:
+      - PARSES_FILE=/data/data.json
+    volumes:
+      - ./crates/api-server/data.json:/data/data.json:ro
+```
+
+## Rust + Axum 优势
+
+- 高性能、低内存占用，适合高并发 API 服务
+- 异步模型清晰（Tokio 生态），吞吐稳定
+- 强类型路由与参数提取，错误更早暴露
+- 中间件生态成熟，易于加日志、限流、鉴权
 
 ## ⌨️ 快捷键说明
 

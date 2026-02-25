@@ -1,4 +1,4 @@
-name: QuantumTV
+name: QuantumTV-API
 
 on:
   push:

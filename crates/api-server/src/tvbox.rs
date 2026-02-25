@@ -1,5 +1,5 @@
 use axum::extract::{Json, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use base64::Engine;
 use quantumtv_core::is_adult_source;
@@ -235,6 +235,26 @@ fn is_private_host(url: &str) -> bool {
         lower.contains("localhost") || lower.contains("127.") || lower.contains("10.")
     } else {
         true
+    }
+}
+
+fn header_value(headers: &HeaderMap, key: &str) -> Option<String> {
+    headers
+        .get(key)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.split(',').next().unwrap_or(value).trim().to_string())
+}
+
+fn resolve_base_url(headers: &HeaderMap) -> String {
+    let proto = header_value(headers, "x-forwarded-proto").unwrap_or_else(|| "http".to_string());
+    let host = header_value(headers, "x-forwarded-host")
+        .or_else(|| header_value(headers, "host"))
+        .unwrap_or_else(|| SERVER_IP.as_str().to_string());
+
+    if host.starts_with("http://") || host.starts_with("https://") {
+        host
+    } else {
+        format!("{}://{}", proto, host)
     }
 }
 
@@ -616,10 +636,11 @@ fn get_default_config() -> SubscriptionConfig {
 pub async fn get_config_handler(
     Query(params): Query<ConfigParams>,
     State(state): State<AppState>,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
     // 0. 构建 API 服务器地址（用于 M3U8 代理）
 
-    let api_base_url = format!("http://{}", SERVER_IP.to_string());
+    let api_base_url = resolve_base_url(&headers);
     let m3u8_proxy_url = format!("{}/api/proxy/m3u8?url=", api_base_url);
 
     // 1. 获取订阅配置
@@ -669,7 +690,7 @@ pub async fn get_config_handler(
     };
 
     // 构建 spider 字符串（使用代理 URL）
-    let spider_proxy_url = format!("http://{}:3000/api/proxy/spider.jar", SERVER_IP.as_str());
+    let spider_proxy_url = format!("{}/api/proxy/spider.jar", api_base_url);
     let global_spider_jar = format!("{};md5;{}", spider_proxy_url, spider_info.md5);
 
     // 允许 URL 参数覆盖 Spider（仅当是公网地址时）
@@ -731,6 +752,7 @@ pub async fn get_config_handler(
 /// M3U8 代理处理器（带广告过滤）
 pub async fn proxy_m3u8_handler(
     Query(params): Query<std::collections::HashMap<String, String>>,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
     let url = match params.get("url") {
         Some(u) => u.clone(), // 克隆以避免生命周期问题
@@ -784,7 +806,8 @@ pub async fn proxy_m3u8_handler(
     let filtered = filter_ads_from_m3_u8(&content);
 
     // 重写 M3U8 中的 TS URL 为代理 URL
-    let proxy_base = format!("http://{}:3000/api/proxy/ts?url=", SERVER_IP.as_str());
+    let api_base_url = resolve_base_url(&headers);
+    let proxy_base = format!("{}/api/proxy/ts?url=", api_base_url);
     let rewritten = rewrite_m3u8_urls(&filtered, &url, &proxy_base);
 
     // 后台并发预加载前几个 TS 片段（异步，不阻塞响应）

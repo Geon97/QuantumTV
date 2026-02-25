@@ -2,12 +2,10 @@ version: '3.8'
 
 services:
   api:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
+    image: ghcr.io/geon97/quantumtv:latest
     container_name: quantumtv-api
     ports:
-      - '3000:3000'
+      - '3086:3000'
     environment:
       - RUST_LOG=info
       # 默认订阅源
