@@ -36,7 +36,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-
+data.json
 # next-sitemap
 sitemap.xml
 sitemap-*.xml

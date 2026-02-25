@@ -2,6 +2,7 @@ use axum::extract::{Json, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use base64::Engine;
+use quantumtv_core::is_adult_source;
 use quantumtv_core::playback::filter_ads_from_m3_u8;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -10,6 +11,7 @@ use std::sync::LazyLock;
 use std::time::{Duration, SystemTime};
 
 use crate::{AppState, SERVER_IP};
+use quantumtv_api::config_url::{fetch_subscription, Parse, Site, SubscriptionConfig};
 static PARSES_URL: LazyLock<String> = LazyLock::new(|| {
     std::env::var("PARSES_URL").unwrap_or_else(|_| "http://127.0.0.1".to_string())
 });
@@ -37,63 +39,10 @@ pub struct FailedSources {
     pub last_reset: SystemTime,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Site {
-    pub key: String,
-    pub name: String,
-    #[serde(rename = "type")]
-    pub site_type: i32,
-    pub api: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub jar: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub is_adult: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub searchable: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "quickSearch")]
-    pub quick_search: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub filterable: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub changeable: Option<i32>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Parse {
-    pub name: String,
-    #[serde(rename = "type")]
-    pub parse_type: i32,
-    pub url: String,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct SubscriptionConfig {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub spider: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sites: Option<Vec<Site>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parses: Option<Vec<Parse>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub lives: Option<Vec<serde_json::Value>>,
-}
-
-#[derive(Deserialize, Clone, Debug)]
-pub struct ApiSiteInfo {
-    pub name: String,
-    pub api: String,
-}
-
-#[derive(Deserialize, Clone, Debug)]
-pub struct CustomSubscriptionFormat {
-    pub api_site: std::collections::HashMap<String, ApiSiteInfo>,
-}
-
 #[derive(Deserialize)]
 pub struct ConfigParams {
     filter: Option<String>,
-    adult: Option<String>,
+    adult: Option<bool>,
     mode: Option<String>,
     spider: Option<String>,
     #[serde(rename = "forceSpiderRefresh")]
@@ -139,11 +88,11 @@ const PROXY_CANDIDATES: &[&str] = &[
 ];
 
 // Fallback JAR (base64 encoded minimal working spider.jar)
-const FALLBACK_JAR_BASE64: &str = "UEsDBBQACAgIACVFfFcAAAAAAAAAAAAAAAAJAAAATUVUQS1JTkYvUEsHCAAAAAACAAAAAAAAACVFfFcAAAAAAAAAAAAAAAANAAAATUVUQS1JTkYvTUFOSUZFU1QuTUZNYW5pZmVzdC1WZXJzaW9uOiAxLjAKQ3JlYXRlZC1CeTogMS44LjBfNDIxIChPcmFjbGUgQ29ycG9yYXRpb24pCgpQSwcIj79DCUoAAABLAAAAUEsDBBQACAgIACVFfFcAAAAAAAAAAAAAAAAMAAAATWVkaWFVdGlscy5jbGFzczWRSwrCQBBER3trbdPxm4BuBHfiBxHFH4hCwJX4ATfFCrAxnWnYgZCTuPIIHkCPYE+lM5NoILPpoqvrVVd1JslCaLB3MpILJ5xRz5gbMeMS+oyeBOc4xSWucYsZN3CHe7zgiQue8YJXvOEdH/jEFz7whW984weZ+Ecm/pGJf2TiH5n4Ryb+kYl/ZOIfmfhHJv6RiX9k4h+Z+Ecm/pGJf2TiH5n4Ryb+kYl/ZOIfGQaaaXzgE1/4xje+8Y1vfOMb3/jGN77xjW98q9c0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdOI06nO7p48NRQjICAgICAgICAgICAgICAoKCgoKCgoKCgoKCgoKChoqKioqKioqKio;";
+const FALLBACK_JAR_BASE64: &str = "UEsDBBQACAgIACVFfFcAAAAAAAAAAAAAAAAJAAAATUVUQS1JTkYvUEsHCAAAAAACAAAAAAAAACVFfFcAAAAAAAAAAAAAAAANAAAATUVUQS1JTkYvTUFOSUZFU1QuTUZNYW5pZmVzdC1WZXJzaW9uOiAxLjAKQ3JlYXRlZC1CeTogMS44LjBfNDIxIChPcmFjbGUgQ29ycG9yYXRpb24pCgpQSwcIj79DCUoAAABLAAAAUEsDBBQACAgIACVFfFcAAAAAAAAAAAAAAAAMAAAATWVkaWFVdGlscy5jbGFzczWRSwrCQBBER3trbdPxm4BuBHfiBxHFH4hCwJX4ATfFCrAxnWnYgZCTuPIIHkCPYE+lM5NoILPpoqvrVVd1JslCaLB3MpILJ5xRz5gbMeMS+oyeBOc4xSWucYsZN3CHe7zgiQue8YJXvOEdH/jEFz7whW984weZ+Ecm/pGJf2TiH5n4Ryb+kYl/ZOIfmfhHJv6RiX9k4h+Z+Ecm/pGJf2TiH5n4Ryb+kYl/ZOIfGQaaaXzgE1/4xje+8Y1vfOMb3/jGN77xjW98q9c0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdM0TdOI06nO7p48NRQjICAgICAgICAgICAgICAoKCgoKCgoKCgoKCgoKChoqKioqKioqKio;";
 
-const SUCCESS_TTL: u64 = 24 * 60 * 60; // 24 hours in seconds
-const FAILURE_TTL: u64 = 10 * 60; // 10 minutes in seconds
-const FAILURE_RESET_INTERVAL: u64 = 2 * 60 * 60; // 2 hours in seconds
+const SUCCESS_TTL: u64 = 24 * 60 * 60 * 5; // 5 天
+const FAILURE_TTL: u64 = 10 * 60; // 10 分钟
+const FAILURE_RESET_INTERVAL: u64 = 2 * 60 * 60; // 2 小时
 
 // 磁盘缓存路径
 const CACHE_DIR: &str = ".cache";
@@ -180,7 +129,7 @@ fn load_spider_from_disk() -> Option<SpiderInfo> {
         }
     };
 
-    // 检查缓存是否过期（24小时）
+    // 检查缓存是否过期（5天）
     let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
@@ -533,105 +482,12 @@ async fn get_spider_jar(state: &AppState, force_refresh: bool) -> SpiderInfo {
     info
 }
 
-/// 从 URL 获取订阅配置
-async fn fetch_subscription(url: &str) -> Result<SubscriptionConfig, String> {
-    tracing::info!("Fetching subscription from: {}", url);
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
-
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch subscription: {}", e))?;
-
-    if !response.status().is_success() {
-        return Err(format!("HTTP error: {}", response.status()));
-    }
-
-    let text = response
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read response: {}", e))?;
-
-    // 尝试解析自定义格式（api_site 格式）
-    if let Ok(custom_format) = serde_json::from_str::<CustomSubscriptionFormat>(&text) {
-        tracing::info!(
-            "Parsed custom subscription format with {} sites",
-            custom_format.api_site.len()
-        );
-        return Ok(convert_custom_format_to_tvbox(custom_format));
-    }
-
-    // 尝试解析标准 TVBox 格式
-    serde_json::from_str::<SubscriptionConfig>(&text)
-        .map_err(|e| format!("Failed to parse subscription JSON: {}", e))
-}
-
-/// 将自定义格式转换为 TVBox 配置格式
-fn convert_custom_format_to_tvbox(custom: CustomSubscriptionFormat) -> SubscriptionConfig {
-    let mut sites = Vec::new();
-
-    for (domain, site_info) in custom.api_site {
-        // 使用域名作为 key，移除特殊字符
-        let key = domain.replace(".", "_").replace("-", "_").replace(":", "_");
-
-        // 根据 API URL 判断站点类型
-        // MacCMS API 通常包含 /api.php/provide/vod，使用 type: 1
-        // 其他情况使用 type: 3 (Spider)
-        let site_type = if site_info.api.contains("/api.php/provide/vod")
-            || site_info.api.contains("/api.php/provide/")
-            || site_info.api.contains("maccms")
-        {
-            1 // MacCMS 资源站
-        } else {
-            3 // Spider 站点
-        };
-
-        sites.push(Site {
-            key,
-            name: site_info.name,
-            site_type,
-            api: site_info.api,
-            jar: None,
-            is_adult: None,
-            searchable: Some(1),
-            quick_search: Some(1),
-            filterable: Some(1),
-            changeable: None,
-        });
-    }
-
-    SubscriptionConfig {
-        spider: Some(
-            "https://cdn.jsdelivr.net/gh/FongMi/CatVodSpider@main/jar/spider.jar".to_string(),
-        ),
-        sites: Some(sites),
-        parses: Some(vec![
-            Parse {
-                name: "默认解析".to_string(),
-                parse_type: 0,
-                url: "https://jx.xmflv.com/?url=".to_string(),
-            },
-            Parse {
-                name: "并发解析".to_string(),
-                parse_type: 2,
-                url: "Parallel".to_string(),
-            },
-        ]),
-        lives: None,
-    }
-}
-
 /// 获取缓存的订阅配置
 async fn get_cached_subscription(
     state: &AppState,
     url: &str,
     force_refresh: bool,
+    adult: bool,
 ) -> Result<SubscriptionConfig, String> {
     let mut cache = state.subscription_cache.lock().await;
 
@@ -647,7 +503,7 @@ async fn get_cached_subscription(
 
     if force_refresh || !cache_valid {
         tracing::info!("Fetching fresh subscription data");
-        let config = fetch_subscription(url).await?;
+        let config = fetch_subscription(url, adult).await?;
         *cache = Some(CachedSubscription {
             config: config.clone(),
             cached_at: SystemTime::now(),
@@ -710,14 +566,16 @@ pub async fn get_config_handler(
         .unwrap_or(PARSES_URL.as_str());
 
     let force_refresh = params.force_spider_refresh.as_deref() == Some("1");
-
-    let mut config = match get_cached_subscription(&state, subscription_url, force_refresh).await {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            tracing::error!("Failed to fetch subscription, using default: {}", e);
-            get_default_config()
-        }
-    };
+    // adult 参数，默认 false 过滤成人资源
+    let adult = params.adult.unwrap_or(false);
+    let mut config =
+        match get_cached_subscription(&state, subscription_url, force_refresh, adult).await {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                tracing::error!("Failed to fetch subscription, using default: {}", e);
+                get_default_config()
+            }
+        };
 
     // 2. 处理 Spider 逻辑（使用 10 秒超时）
     let spider_info = match tokio::time::timeout(
@@ -764,13 +622,9 @@ pub async fn get_config_handler(
     };
 
     // 3. 过滤逻辑
-    let filter_adult = !matches!(params.filter.as_deref(), Some("off") | Some("disable"))
-        && !matches!(params.adult.as_deref(), Some("1") | Some("true"));
-
-    // 4. 应用过滤
-    if filter_adult {
+    if !adult {
         if let Some(sites) = config.sites.as_mut() {
-            sites.retain(|s| !s.is_adult.unwrap_or(false));
+            sites.retain(|s| !is_adult_source(&s.api) && !is_adult_source(&s.name));
         }
     }
 
@@ -801,10 +655,10 @@ pub async fn get_config_handler(
     });
 
     tracing::info!(
-        "Config generated: spider_success={}, mode={}, filter_adult={}, subscription_url={}",
+        "Config generated: spider_success={}, mode={}, adult={}, subscription_url={}",
         spider_info.success,
         mode,
-        filter_adult,
+        adult,
         subscription_url
     );
 
@@ -997,7 +851,7 @@ pub async fn proxy_ts_handler(
         );
         headers.insert(
             axum::http::header::CACHE_CONTROL,
-            "public, max-age=3600".parse().unwrap(),
+            "public, max-age=432000".parse().unwrap(),
         );
         return (StatusCode::OK, headers, cached_data);
     }
