@@ -31,6 +31,19 @@ pub struct Parse {
     pub url: String,
 }
 
+/// 根据 API URL 判断站点类型
+/// MacCMS 资源站使用 type: 1，Spider 站点使用 type: 3
+pub fn determine_site_type(api_url: &str) -> i32 {
+    if api_url.contains("/api.php/provide/vod")
+        || api_url.contains("/api.php/provide/")
+        || api_url.contains("maccms")
+    {
+        1 // MacCMS 资源站
+    } else {
+        3 // Spider 站点
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SubscriptionConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -71,17 +84,8 @@ fn convert_custom_format_to_tvbox(
         // 使用域名作为 key，移除特殊字符
         let key = domain.replace(".", "_").replace("-", "_").replace(":", "_");
 
-        // 根据 API URL 判断站点类型
-        // MacCMS API 通常包含 /api.php/provide/vod，使用 type: 1
-        // 其他情况使用 type: 3 (Spider)
-        let site_type = if site_info.api.contains("/api.php/provide/vod")
-            || site_info.api.contains("/api.php/provide/")
-            || site_info.api.contains("maccms")
-        {
-            1 // MacCMS 资源站
-        } else {
-            3 // Spider 站点
-        };
+        // 使用统一的 site_type 判断逻辑
+        let site_type = determine_site_type(&site_info.api);
 
         sites.push(Site {
             key,

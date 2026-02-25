@@ -14,7 +14,7 @@ services:
       - PARSES_URL=http://127.0.0.1
       # 默认订阅源文件，如果设置了，则不使用 PARSES_URL
       # 使用quantumtv app 导入的源文件即可
-      - PARSES_FILE=./data.json
+      - PARSES_FILE=crates/api-server/data.json
       # 服务器监听地址
       - SERVER_IP=127.0.0.1
       # 绑定地址

@@ -11,10 +11,14 @@ use std::sync::LazyLock;
 use std::time::{Duration, SystemTime};
 
 use crate::{AppState, SERVER_IP};
-use quantumtv_api::config_url::{fetch_subscription, Parse, Site, SubscriptionConfig};
+use quantumtv_api::config_file;
+use quantumtv_api::config_url::{
+    determine_site_type, fetch_subscription, Parse, Site, SubscriptionConfig,
+};
 static PARSES_URL: LazyLock<String> = LazyLock::new(|| {
     std::env::var("PARSES_URL").unwrap_or_else(|_| "http://127.0.0.1".to_string())
 });
+
 // ================== 数据结构 ==================
 
 #[derive(Clone, Debug)]
@@ -41,7 +45,6 @@ pub struct FailedSources {
 
 #[derive(Deserialize)]
 pub struct ConfigParams {
-    filter: Option<String>,
     adult: Option<bool>,
     mode: Option<String>,
     spider: Option<String>,
@@ -157,7 +160,7 @@ fn load_spider_from_disk() -> Option<SpiderInfo> {
     }
 
     tracing::info!(
-        "Loaded spider JAR from disk: {} bytes, md5: {}, age: {}s",
+        "磁盘加载了 spider jar: {} bytes, md5: {}, age: {}s",
         buffer.len(),
         metadata.md5,
         now - metadata.timestamp
@@ -502,8 +505,14 @@ async fn get_cached_subscription(
     };
 
     if force_refresh || !cache_valid {
-        tracing::info!("Fetching fresh subscription data");
-        let config = fetch_subscription(url, adult).await?;
+        // 优先检查 PARSES_FILE 是否存在
+        let parses_file_path = PathBuf::from(&*config_file::PARSES_FILE);
+        let config = if parses_file_path.exists() {
+            load_subscription_from_file(adult).await?
+        } else {
+            fetch_subscription(url, adult).await?
+        };
+
         *cache = Some(CachedSubscription {
             config: config.clone(),
             cached_at: SystemTime::now(),
@@ -512,6 +521,60 @@ async fn get_cached_subscription(
     } else {
         Ok(cache.as_ref().unwrap().config.clone())
     }
+}
+
+/// 从文件加载配置
+async fn load_subscription_from_file(adult: bool) -> Result<SubscriptionConfig, String> {
+    // 加载 source configs
+    let source_configs = if adult {
+        config_file::load_source_configs_from_file()
+            .await
+            .map_err(|e| format!("加载源文件失败: {}", e))?
+    } else {
+        config_file::filter_adult_source_configs()
+            .await
+            .map_err(|e| format!("过滤成人源失败: {}", e))?
+    };
+
+    // 将 SourceConfig 转换为 Site
+    let sites: Vec<Site> = source_configs
+        .into_iter()
+        .map(|sc| {
+            // 使用统一的 site_type 判断逻辑
+            let site_type = determine_site_type(&sc.api);
+
+            Site {
+                key: sc.key,
+                name: sc.name,
+                site_type,
+                api: sc.api,
+                jar: None,
+                is_adult: Some(sc.is_adult),
+                searchable: Some(1),
+                quick_search: Some(1),
+                filterable: Some(1),
+                changeable: None,
+            }
+        })
+        .collect();
+
+    Ok(SubscriptionConfig {
+        spider: None,
+        sites: Some(sites),
+        parses: Some(vec![
+            Parse {
+                name: "默认解析".to_string(),
+                parse_type: 0,
+                url: "https://jx.xmflv.com/?url=".to_string(),
+            },
+            Parse {
+                name: "并发解析".to_string(),
+                parse_type: 2,
+                url: "Parallel".to_string(),
+            },
+        ]),
+        lives: None,
+    })
 }
 
 /// 默认配置
@@ -930,7 +993,7 @@ pub async fn proxy_spider_jar_handler(State(state): State<AppState>) -> impl Int
 
     if let Some(buffer) = spider_info.buffer {
         tracing::info!(
-            "Serving Spider JAR: {} bytes, md5: {}, source: {}",
+            "使用磁盘缓存的 spider jar: {} bytes, md5: {}, source: {}",
             buffer.len(),
             spider_info.md5,
             spider_info.source
@@ -948,7 +1011,7 @@ pub async fn proxy_spider_jar_handler(State(state): State<AppState>) -> impl Int
         );
         headers.insert(
             axum::http::header::CACHE_CONTROL,
-            "public, max-age=14400".parse().unwrap(), // 4 hours
+            "public, max-age=14400".parse().unwrap(),
         );
 
         (StatusCode::OK, headers, buffer)

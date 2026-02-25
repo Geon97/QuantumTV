@@ -80,8 +80,9 @@ pub struct UserPreferences {
     pub site_name: String,
 }
 
-pub static PARSES_FILE: LazyLock<String> =
-    LazyLock::new(|| std::env::var("PARSES_FILE").unwrap_or_else(|_| "data.json".to_string()));
+pub static PARSES_FILE: LazyLock<String> = LazyLock::new(|| {
+    std::env::var("PARSES_FILE").unwrap_or_else(|_| "crates/api-server/data.json".to_string())
+});
 
 /// 读取文件
 pub async fn load_parses_from_file() -> Result<Root, Box<dyn std::error::Error>> {
