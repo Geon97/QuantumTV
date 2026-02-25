@@ -4,6 +4,8 @@ use serde_json::Value;
 use std::sync::OnceLock;
 use tauri::State;
 use quantumtv_core::adult;
+use quantumtv_core::normalize_source_config as normalize_source_config_core;
+use quantumtv_core::parse_admin_config as parse_admin_config_core;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ConfigSubscribtion {
     pub url: String,
@@ -143,6 +145,22 @@ pub fn get_config_data() -> &'static AdminConfig {
 pub async fn get_config(state: State<'_, StorageManager>) -> Result<Value, String> {
     let data = state.get_data()?;
     Ok(data.config)
+}
+
+/// 解析管理端订阅配置（Rust 端统一解析逻辑）
+#[tauri::command]
+pub async fn parse_admin_config(raw_json: String) -> Result<Value, String> {
+    parse_admin_config_core(&raw_json)
+}
+
+/// 规范化单个视频源配置（Rust 端统一成人检测与字段补全）
+#[tauri::command]
+pub async fn normalize_source_config(
+    source: Value,
+    default_from: Option<String>,
+) -> Result<Value, String> {
+    let from = default_from.as_deref().unwrap_or("custom");
+    normalize_source_config_core(&source, from)
 }
 
 #[tauri::command]

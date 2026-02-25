@@ -81,6 +81,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             commands::config::get_config,
+            commands::config::parse_admin_config,
+            commands::config::normalize_source_config,
             commands::config::save_config,
             commands::config::reset_config,
             commands::config::get_config_data,

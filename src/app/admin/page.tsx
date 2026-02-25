@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, no-console */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any, no-console */
 
 'use client';
 
@@ -105,197 +105,9 @@ const ConfigImportExportModal = ({
 
   const handleImport = async () => {
     try {
-      const parsed = JSON.parse(importText);
-
-      // 智能识别和转换配置格式
-      let finalConfig: AdminConfig;
-
-      // 情况1: 完整的 AdminConfig 格式
-      if (
-        parsed.SourceConfig !== undefined ||
-        parsed.ConfigSubscribtion !== undefined ||
-        parsed.UserPreferences !== undefined
-      ) {
-        // 合并到默认配置，确保所有字段都存在
-        const defaultConfig = getDefaultConfig();
-        finalConfig = {
-          ...defaultConfig,
-          ...parsed,
-          ConfigSubscribtion: {
-            ...defaultConfig.ConfigSubscribtion,
-            ...parsed.ConfigSubscribtion,
-          },
-          UserPreferences: { ...defaultConfig.UserPreferences, ...parsed.UserPreferences },
-          UserConfig: parsed.UserConfig || defaultConfig.UserConfig,
-          SourceConfig: Array.isArray(parsed.SourceConfig)
-            ? parsed.SourceConfig.map((s: any) => ({
-                ...s,
-                from: s.from || 'custom',
-              }))
-            : defaultConfig.SourceConfig,
-          CustomCategories: Array.isArray(parsed.CustomCategories)
-            ? parsed.CustomCategories.map((c: any) => ({
-                ...c,
-                from: c.from || 'custom',
-              }))
-            : defaultConfig.CustomCategories,
-        };
-
-        // 如果 SourceConfig 为空但 ConfigFile 有内容，尝试从 ConfigFile 中解析
-        if (
-          (!finalConfig.SourceConfig ||
-            finalConfig.SourceConfig.length === 0) &&
-          parsed.ConfigFile
-        ) {
-          try {
-            const configFileContent = JSON.parse(parsed.ConfigFile);
-            // 处理 api_site 对象格式
-            if (
-              configFileContent.api_site &&
-              typeof configFileContent.api_site === 'object'
-            ) {
-              finalConfig.SourceConfig = Object.entries(
-                configFileContent.api_site,
-              ).map(([key, value]: [string, any]) => ({
-                key: key,
-                name: value.name || key,
-                api: value.api,
-                detail: value.detail || '',
-                from: 'config' as const,
-                disabled: value.disabled || false,
-                is_adult: value.is_adult || false,
-              }));
-            }
-            // 处理 sites 数组格式
-            else if (
-              configFileContent.sites &&
-              Array.isArray(configFileContent.sites)
-            ) {
-              finalConfig.SourceConfig = configFileContent.sites.map(
-                (s: any) => ({
-                  key:
-                    s.key ||
-                    s.name?.toLowerCase().replace(/\s+/g, '_') ||
-                    `source_${Date.now()}`,
-                  name: s.name || '未命名源',
-                  api: s.api,
-                  detail: s.detail || '',
-                  from: 'config' as const,
-                  disabled: s.disabled || false,
-                  is_adult: s.is_adult || false,
-                }),
-              );
-            }
-            // 处理 SourceConfig 数组格式
-            else if (
-              configFileContent.SourceConfig &&
-              Array.isArray(configFileContent.SourceConfig)
-            ) {
-              finalConfig.SourceConfig = configFileContent.SourceConfig.map(
-                (s: any) => ({
-                  ...s,
-                  from: s.from || 'config',
-                }),
-              );
-            }
-          } catch {
-            console.warn('无法解析 ConfigFile 内容');
-          }
-        }
-      }
-      // 情况2: 纯数组格式 - 作为 SourceConfig 处理
-      else if (Array.isArray(parsed)) {
-        const defaultConfig = getDefaultConfig();
-        // 检查是否为视频源数组 (包含 api 字段)
-        if (parsed.length > 0 && parsed[0].api) {
-          finalConfig = {
-            ...defaultConfig,
-            SourceConfig: parsed.map((s: any) => ({
-              key:
-                s.key ||
-                s.name?.toLowerCase().replace(/\s+/g, '_') ||
-                `source_${Date.now()}`,
-              name: s.name || '未命名源',
-              api: s.api,
-              detail: s.detail || '',
-              from: 'custom' as const,
-              disabled: s.disabled || false,
-              is_adult: s.is_adult || false,
-            })),
-          };
-        } else {
-          // 如果不是视频源数组，使用默认配置
-          showAlert('error', '格式错误', '数组格式需要包含视频源信息');
-          return;
-        }
-      }
-      // 情况3: 包含 sites 字段的格式 (常见的订阅配置格式)
-      else if (parsed.sites && Array.isArray(parsed.sites)) {
-        const defaultConfig = getDefaultConfig();
-        finalConfig = {
-          ...defaultConfig,
-          SourceConfig: parsed.sites.map((s: any) => ({
-            key:
-              s.key ||
-              s.name?.toLowerCase().replace(/\s+/g, '_') ||
-              `source_${Date.now()}`,
-            name: s.name || '未命名源',
-            api: s.api,
-            detail: s.detail || '',
-            from: 'config' as const,
-            disabled: s.disabled || false,
-            is_adult: s.is_adult || false,
-          })),
-        };
-      }
-      // 情况4: 包含 api_site 对象格式 (键值对形式)
-      else if (parsed.api_site && typeof parsed.api_site === 'object') {
-        const defaultConfig = getDefaultConfig();
-        finalConfig = {
-          ...defaultConfig,
-          SourceConfig: Object.entries(parsed.api_site).map(
-            ([key, value]: [string, any]) => ({
-              key: key,
-              name: value.name || key,
-              api: value.api,
-              detail: value.detail || '',
-              from: 'config' as const,
-              disabled: value.disabled || false,
-              is_adult: value.is_adult || false,
-            }),
-          ),
-        };
-      }
-      // 情况5: 无法识别的格式
-      else {
-        showAlert(
-          'error',
-          '无法识别的配置格式',
-          '请确保包含 SourceConfig、sites 或 api_site 字段',
-        );
-        return;
-      }
-      // 确保 finalConfig 已定义
-      if (!finalConfig) {
-        showAlert('error', '配置解析失败', '无法解析配置格式');
-        return;
-      }
-
-      // 批量检测成人内容
-      if (finalConfig.SourceConfig && finalConfig.SourceConfig.length > 0) {
-        try {
-          const names = finalConfig.SourceConfig.map((s) => s.name);
-          const adultFlags = await invoke<boolean[]>('is_adult_source', {
-            names,
-          });
-          finalConfig.SourceConfig = finalConfig.SourceConfig.map((s, idx) => ({
-            ...s,
-            is_adult: s.is_adult || adultFlags[idx],
-          }));
-        } catch (error) {
-          console.warn('批量成人内容检测失败:', error);
-        }
-      }
+      const finalConfig = await invoke<AdminConfig>('parse_admin_config', {
+        rawJson: importText,
+      });
 
       onImport(finalConfig);
       setImportText('');
@@ -303,7 +115,11 @@ const ConfigImportExportModal = ({
       showAlert('success', '导入成功');
     } catch (error) {
       console.error('导入失败:', error);
-      showAlert('error', '配置格式错误', '请检查 JSON 格式是否正确');
+      showAlert(
+        'error',
+        '配置格式错误',
+        error instanceof Error ? error.message : '无法解析配置',
+      );
     }
   };
 
@@ -755,28 +571,26 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
       return;
     }
 
-    // 自动检测是否为成人内容
-    let isAdult = newSource.is_adult;
     try {
-      const results = await invoke<boolean[]>('is_adult_source', {
-        names: [newSource.name],
+      const normalized = await invoke<any>('normalize_source_config', {
+        source: newSource,
+        defaultFrom: 'custom',
       });
-      isAdult = results[0] || newSource.is_adult;
+
+      const newSources = [
+        ...sources,
+        { ...normalized, disabled: false },
+      ];
+      setSources(newSources);
+      saveChanges(newSources);
+      setNewSource({ key: '', name: '', api: '', detail: '', is_adult: false });
+      setIsAddModalOpen(false);
+      showAlert('success', '添加成功');
     } catch (error) {
       console.warn('成人内容检测失败:', error);
+      showAlert('error', '添加失败', '无法解析视频源');
     }
-
-    const newSources = [
-      ...sources,
-      { ...newSource, is_adult: isAdult, from: 'custom', disabled: false },
-    ];
-    setSources(newSources);
-    saveChanges(newSources);
-    setNewSource({ key: '', name: '', api: '', detail: '', is_adult: false });
-    setIsAddModalOpen(false);
-    showAlert('success', '添加成功');
   };
-
   const handleEdit = (source: any) => {
     setEditingSource({ ...source });
   };
@@ -784,26 +598,24 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
   const handleSaveEdit = async () => {
     if (!editingSource) return;
 
-    // 自动检测是否为成人内容
-    let updatedSource = { ...editingSource };
     try {
-      const results = await invoke<boolean[]>('is_adult_source', {
-        names: [editingSource.name],
+      const normalized = await invoke<any>('normalize_source_config', {
+        source: editingSource,
+        defaultFrom: editingSource.from || 'custom',
       });
-      updatedSource.is_adult = editingSource.is_adult || results[0];
+
+      const newSources = sources.map((s) =>
+        s.key === editingSource.key ? normalized : s,
+      );
+      setSources(newSources);
+      saveChanges(newSources);
+      setEditingSource(null);
+      showAlert('success', '保存成功');
     } catch (error) {
       console.warn('成人内容检测失败:', error);
+      showAlert('error', '保存失败', '无法解析视频源');
     }
-
-    const newSources = sources.map((s) =>
-      s.key === editingSource.key ? updatedSource : s,
-    );
-    setSources(newSources);
-    saveChanges(newSources);
-    setEditingSource(null);
-    showAlert('success', '保存成功');
   };
-
   return (
     <div className='space-y-4'>
       <div className='flex justify-between items-center'>
@@ -1322,11 +1134,11 @@ const ConfigSubscription = ({
 
     setIsSaving(true);
     try {
-      // 解析配置内容
-      const parsedContent = JSON.parse(configContent);
+      const parsedConfig = await invoke<AdminConfig>('parse_admin_config', {
+        rawJson: configContent,
+      });
 
       if (config) {
-        // 合并配置
         const newConfig: AdminConfig = {
           ...config,
           ConfigFile: configContent,
@@ -1335,111 +1147,9 @@ const ConfigSubscription = ({
             URL: subscriptionUrl,
             AutoUpdate: autoUpdate,
           },
+          SourceConfig: parsedConfig.SourceConfig || [],
+          CustomCategories: parsedConfig.CustomCategories || [],
         };
-
-        let sourceConfig: any[] = [];
-
-        // 智能识别配置格式
-        // 情况1: 标准 AdminConfig 格式 (包含 SourceConfig 字段)
-        if (
-          parsedContent.SourceConfig &&
-          Array.isArray(parsedContent.SourceConfig)
-        ) {
-          sourceConfig = parsedContent.SourceConfig.map((s: any) => ({
-            key:
-              s.key ||
-              s.name?.toLowerCase().replace(/\s+/g, '_') ||
-              `source_${Date.now()}`,
-            name: s.name || '未命名源',
-            api: s.api,
-            detail: s.detail || '',
-            from: 'config' as const,
-            disabled: s.disabled || false,
-            is_adult: s.is_adult || false,
-          }));
-        }
-        // 情况2: 包含 sites 字段的格式 (常见的订阅配置格式)
-        else if (parsedContent.sites && Array.isArray(parsedContent.sites)) {
-          sourceConfig = parsedContent.sites.map((s: any) => ({
-            key:
-              s.key ||
-              s.name?.toLowerCase().replace(/\s+/g, '_') ||
-              `source_${Date.now()}`,
-            name: s.name || '未命名源',
-            api: s.api,
-            detail: s.detail || '',
-            from: 'config' as const,
-            disabled: s.disabled || false,
-            is_adult: s.is_adult || false,
-          }));
-        }
-        // 情况3: 纯数组格式 - 作为视频源处理
-        else if (
-          Array.isArray(parsedContent) &&
-          parsedContent.length > 0 &&
-          parsedContent[0].api
-        ) {
-          sourceConfig = parsedContent.map((s: any) => ({
-            key:
-              s.key ||
-              s.name?.toLowerCase().replace(/\s+/g, '_') ||
-              `source_${Date.now()}`,
-            name: s.name || '未命名源',
-            api: s.api,
-            detail: s.detail || '',
-            from: 'config' as const,
-            disabled: s.disabled || false,
-            is_adult: s.is_adult || false,
-          }));
-        }
-        // 情况4: api_site 对象格式 (键值对形式)
-        else if (
-          parsedContent.api_site &&
-          typeof parsedContent.api_site === 'object'
-        ) {
-          sourceConfig = Object.entries(parsedContent.api_site).map(
-            ([key, value]: [string, any]) => ({
-              key: key,
-              name: value.name || key,
-              api: value.api,
-              detail: value.detail || '',
-              from: 'config' as const,
-              disabled: value.disabled || false,
-              is_adult: value.is_adult || false,
-            }),
-          );
-        }
-
-        // 批量检测成人内容
-        if (sourceConfig.length > 0) {
-          try {
-            const names = sourceConfig.map((s) => s.name);
-            const adultFlags = await invoke<boolean[]>('is_adult_source', {
-              names,
-            });
-            sourceConfig = sourceConfig.map((s, idx) => ({
-              ...s,
-              is_adult: s.is_adult || adultFlags[idx],
-            }));
-          } catch (error) {
-            console.warn('批量成人内容检测失败:', error);
-          }
-        }
-
-        newConfig.SourceConfig = sourceConfig;
-
-        // 如果解析的内容包含 CustomCategories，合并进去
-        if (
-          parsedContent.CustomCategories &&
-          Array.isArray(parsedContent.CustomCategories)
-        ) {
-          newConfig.CustomCategories = parsedContent.CustomCategories.map(
-            (c: any) => ({
-              ...c,
-              from: 'config' as const,
-            }),
-          );
-        }
 
         onSave(newConfig);
         showAlert(
@@ -1450,7 +1160,11 @@ const ConfigSubscription = ({
       }
     } catch (error) {
       console.error('保存配置失败:', error);
-      showAlert('error', '保存失败', '配置格式错误，请检查 JSON 格式');
+      showAlert(
+        'error',
+        '保存失败',
+        error instanceof Error ? error.message : '配置格式错误，请检查 JSON 格式',
+      );
     } finally {
       setIsSaving(false);
     }
@@ -1795,3 +1509,8 @@ export default function AdminPage() {
     </Suspense>
   );
 }
+
+
+
+
+
