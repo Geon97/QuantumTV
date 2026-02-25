@@ -198,7 +198,7 @@ services:
       - ./crates/api-server/data.json:/data/data.json:ro
 ```
 
-## Rust + Axum 优势
+### Rust + Axum 优势
 
 - 高性能、低内存占用，适合高并发 API 服务
 - 异步模型清晰（Tokio 生态），吞吐稳定
