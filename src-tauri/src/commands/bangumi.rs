@@ -1,38 +1,38 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
-struct Weekday {
-    en: String,
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Weekday {
+    pub en: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct Rating {
-    score: Option<f64>,
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Rating {
+    pub score: Option<f64>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct Images {
-    large: Option<String>,
-    common: Option<String>,
-    medium: Option<String>,
-    small: Option<String>,
-    grid: Option<String>,
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Images {
+    pub large: Option<String>,
+    pub common: Option<String>,
+    pub medium: Option<String>,
+    pub small: Option<String>,
+    pub grid: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct Items {
-    id: i32,
-    name: String,
-    name_cn: String,
-    rating: Option<Rating>,
-    air_date: Option<String>,
-    images: Option<Images>,
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Items {
+    pub id: i32,
+    pub name: String,
+    pub name_cn: String,
+    pub rating: Option<Rating>,
+    pub air_date: Option<String>,
+    pub images: Option<Images>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct BangumiCalendarData {
-    weekday: Option<Weekday>,
-    items: Option<Vec<Items>>,
+    pub weekday: Option<Weekday>,
+    pub items: Option<Vec<Items>>,
 }
 
 fn normalize_image_url(url: Option<String>) -> Option<String> {

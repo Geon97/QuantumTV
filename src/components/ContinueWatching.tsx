@@ -19,14 +19,6 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
   const [loading, setLoading] = useState(true);
 
   // 处理播放记录数据更新的函数
-  const updatePlayRecords = (records: RustPlayRecord[]) => {
-    // 按 save_time 降序排序（最新的在前面）
-    const sortedRecords = [...records].sort(
-      (a, b) => b.save_time - a.save_time
-    );
-
-    setPlayRecords(sortedRecords);
-  };
 
   useEffect(() => {
     const fetchPlayRecords = async () => {
@@ -34,8 +26,8 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
         setLoading(true);
 
         // 从 Rust 获取所有播放记录
-        const allRecords = await invoke<RustPlayRecord[]>('get_all_play_records');
-        updatePlayRecords(allRecords);
+        const allRecords = await invoke<RustPlayRecord[]>('get_continue_watching');
+        setPlayRecords(allRecords);
       } catch (error) {
         console.error('获取播放记录失败:', error);
         setPlayRecords([]);
@@ -51,8 +43,8 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
       'playRecordsUpdated',
       async () => {
         try {
-          const allRecords = await invoke<RustPlayRecord[]>('get_all_play_records');
-          updatePlayRecords(allRecords);
+          const allRecords = await invoke<RustPlayRecord[]>('get_continue_watching');
+          setPlayRecords(allRecords);
         } catch (err) {
           console.error('获取播放记录失败:', err);
         }

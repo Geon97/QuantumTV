@@ -126,46 +126,24 @@ export default function DatabaseImportExport({ showAlert }: Props) {
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-// 文件导入逻辑
+  // 文件导入逻辑
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files?.length) return;
     const file = event.target.files[0];
-    const reader = new FileReader();
 
-    reader.onload = async (e) => {
-      const content = e.target?.result;
-      if (typeof content !== 'string') {
-        showAlert('error', '文件读取失败: 内容格式不正确');
-        return;
-      }
-
-      // 解析数字序列字符串成字节数组
-      const byteStrings = content.split(',').map(s => s.trim());
-      const bytes = new Uint8Array(byteStrings.map(n => Number(n)));
-
-      // 把字节数组转成utf-8字符串
-      const decoder = new TextDecoder('utf-8');
-      const jsonString = decoder.decode(bytes);
-
-      setImporting(true);
-      try {
-        await invoke('import_json', { data: jsonString });
-        showAlert('success', '导入成功！');
-      } catch (error) {
-        console.error(error);
-        showAlert('error', '导入失败，请检查文件格式或联系管理员');
-      } finally {
-        setImporting(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-      }
-    };
-
-    reader.onerror = () => {
-      showAlert('error', '文件读取失败');
+    setImporting(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const bytes = Array.from(new Uint8Array(buffer));
+      await invoke('import_json_bytes', { data: bytes });
+      showAlert('success', '导入成功！');
+    } catch (error) {
+      console.error(error);
+      showAlert('error', '导入失败，请检查文件格式或联系管理员');
+    } finally {
       setImporting(false);
-    };
-
-    reader.readAsText(file);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 // 文件导出逻辑
   const handleExport = async () => {

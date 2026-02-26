@@ -7,7 +7,12 @@ import { ChevronRight, Sparkles, X } from 'lucide-react';
 import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 
-import { BangumiCalendarData, DoubanItem, DoubanResult, RustFavorite,RustPlayRecord } from '@/lib/types';
+import {
+  BangumiItem,
+  DoubanItem,
+  FavoriteCard,
+  HomePageData,
+} from '@/lib/types';
 import { subscribeToDataUpdates } from '@/lib/utils';
 import { useImagePreload } from '@/hooks/useImagePreload';
 import { useCachedData } from '@/hooks/usePageCache';
@@ -24,11 +29,9 @@ function HomeClient() {
   const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
   const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
   const [hotVarietyShows, setHotVarietyShows] = useState<DoubanItem[]>([]);
-  const [bangumiCalendarData, setBangumiCalendarData] = useState<
-    BangumiCalendarData[]
-  >([]);
+  const [todayBangumi, setTodayBangumi] = useState<BangumiItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const { siteName, announcement } = useSite();
+  const { announcement } = useSite();
 
   const [showAnnouncement, setShowAnnouncement] = useState(false);
 
@@ -37,7 +40,9 @@ function HomeClient() {
     const checkAnnouncement = async () => {
       if (typeof window !== 'undefined' && announcement) {
         try {
-          const prefs = await invoke<{ has_seen_announcement: string }>('get_user_preferences');
+          const prefs = await invoke<{ has_seen_announcement: string }>(
+            'get_user_preferences',
+          );
           const hasSeenAnnouncement = prefs.has_seen_announcement;
           if (hasSeenAnnouncement !== announcement) {
             setShowAnnouncement(true);
@@ -55,84 +60,39 @@ function HomeClient() {
   }, [announcement]);
 
   // 收藏夹数据
-  type FavoriteItem = {
-    id: string;
-    source: string;
-    title: string;
-    poster: string;
-    episodes: number;
-    source_name: string;
-    currentEpisode?: number;
-    search_title?: string;
-  };
 
-  const [favoriteItems, setFavoriteItems] = useState<FavoriteItem[]>([]);
+  const [favoriteItems, setFavoriteItems] = useState<FavoriteCard[]>([]);
 
   // 图片预加载：提取所有图片 URL
   const allImageUrls = [
-    ...hotMovies.map(m => m.poster),
-    ...hotTvShows.map(m => m.poster),
-    ...hotVarietyShows.map(m => m.poster),
-    ...bangumiCalendarData.flatMap(b => b.items.map(item => item.images?.large || item.images?.common)),
-    ...favoriteItems.map(f => f.poster),
+    ...hotMovies.map((m) => m.poster),
+    ...hotTvShows.map((m) => m.poster),
+    ...hotVarietyShows.map((m) => m.poster),
+    ...todayBangumi.map((item) => item.images?.large || item.images?.common),
+    ...favoriteItems.map((f) => f.poster),
   ].filter((url): url is string => Boolean(url)); // 过滤空值并确保类型
 
   // 自动预加载（延迟 500ms，避免阻塞首屏渲染）
   useImagePreload(allImageUrls, !loading);
 
   // 定义首页数据类型
-  type HomeData = {
-    hotMovies: DoubanItem[];
-    hotTvShows: DoubanItem[];
-    hotVarietyShows: DoubanItem[];
-    bangumiCalendarData: BangumiCalendarData[];
-  };
 
   // 数据获取函数
-  const fetchHomeData = async (): Promise<HomeData> => {
-    const [moviesData, tvShowsData, varietyShowsData, bangumiCalendarData] =
-      await Promise.all([
-        invoke<DoubanResult>('get_douban_categories', {
-          params: {
-            kind: 'movie',
-            category: '热门',
-            type: '全部',
-          },
-        }),
-        invoke<DoubanResult>('get_douban_categories', {
-          params: {
-            kind: 'tv',
-            category: 'tv',
-            type: 'tv',
-          },
-        }),
-        invoke<DoubanResult>('get_douban_categories', {
-          params: {
-            kind: 'tv',
-            category: 'show',
-            type: 'show',
-          },
-        }),
-        invoke<BangumiCalendarData[]>('get_bangumi_calendar_data'),
-      ]);
-
-    return {
-      hotMovies: moviesData.code === 200 ? moviesData.list : [],
-      hotTvShows: tvShowsData.code === 200 ? tvShowsData.list : [],
-      hotVarietyShows: varietyShowsData.code === 200 ? varietyShowsData.list : [],
-      bangumiCalendarData: bangumiCalendarData || [],
-    };
+  const fetchHomeData = async (): Promise<HomePageData> => {
+    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const weekday = weekdays[new Date().getDay()];
+    return await invoke<HomePageData>('get_home_data', { weekday });
   };
 
   // 使用缓存（启用 stale-while-revalidate）
-  const { fetchData } = useCachedData<HomeData>('home', fetchHomeData, {
+  const { fetchData } = useCachedData<HomePageData>('home', fetchHomeData, {
     staleWhileRevalidate: true,
     onUpdate: (freshData) => {
       // 后台更新完成后，静默更新状态
       setHotMovies(freshData.hotMovies);
       setHotTvShows(freshData.hotTvShows);
       setHotVarietyShows(freshData.hotVarietyShows);
-      setBangumiCalendarData(freshData.bangumiCalendarData);
+      setTodayBangumi(freshData.todayBangumi);
     },
   });
 
@@ -144,7 +104,7 @@ function HomeClient() {
         setHotMovies(data.hotMovies);
         setHotTvShows(data.hotTvShows);
         setHotVarietyShows(data.hotVarietyShows);
-        setBangumiCalendarData(data.bangumiCalendarData);
+        setTodayBangumi(data.todayBangumi);
       } catch (error) {
         console.error('获取推荐数据失败:', error);
       } finally {
@@ -158,42 +118,10 @@ function HomeClient() {
   // 处理收藏数据更新的函数
   const updateFavoriteItems = async () => {
     try {
-      const allFavorites = await invoke<RustFavorite[]>('get_play_favorites');
-      const allPlayRecords = await invoke<RustPlayRecord[]>('get_all_play_records');
-
-      // 创建播放记录的 Map，方便查找
-      const playRecordsMap = new Map<string, RustPlayRecord>();
-      allPlayRecords.forEach((record) => {
-        playRecordsMap.set(record.key, record);
-      });
-
-      // 根据保存时间排序（从近到远）
-      const sorted = [...allFavorites]
-        .sort((a, b) => b.save_time - a.save_time)
-        .map((fav) => {
-          const plusIndex = fav.key.indexOf('+');
-          const source = fav.key.slice(0, plusIndex);
-          const id = fav.key.slice(plusIndex + 1);
-
-          // 查找对应的播放记录，获取当前集数
-          const playRecord = playRecordsMap.get(fav.key);
-          const currentEpisode = playRecord?.episode_index;
-
-          return {
-            id,
-            source,
-            title: fav.title,
-            year: fav.year,
-            poster: fav.cover,
-            episodes: fav.total_episodes,
-            source_name: fav.source_name,
-            currentEpisode,
-            search_title: fav.search_title,
-          } as FavoriteItem;
-        });
-      setFavoriteItems(sorted);
+      const items = await invoke<FavoriteCard[]>('get_favorite_cards');
+      setFavoriteItems(items);
     } catch (err) {
-      console.error('获取收藏数据失败:', err);
+      console.error('获取收藏夹数据失败:', err);
     }
   };
 
@@ -204,12 +132,9 @@ function HomeClient() {
     updateFavoriteItems();
 
     // 监听收藏更新事件
-    const unsubscribe = subscribeToDataUpdates(
-      'favoritesUpdated',
-      () => {
-        updateFavoriteItems();
-      }
-    );
+    const unsubscribe = subscribeToDataUpdates('favoritesUpdated', () => {
+      updateFavoriteItems();
+    });
 
     return unsubscribe;
   }, [activeTab]);
@@ -269,7 +194,7 @@ function HomeClient() {
                       await invoke('clear_all_favorites');
                       setFavoriteItems([]);
                       window.dispatchEvent(
-                        new CustomEvent('favoritesUpdated', { detail: {} })
+                        new CustomEvent('favoritesUpdated', { detail: {} }),
                       );
                     }}
                   >
@@ -398,52 +323,29 @@ function HomeClient() {
                     ? Array.from({ length: 8 }).map((_, index) => (
                         <SkeletonCard key={index} />
                       ))
-                    : (() => {
-                        const today = new Date();
-                        const weekdays = [
-                          'Sun',
-                          'Mon',
-                          'Tue',
-                          'Wed',
-                          'Thu',
-                          'Fri',
-                          'Sat',
-                        ];
-                        const currentWeekday = weekdays[today.getDay()];
-
-                        const todayAnimes =
-                          bangumiCalendarData.find(
-                            (item) => item.weekday.en === currentWeekday
-                          )?.items || [];
-
-                        const validAnimes = todayAnimes.filter(
-                          (anime) => anime && anime.id
-                        );
-
-                        return validAnimes.map((anime, index) => (
-                          <div
-                            key={`${anime.id}-${index}`}
-                            className='min-w-24 w-24 sm:min-w-45 sm:w-44'
-                          >
-                            <VideoCard
-                              from='douban'
-                              title={anime.name_cn || anime.name}
-                              poster={
-                                anime.images?.large ||
-                                anime.images?.common ||
-                                anime.images?.medium ||
-                                anime.images?.small ||
-                                anime.images?.grid ||
-                                '/logo.png'
-                              }
-                              douban_id={anime.id}
-                              rate={anime.rating?.score?.toFixed(1) || ''}
-                              year={anime.air_date?.split('-')?.[0] || ''}
-                              isBangumi={true}
-                            />
-                          </div>
-                        ));
-                      })()}
+                    : todayBangumi.map((anime, index) => (
+                        <div
+                          key={`${anime.id}-${index}`}
+                          className='min-w-24 w-24 sm:min-w-45 sm:w-44'
+                        >
+                          <VideoCard
+                            from='douban'
+                            title={anime.name_cn || anime.name}
+                            poster={
+                              anime.images?.large ||
+                              anime.images?.common ||
+                              anime.images?.medium ||
+                              anime.images?.small ||
+                              anime.images?.grid ||
+                              '/logo.png'
+                            }
+                            douban_id={anime.id}
+                            rate={anime.rating?.score?.toFixed(1) || ''}
+                            year={anime.air_date?.split('-')?.[0] || ''}
+                            isBangumi={true}
+                          />
+                        </div>
+                      ))}
                 </ScrollableRow>
               </section>
 
@@ -494,7 +396,10 @@ function HomeClient() {
           className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-all duration-300 ${
             showAnnouncement ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
-          onClick={(e) => e.target === e.currentTarget && handleCloseAnnouncement(announcement)}
+          onClick={(e) =>
+            e.target === e.currentTarget &&
+            handleCloseAnnouncement(announcement)
+          }
         >
           {/* 背景遮罩 */}
           <div className='absolute inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-sm' />

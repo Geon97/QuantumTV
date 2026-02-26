@@ -122,6 +122,10 @@ pub struct PlayerInitialState {
     pub other_sources: Vec<SearchResult>,
     /// 播放记录（集数索引和播放时间）
     pub play_record: Option<PlayRecordInfo>,
+    /// 初始化集数索引（0-based）
+    pub initial_episode_index: i32,
+    /// 初始化播放时间（秒）
+    pub resume_time: Option<i32>,
     /// 是否已收藏
     pub is_favorited: bool,
     /// 跳过配置
@@ -135,6 +139,7 @@ pub struct PlayerInitialState {
 /// 播放记录信息
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlayRecordInfo {
+    /// 0-based index for player usage
     pub episode_index: i32,
     pub play_time: i32,
 }
@@ -145,6 +150,361 @@ pub struct SkipConfigInfo {
     pub enable: bool,
     pub intro_time: i32,
     pub outro_time: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SkipConfigPayload {
+    pub enable: bool,
+    pub intro_time: f64,
+    pub outro_time: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangePlaySourceRequest {
+    pub current_source: Option<String>,
+    pub current_id: Option<String>,
+    pub new_source: String,
+    pub new_id: String,
+    pub available_sources: Vec<SearchResult>,
+    pub current_episode_index: i32,
+    pub current_play_time: f64,
+    pub resume_time: Option<f64>,
+    pub skip_config: Option<SkipConfigPayload>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ChangePlaySourceResponse {
+    pub detail: SearchResult,
+    pub target_episode_index: i32,
+    pub resume_time: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SavePlayProgressRequest {
+    pub source: String,
+    pub id: String,
+    pub title: String,
+    pub source_name: String,
+    pub year: String,
+    pub cover: String,
+    pub episode_index: i32,
+    pub total_episodes: i32,
+    pub play_time: f64,
+    pub total_time: f64,
+    pub search_title: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct InitializePlayerByQueryRequest {
+    pub query: String,
+    pub filter_title: String,
+    pub year: Option<String>,
+    pub search_type: Option<String>,
+    pub prefer_best: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct InitializePlayerByQueryResponse {
+    pub results: Vec<SearchResult>,
+    pub test_results: Vec<(String, SourceTestResult)>,
+}
+
+#[derive(Debug, Clone)]
+struct PlayRecordMeta {
+    episode_index: i32,
+    play_time: i32,
+    title: String,
+    year: String,
+    total_episodes: i32,
+    search_title: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SearchTypeFilter {
+    Tv,
+    Movie,
+}
+
+fn normalize_episode_index(record_episode_index: i32, total_episodes: usize) -> i32 {
+    if total_episodes == 0 {
+        return 0;
+    }
+    let zero_based = if record_episode_index <= 0 {
+        0
+    } else {
+        record_episode_index - 1
+    };
+    let max_index = total_episodes.saturating_sub(1) as i32;
+    zero_based.clamp(0, max_index)
+}
+
+fn resolve_initial_playback_state(
+    play_record: Option<&PlayRecordInfo>,
+) -> (i32, Option<i32>) {
+    match play_record {
+        Some(record) => (record.episode_index, Some(record.play_time)),
+        None => (0, None),
+    }
+}
+
+fn normalize_title_for_match(title: &str) -> String {
+    title.replace(' ', "").to_lowercase()
+}
+
+fn derive_search_type_filter(total_episodes: Option<i32>) -> Option<SearchTypeFilter> {
+    match total_episodes {
+        Some(total) if total > 1 => Some(SearchTypeFilter::Tv),
+        Some(1) => Some(SearchTypeFilter::Movie),
+        _ => None,
+    }
+}
+
+fn filter_sources_for_fallback(
+    results: &[SearchResult],
+    title: &str,
+    year: Option<&str>,
+    search_type: Option<SearchTypeFilter>,
+) -> Vec<SearchResult> {
+    let normalized_title = normalize_title_for_match(title);
+    let normalized_year = year.map(|y| y.trim().to_lowercase());
+
+    results
+        .iter()
+        .filter(|result| {
+            if normalize_title_for_match(&result.title) != normalized_title {
+                return false;
+            }
+
+            if let Some(ref y) = normalized_year {
+                if !y.is_empty() {
+                    let result_year = result.year.as_deref().unwrap_or("").to_lowercase();
+                    if result_year != *y {
+                        return false;
+                    }
+                }
+            }
+
+            match search_type {
+                Some(SearchTypeFilter::Tv) => result.episodes.len() > 1,
+                Some(SearchTypeFilter::Movie) => result.episodes.len() == 1,
+                None => true,
+            }
+        })
+        .cloned()
+        .collect()
+}
+
+fn choose_fallback_candidates(
+    results: Vec<SearchResult>,
+    title: &str,
+    year: Option<&str>,
+    search_type: Option<SearchTypeFilter>,
+) -> Vec<SearchResult> {
+    let filtered = filter_sources_for_fallback(&results, title, year, search_type);
+    if filtered.is_empty() {
+        results
+    } else {
+        filtered
+    }
+}
+
+fn parse_search_type_filter(search_type: Option<&str>) -> Option<SearchTypeFilter> {
+    match search_type {
+        Some(value) if value.eq_ignore_ascii_case("tv") => Some(SearchTypeFilter::Tv),
+        Some(value) if value.eq_ignore_ascii_case("movie") => Some(SearchTypeFilter::Movie),
+        _ => None,
+    }
+}
+
+fn reorder_results_with_best(
+    best: &SearchResult,
+    results: Vec<SearchResult>,
+) -> Vec<SearchResult> {
+    let mut ordered = Vec::with_capacity(results.len());
+    ordered.push(best.clone());
+    ordered.extend(results.into_iter().filter(|item| {
+        !(item.source == best.source && item.id == best.id)
+    }));
+    ordered
+}
+
+async fn select_best_source_from_search(
+    query: String,
+    fallback_year: Option<String>,
+    search_type: Option<SearchTypeFilter>,
+    app_handle: tauri::AppHandle,
+    storage: State<'_, StorageManager>,
+    cache: State<'_, SearchCacheManager>,
+) -> Result<GetVideoDetailOptimizedResponse, String> {
+    let search_results = search(query.clone(), app_handle, storage, cache)
+        .await
+        .map_err(|e| format!("Fallback search failed: {}", e))?;
+
+    if search_results.is_empty() {
+        return Err("Fallback search returned no results".to_string());
+    }
+
+    let candidates = choose_fallback_candidates(
+        search_results,
+        &query,
+        fallback_year.as_deref(),
+        search_type,
+    );
+
+    if candidates.is_empty() {
+        return Err("No fallback candidates available".to_string());
+    }
+
+    let best_source = if candidates.len() == 1 {
+        candidates[0].clone()
+    } else {
+        let client = get_video_client();
+        prefer_best_source(client, candidates.clone())
+            .await
+            .map(|(best, _)| best)?
+    };
+
+    let other_sources = candidates
+        .into_iter()
+        .filter(|source_item| {
+            !(source_item.source == best_source.source && source_item.id == best_source.id)
+        })
+        .collect();
+
+    Ok(GetVideoDetailOptimizedResponse {
+        detail: best_source,
+        other_sources,
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ResolvedSourceChange {
+    target_episode_index: i32,
+    resume_time: f64,
+}
+
+fn resolve_source_change(
+    detail: &SearchResult,
+    current_episode_index: i32,
+    current_play_time: f64,
+    resume_time: Option<f64>,
+) -> ResolvedSourceChange {
+    let total_episodes = detail.episodes.len() as i32;
+    if total_episodes <= 0 {
+        return ResolvedSourceChange {
+            target_episode_index: 0,
+            resume_time: 0.0,
+        };
+    }
+
+    let max_index = total_episodes - 1;
+    let out_of_range =
+        current_episode_index < 0 || current_episode_index > max_index;
+    let target_episode_index = if out_of_range {
+        0
+    } else {
+        current_episode_index
+    };
+    let resume_time = if out_of_range {
+        0.0
+    } else if resume_time.unwrap_or(0.0) > 0.0 {
+        resume_time.unwrap_or(0.0)
+    } else if current_play_time > 1.0 {
+        current_play_time
+    } else {
+        0.0
+    };
+
+    ResolvedSourceChange {
+        target_episode_index,
+        resume_time,
+    }
+}
+
+fn migrate_play_source_state(
+    db: &crate::db::db_client::Db,
+    old_key: Option<&str>,
+    new_key: &str,
+    skip_config: Option<&SkipConfigPayload>,
+) -> Result<(), String> {
+    db.with_conn(|conn| {
+        if let Some(old_key) = old_key {
+            conn.execute("DELETE FROM play_records WHERE key = ?1", params![old_key])?;
+            conn.execute("DELETE FROM skip_configs WHERE key = ?1", params![old_key])?;
+        }
+
+        if let Some(config) = skip_config {
+            conn.execute(
+                "INSERT OR REPLACE INTO skip_configs (key, enable, intro_time, outro_time) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    new_key,
+                    if config.enable { 1 } else { 0 },
+                    config.intro_time,
+                    config.outro_time,
+                ],
+            )?;
+        }
+
+        Ok(())
+    })
+}
+
+fn save_play_progress_inner(
+    db: &crate::db::db_client::Db,
+    request: SavePlayProgressRequest,
+) -> Result<bool, String> {
+    if request.source.is_empty()
+        || request.id.is_empty()
+        || request.title.trim().is_empty()
+        || request.source_name.trim().is_empty()
+    {
+        return Ok(false);
+    }
+
+    let play_time = request.play_time.floor() as i32;
+    let total_time = request.total_time.floor() as i32;
+    if play_time < 1 || total_time <= 0 {
+        return Ok(false);
+    }
+
+    let total_episodes = if request.total_episodes <= 0 {
+        1
+    } else {
+        request.total_episodes
+    };
+    let episode_index = request.episode_index.max(0) + 1;
+    let search_title = request.search_title.unwrap_or_default();
+    let save_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs() as i32;
+    let key = format!("{}+{}", request.source, request.id);
+
+    db.with_conn(|conn| {
+        conn.execute(
+            "INSERT OR REPLACE INTO play_records (key, title, source_name, year, cover, episode_index, total_episodes, play_time, total_time, save_time, search_title)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                key,
+                request.title,
+                request.source_name,
+                request.year,
+                request.cover,
+                episode_index,
+                total_episodes,
+                play_time,
+                total_time,
+                save_time,
+                search_title,
+            ],
+        )?;
+        Ok(())
+    })?;
+
+    Ok(true)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -1607,6 +1967,95 @@ pub async fn test_video_source_command(
     test_video_source(client, &m3u8_url).await
 }
 
+#[tauri::command]
+pub async fn initialize_player_by_query(
+    request: InitializePlayerByQueryRequest,
+    app_handle: tauri::AppHandle,
+    storage: State<'_, StorageManager>,
+    cache: State<'_, SearchCacheManager>,
+) -> Result<InitializePlayerByQueryResponse, String> {
+    let query = request.query.trim();
+    if query.is_empty() {
+        return Err("Missing query".to_string());
+    }
+
+    let results = search(query.to_string(), app_handle, storage, cache).await?;
+    let filter_title = request.filter_title.trim();
+    let filter_year = request
+        .year
+        .as_deref()
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty());
+    let search_type = parse_search_type_filter(request.search_type.as_deref());
+
+    let mut filtered = if filter_title.is_empty() {
+        results
+    } else {
+        filter_sources_for_fallback(&results, filter_title, filter_year, search_type)
+    };
+
+    let mut test_results = Vec::new();
+    if request.prefer_best && filtered.len() > 1 {
+        let client = get_video_client();
+        let (best, tests) = prefer_best_source(client, filtered.clone()).await?;
+        test_results = tests;
+        filtered = reorder_results_with_best(&best, filtered);
+    }
+
+    Ok(InitializePlayerByQueryResponse {
+        results: filtered,
+        test_results,
+    })
+}
+
+#[tauri::command]
+pub fn change_play_source(
+    request: ChangePlaySourceRequest,
+    db: State<'_, crate::db::db_client::Db>,
+) -> Result<ChangePlaySourceResponse, String> {
+    let detail = request
+        .available_sources
+        .into_iter()
+        .find(|source| source.source == request.new_source && source.id == request.new_id)
+        .ok_or_else(|| "未找到匹配结果".to_string())?;
+
+    let old_key = match (request.current_source.as_deref(), request.current_id.as_deref()) {
+        (Some(source), Some(id)) if !source.is_empty() && !id.is_empty() => {
+            Some(format!("{}+{}", source, id))
+        }
+        _ => None,
+    };
+    let new_key = format!("{}+{}", request.new_source, request.new_id);
+
+    migrate_play_source_state(
+        &db,
+        old_key.as_deref(),
+        &new_key,
+        request.skip_config.as_ref(),
+    )?;
+
+    let resolved = resolve_source_change(
+        &detail,
+        request.current_episode_index,
+        request.current_play_time,
+        request.resume_time,
+    );
+
+    Ok(ChangePlaySourceResponse {
+        detail,
+        target_episode_index: resolved.target_episode_index,
+        resume_time: resolved.resume_time,
+    })
+}
+
+#[tauri::command]
+pub fn save_play_progress(
+    request: SavePlayProgressRequest,
+    db: State<'_, crate::db::db_client::Db>,
+) -> Result<bool, String> {
+    save_play_progress_inner(&db, request)
+}
+
 /// 初始化播放器视图 - 聚合所有初始化数据
 ///
 /// 一次性返回播放器启动所需的所有数据，减少 IPC 通信次数
@@ -1628,7 +2077,8 @@ pub async fn test_video_source_command(
 pub async fn initialize_player_view(
     source: String,
     id: String,
-    _title: Option<String>,
+    title: Option<String>,
+    app_handle: tauri::AppHandle,
     storage: State<'_, StorageManager>,
     cache: State<'_, SearchCacheManager>,
     db: State<'_, crate::db::db_client::Db>,
@@ -1637,7 +2087,7 @@ pub async fn initialize_player_view(
     let key = format!("{}+{}", source, id);
 
     // 并行执行所有数据获取操作
-    let (detail_result, play_record, is_favorited, skip_config, player_config) = tokio::join!(
+    let (detail_result, play_record_meta, is_favorited, skip_config, player_config) = tokio::join!(
         // 1. 获取视频详情和其他源
         get_video_detail_optimized(
             source.clone(),
@@ -1649,13 +2099,18 @@ pub async fn initialize_player_view(
         // 2. 读取播放记录
         async {
             db.with_conn(|conn| {
-                let mut stmt = conn
-                    .prepare("SELECT episode_index, play_time FROM play_records WHERE key = ?1")?;
+                let mut stmt = conn.prepare(
+                    "SELECT episode_index, play_time, title, year, total_episodes, search_title FROM play_records WHERE key = ?1",
+                )?;
 
                 let result = stmt.query_row(params![&key], |row| {
-                    Ok(PlayRecordInfo {
+                    Ok(PlayRecordMeta {
                         episode_index: row.get(0)?,
                         play_time: row.get(1)?,
+                        title: row.get(2)?,
+                        year: row.get(3)?,
+                        total_episodes: row.get(4)?,
+                        search_title: row.get(5)?,
                     })
                 });
 
@@ -1716,16 +2171,110 @@ pub async fn initialize_player_view(
     );
 
     // 处理视频详情结果
-    let detail_response = detail_result?;
-    let play_record = play_record?;
+    let play_record_meta = play_record_meta?;
     let is_favorited = is_favorited?;
     let skip_config = skip_config?;
     let (block_ad_enabled, optimization_enabled) = player_config?;
+
+    let fallback_title = title
+        .as_ref()
+        .and_then(|t| {
+            let trimmed = t.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        })
+        .or_else(|| {
+            play_record_meta.as_ref().and_then(|record| {
+                let trimmed = record.search_title.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            })
+        })
+        .or_else(|| play_record_meta.as_ref().map(|record| record.title.clone()));
+
+    let fallback_year = play_record_meta
+        .as_ref()
+        .map(|record| record.year.trim().to_string())
+        .filter(|year| !year.is_empty());
+
+    let search_type = derive_search_type_filter(
+        play_record_meta
+            .as_ref()
+            .map(|record| record.total_episodes),
+    );
+
+    let mut detail_response = match detail_result {
+        Ok(detail) if !detail.detail.episodes.is_empty() => detail,
+        Ok(_) | Err(_) => {
+            let query = fallback_title
+                .clone()
+                .ok_or_else(|| "Missing title for fallback search".to_string())?;
+            select_best_source_from_search(
+                query,
+                fallback_year.clone(),
+                search_type,
+                app_handle.clone(),
+                storage.clone(),
+                cache.clone(),
+            )
+            .await?
+        }
+    };
+
+    if let Some(record) = play_record_meta.as_ref() {
+        if let Some(query) = fallback_title.clone() {
+            let episode_index = normalize_episode_index(
+                record.episode_index,
+                detail_response.detail.episodes.len(),
+            ) as usize;
+            let test_url = detail_response
+                .detail
+                .episodes
+                .get(episode_index)
+                .or_else(|| detail_response.detail.episodes.get(0));
+
+            if let Some(url) = test_url {
+                let client = get_video_client();
+                if test_video_source(client, url).await.is_err() {
+                    if let Ok(fallback) = select_best_source_from_search(
+                        query,
+                        fallback_year.clone(),
+                        search_type,
+                        app_handle.clone(),
+                        storage.clone(),
+                        cache.clone(),
+                    )
+                    .await
+                    {
+                        detail_response = fallback;
+                    }
+                }
+            }
+        }
+    }
+
+    let play_record = play_record_meta.map(|record| PlayRecordInfo {
+        episode_index: normalize_episode_index(
+            record.episode_index,
+            detail_response.detail.episodes.len(),
+        ),
+        play_time: record.play_time,
+    });
+    let (initial_episode_index, resume_time) =
+        resolve_initial_playback_state(play_record.as_ref());
 
     Ok(PlayerInitialState {
         detail: detail_response.detail,
         other_sources: detail_response.other_sources,
         play_record,
+        initial_episode_index,
+        resume_time,
         is_favorited,
         skip_config,
         block_ad_enabled,
@@ -1750,4 +2299,306 @@ pub fn get_cache_stats(
     );
 
     Ok(stats)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+    use rusqlite::params;
+
+    fn make_result(title: &str, year: &str, episodes_len: usize, source: &str, id: &str) -> SearchResult {
+        SearchResult {
+            id: id.to_string(),
+            title: title.to_string(),
+            poster: String::new(),
+            episodes: vec!["http://example.com/1.m3u8".to_string(); episodes_len],
+            episodes_titles: Vec::new(),
+            source: source.to_string(),
+            source_name: "TestSource".to_string(),
+            class: None,
+            year: Some(year.to_string()),
+            desc: None,
+            type_name: None,
+            douban_id: None,
+        }
+    }
+
+    #[test]
+    fn normalize_episode_index_clamps_and_converts() {
+        assert_eq!(normalize_episode_index(1, 10), 0);
+        assert_eq!(normalize_episode_index(0, 10), 0);
+        assert_eq!(normalize_episode_index(-2, 10), 0);
+        assert_eq!(normalize_episode_index(5, 3), 2);
+        assert_eq!(normalize_episode_index(3, 3), 2);
+        assert_eq!(normalize_episode_index(1, 0), 0);
+    }
+
+    #[test]
+    fn resolve_initial_playback_state_prefers_record() {
+        let record = PlayRecordInfo {
+            episode_index: 4,
+            play_time: 120,
+        };
+        let resolved = resolve_initial_playback_state(Some(&record));
+        assert_eq!(resolved.0, 4);
+        assert_eq!(resolved.1, Some(120));
+
+        let resolved_none = resolve_initial_playback_state(None);
+        assert_eq!(resolved_none.0, 0);
+        assert_eq!(resolved_none.1, None);
+    }
+
+    #[test]
+    fn derive_search_type_filter_detects_tv_and_movie() {
+        assert_eq!(derive_search_type_filter(Some(10)), Some(SearchTypeFilter::Tv));
+        assert_eq!(derive_search_type_filter(Some(1)), Some(SearchTypeFilter::Movie));
+        assert_eq!(derive_search_type_filter(Some(0)), None);
+        assert_eq!(derive_search_type_filter(None), None);
+    }
+
+    #[test]
+    fn filter_sources_for_fallback_matches_title_year_and_type() {
+        let results = vec![
+            make_result("Test Show", "2020", 12, "s1", "1"),
+            make_result("Test Show", "2019", 12, "s2", "2"),
+            make_result("Test Movie", "2020", 1, "s3", "3"),
+            make_result("TestShow", "2020", 12, "s4", "4"),
+        ];
+
+        let filtered = filter_sources_for_fallback(
+            &results,
+            "Test Show",
+            Some("2020"),
+            Some(SearchTypeFilter::Tv),
+        );
+
+        assert_eq!(filtered.len(), 2);
+        let sources: Vec<String> = filtered.iter().map(|item| item.source.clone()).collect();
+        assert!(sources.contains(&"s1".to_string()));
+        assert!(sources.contains(&"s4".to_string()));
+
+        let filtered_no_year = filter_sources_for_fallback(
+            &results,
+            "Test Show",
+            None,
+            Some(SearchTypeFilter::Tv),
+        );
+        assert_eq!(filtered_no_year.len(), 3);
+    }
+
+    #[test]
+    fn choose_fallback_candidates_returns_original_when_filtered_empty() {
+        let results = vec![
+            make_result("Movie A", "2022", 1, "s1", "1"),
+            make_result("Movie A", "2022", 1, "s2", "2"),
+        ];
+
+        let candidates = choose_fallback_candidates(
+            results.clone(),
+            "Movie A",
+            Some("2022"),
+            Some(SearchTypeFilter::Tv),
+        );
+
+        assert_eq!(candidates.len(), results.len());
+    }
+
+    #[test]
+    fn parse_search_type_filter_maps_strings() {
+        assert_eq!(
+            parse_search_type_filter(Some("tv")),
+            Some(SearchTypeFilter::Tv)
+        );
+        assert_eq!(
+            parse_search_type_filter(Some("movie")),
+            Some(SearchTypeFilter::Movie)
+        );
+        assert_eq!(parse_search_type_filter(Some("other")), None);
+        assert_eq!(parse_search_type_filter(None), None);
+    }
+
+    #[test]
+    fn reorder_results_with_best_places_best_first() {
+        let best = make_result("Best", "2024", 1, "s1", "1");
+        let other = make_result("Other", "2024", 1, "s2", "2");
+        let results = vec![other.clone(), best.clone()];
+
+        let ordered = reorder_results_with_best(&best, results);
+        assert_eq!(ordered.len(), 2);
+        assert_eq!(ordered[0].source, best.source);
+        assert_eq!(ordered[0].id, best.id);
+        assert_eq!(ordered[1].source, other.source);
+    }
+
+    fn setup_test_db() -> crate::db::db_client::Db {
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE play_records (
+                key TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                source_name TEXT NOT NULL,
+                year TEXT,
+                cover TEXT,
+                episode_index INTEGER,
+                total_episodes INTEGER,
+                play_time INTEGER,
+                total_time INTEGER,
+                save_time INTEGER,
+                search_title TEXT
+            );
+            CREATE TABLE skip_configs (
+                key TEXT PRIMARY KEY,
+                enable INTEGER DEFAULT 0,
+                intro_time REAL DEFAULT 0,
+                outro_time REAL DEFAULT 0
+            );
+            "#,
+        )
+        .expect("init schema");
+        crate::db::db_client::Db::new(conn)
+    }
+
+    #[test]
+    fn resolve_source_change_uses_current_play_time_when_no_resume() {
+        let detail = make_result("Show", "2024", 3, "s1", "1");
+        let resolved = resolve_source_change(&detail, 1, 12.5, None);
+        assert_eq!(resolved.target_episode_index, 1);
+        assert!((resolved.resume_time - 12.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn resolve_source_change_keeps_existing_resume_time() {
+        let detail = make_result("Show", "2024", 3, "s1", "1");
+        let resolved = resolve_source_change(&detail, 0, 20.0, Some(35.0));
+        assert_eq!(resolved.target_episode_index, 0);
+        assert!((resolved.resume_time - 35.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn resolve_source_change_clears_when_index_out_of_range() {
+        let detail = make_result("Show", "2024", 2, "s1", "1");
+        let resolved = resolve_source_change(&detail, 5, 30.0, Some(15.0));
+        assert_eq!(resolved.target_episode_index, 0);
+        assert_eq!(resolved.resume_time, 0.0);
+    }
+
+    #[test]
+    fn migrate_play_source_state_moves_skip_config_and_clears_old_record() {
+        let db = setup_test_db();
+        db.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO play_records (key, title, source_name, year, cover, episode_index, total_episodes, play_time, total_time, save_time, search_title)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    "old+1",
+                    "Old Title",
+                    "Old Source",
+                    "2024",
+                    "cover",
+                    1,
+                    10,
+                    12,
+                    100,
+                    123,
+                    "search",
+                ],
+            )?;
+            conn.execute(
+                "INSERT INTO skip_configs (key, enable, intro_time, outro_time) VALUES (?1, ?2, ?3, ?4)",
+                params!["old+1", 1, 10.0, -20.0],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        let skip = SkipConfigPayload {
+            enable: true,
+            intro_time: 10.0,
+            outro_time: -20.0,
+        };
+        migrate_play_source_state(&db, Some("old+1"), "new+2", Some(&skip)).unwrap();
+
+        let old_count: i32 = db
+            .with_conn(|conn| conn.query_row("SELECT COUNT(*) FROM play_records WHERE key = ?1", params!["old+1"], |row| row.get(0)))
+            .unwrap();
+        assert_eq!(old_count, 0);
+
+        let old_skip_count: i32 = db
+            .with_conn(|conn| conn.query_row("SELECT COUNT(*) FROM skip_configs WHERE key = ?1", params!["old+1"], |row| row.get(0)))
+            .unwrap();
+        assert_eq!(old_skip_count, 0);
+
+        let (enable, intro, outro): (i32, f64, f64) = db
+            .with_conn(|conn| {
+                conn.query_row(
+                    "SELECT enable, intro_time, outro_time FROM skip_configs WHERE key = ?1",
+                    params!["new+2"],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+            })
+            .unwrap();
+        assert_eq!(enable, 1);
+        assert!((intro - 10.0).abs() < 0.01);
+        assert!((outro + 20.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn save_play_progress_inserts_one_based_episode_index() {
+        let db = setup_test_db();
+        let request = SavePlayProgressRequest {
+            source: "s1".to_string(),
+            id: "1".to_string(),
+            title: "Title".to_string(),
+            source_name: "Source".to_string(),
+            year: "2024".to_string(),
+            cover: "cover".to_string(),
+            episode_index: 0,
+            total_episodes: 10,
+            play_time: 12.7,
+            total_time: 120.2,
+            search_title: Some("search".to_string()),
+        };
+
+        let saved = save_play_progress_inner(&db, request).unwrap();
+        assert!(saved);
+
+        let stored_index: i32 = db
+            .with_conn(|conn| {
+                conn.query_row(
+                    "SELECT episode_index FROM play_records WHERE key = ?1",
+                    params!["s1+1"],
+                    |row| row.get(0),
+                )
+            })
+            .unwrap();
+        assert_eq!(stored_index, 1);
+    }
+
+    #[test]
+    fn save_play_progress_skips_when_too_short() {
+        let db = setup_test_db();
+        let request = SavePlayProgressRequest {
+            source: "s1".to_string(),
+            id: "1".to_string(),
+            title: "Title".to_string(),
+            source_name: "Source".to_string(),
+            year: "2024".to_string(),
+            cover: "cover".to_string(),
+            episode_index: 0,
+            total_episodes: 10,
+            play_time: 0.5,
+            total_time: 120.0,
+            search_title: None,
+        };
+
+        let saved = save_play_progress_inner(&db, request).unwrap();
+        assert!(!saved);
+
+        let count: i32 = db
+            .with_conn(|conn| conn.query_row("SELECT COUNT(*) FROM play_records", [], |row| row.get(0)))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
 }

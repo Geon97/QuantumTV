@@ -1,10 +1,12 @@
+use crate::commands::bangumi::get_bangumi_calendar_data;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, error::Error};
+use std::time::{SystemTime, UNIX_EPOCH};
 use url::form_urlencoded;
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "lowercase")] // 不区分大小写
-enum Kind {
+pub enum Kind {
     Tv,
     Movie,
 }
@@ -93,19 +95,74 @@ struct DoubanProxyConfig {
     proxy_url: String,
 }
 #[derive(Debug, Serialize, Deserialize)]
-struct DoubanItem {
-    id: String,
-    title: String,
-    poster: String,
-    rate: String,
-    year: String,
+pub struct DoubanItem {
+    pub id: String,
+    pub title: String,
+    pub poster: String,
+    pub rate: String,
+    pub year: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DoubanResult {
-    code: i32,
-    message: String,
-    list: Vec<DoubanItem>,
+    pub code: i32,
+    pub message: String,
+    pub list: Vec<DoubanItem>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DoubanPageRequest {
+    #[serde(rename = "type")]
+    pub request_type: String,
+    pub primary_selection: String,
+    pub secondary_selection: String,
+    pub multi_level_selection: Option<HashMap<String, String>>,
+    pub selected_weekday: Option<String>,
+    pub page: Option<i32>,
+    pub page_limit: Option<i32>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DoubanPageResponse {
+    pub list: Vec<DoubanItem>,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DoubanCustomCategory {
+    pub name: Option<String>,
+    #[serde(rename = "type")]
+    pub category_type: String,
+    pub query: String,
+    pub disabled: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DoubanDefaultsRequest {
+    #[serde(rename = "type")]
+    pub request_type: String,
+    pub custom_categories: Option<Vec<DoubanCustomCategory>>,
+    pub fallback_secondary: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DoubanDefaultsResponse {
+    pub primary_selection: String,
+    pub secondary_selection: String,
+    pub multi_level_selection: HashMap<String, String>,
+    pub cache_enabled: bool,
+    pub require_secondary: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum DoubanPageMode {
+    Categories,
+    Recommends,
+    Custom,
+    AnimeDaily,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -274,6 +331,22 @@ fn get_douban_proxy_config(
     }
 }
 impl DoubanCategoriesParams {
+    pub fn new(
+        kind: Kind,
+        category: impl Into<String>,
+        type_: impl Into<String>,
+        page_limit: Option<i32>,
+        page_start: Option<i32>,
+    ) -> Self {
+        Self {
+            kind,
+            category: category.into(),
+            type_: type_.into(),
+            page_limit,
+            page_start,
+        }
+    }
+
     fn page_limit(&self) -> i32 {
         self.page_limit.unwrap_or(20)
     }
@@ -774,5 +847,479 @@ pub async fn get_douban_recommends(params: DoubanRecommendsParams) -> Result<Dou
                 .map_err(|e| format!("JSON parse error: {}", e.to_string()))?;
             Ok(result)
         }
+    }
+}
+
+fn resolve_douban_page_mode(request: &DoubanPageRequest) -> DoubanPageMode {
+    if request.request_type == "custom" {
+        return DoubanPageMode::Custom;
+    }
+
+    if request.request_type == "anime" {
+        if request.primary_selection == "\u{6bcf}\u{65e5}\u{653e}\u{9001}" {
+            return DoubanPageMode::AnimeDaily;
+        }
+        return DoubanPageMode::Recommends;
+    }
+
+    if request.primary_selection == "全部" {
+        return DoubanPageMode::Recommends;
+    }
+
+    DoubanPageMode::Categories
+}
+
+fn default_multi_level_selection() -> HashMap<String, String> {
+    let mut selection = HashMap::new();
+    selection.insert("type".to_string(), "all".to_string());
+    selection.insert("region".to_string(), "all".to_string());
+    selection.insert("year".to_string(), "all".to_string());
+    selection.insert("platform".to_string(), "all".to_string());
+    selection.insert("label".to_string(), "all".to_string());
+    selection.insert("sort".to_string(), "T".to_string());
+    selection
+}
+
+fn resolve_douban_defaults(
+    request_type: &str,
+    custom_categories: Option<&[DoubanCustomCategory]>,
+    fallback_secondary: Option<&str>,
+) -> DoubanDefaultsResponse {
+    let multi_level_selection = default_multi_level_selection();
+
+    if request_type == "custom" {
+        let categories = custom_categories.unwrap_or(&[]);
+        if categories.is_empty() {
+            return DoubanDefaultsResponse {
+                primary_selection: String::new(),
+                secondary_selection: fallback_secondary.unwrap_or("").to_string(),
+                multi_level_selection,
+                cache_enabled: false,
+                require_secondary: false,
+            };
+        }
+
+        let mut types = Vec::new();
+        for category in categories {
+            if !types.contains(&category.category_type.as_str()) {
+                types.push(category.category_type.as_str());
+            }
+        }
+
+        let selected_type = if types.iter().any(|t| *t == "movie") {
+            "movie"
+        } else {
+            types.first().copied().unwrap_or("")
+        };
+
+        let secondary_selection = categories
+            .iter()
+            .find(|cat| cat.category_type == selected_type)
+            .map(|cat| cat.query.clone())
+            .unwrap_or_else(|| fallback_secondary.unwrap_or("").to_string());
+
+        return DoubanDefaultsResponse {
+            primary_selection: selected_type.to_string(),
+            secondary_selection,
+            multi_level_selection,
+            cache_enabled: false,
+            require_secondary: false,
+        };
+    }
+
+    match request_type {
+        "movie" => DoubanDefaultsResponse {
+            primary_selection: "\u{70ed}\u{95e8}".to_string(),
+            secondary_selection: "全部".to_string(),
+            multi_level_selection,
+            cache_enabled: true,
+            require_secondary: true,
+        },
+        "tv" => DoubanDefaultsResponse {
+            primary_selection: "\u{6700}\u{8fd1}\u{70ed}\u{95e8}".to_string(),
+            secondary_selection: "tv".to_string(),
+            multi_level_selection,
+            cache_enabled: true,
+            require_secondary: true,
+        },
+        "show" => DoubanDefaultsResponse {
+            primary_selection: "\u{6700}\u{8fd1}\u{70ed}\u{95e8}".to_string(),
+            secondary_selection: "show".to_string(),
+            multi_level_selection,
+            cache_enabled: true,
+            require_secondary: true,
+        },
+        "anime" => DoubanDefaultsResponse {
+            primary_selection: "\u{6bcf}\u{65e5}\u{653e}\u{9001}".to_string(),
+            secondary_selection: "全部".to_string(),
+            multi_level_selection,
+            cache_enabled: true,
+            require_secondary: false,
+        },
+        _ => DoubanDefaultsResponse {
+            primary_selection: String::new(),
+            secondary_selection: "全部".to_string(),
+            multi_level_selection,
+            cache_enabled: false,
+            require_secondary: true,
+        },
+    }
+}
+
+fn current_weekday_en() -> &'static str {
+    const WEEKDAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    let days = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() / 86_400)
+        .unwrap_or(0);
+    let index = ((days + 4) % 7) as usize;
+    WEEKDAYS[index]
+}
+
+fn resolve_selected_weekday(selected: Option<&str>) -> String {
+    selected
+        .and_then(|value| {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        })
+        .unwrap_or_else(|| current_weekday_en().to_string())
+}
+
+fn extract_multi_value(
+    selection: Option<&HashMap<String, String>>,
+    key: &str,
+) -> String {
+    selection
+        .and_then(|map| map.get(key))
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn ensure_success(result: DoubanResult) -> Result<Vec<DoubanItem>, String> {
+    if result.code == 200 {
+        Ok(result.list)
+    } else {
+        Err(result.message)
+    }
+}
+
+fn build_bangumi_daily_list(
+    data: Vec<crate::commands::bangumi::BangumiCalendarData>,
+    weekday: &str,
+) -> Result<Vec<DoubanItem>, String> {
+    let day = data.into_iter().find(|item| {
+        item.weekday
+            .as_ref()
+            .map(|w| w.en.as_str() == weekday)
+            .unwrap_or(false)
+    });
+
+    let items = match day {
+        Some(day) => day.items.unwrap_or_default(),
+        None => return Err("\u{6ca1}\u{6709}\u{627e}\u{5230}\u{5bf9}\u{5e94}\u{7684}\u{65e5}\u{671f}".to_string()),
+    };
+
+    let list = items
+        .into_iter()
+        .filter(|item| item.id != 0)
+        .map(|item| {
+            let title = if !item.name_cn.is_empty() {
+                item.name_cn
+            } else {
+                item.name
+            };
+            let poster = item
+                .images
+                .as_ref()
+                .and_then(|images| {
+                    images
+                        .large
+                        .clone()
+                        .or_else(|| images.common.clone())
+                        .or_else(|| images.medium.clone())
+                        .or_else(|| images.small.clone())
+                        .or_else(|| images.grid.clone())
+                })
+                .unwrap_or_else(|| "/logo.png".to_string());
+            let rate = item
+                .rating
+                .as_ref()
+                .and_then(|rating| rating.score)
+                .map(|score| format!("{:.1}", score))
+                .unwrap_or_default();
+            let year = item
+                .air_date
+                .as_deref()
+                .and_then(|value| value.split('-').next())
+                .unwrap_or("")
+                .to_string();
+
+            DoubanItem {
+                id: item.id.to_string(),
+                title,
+                poster,
+                rate,
+                year,
+            }
+        })
+        .collect();
+
+    Ok(list)
+}
+
+fn build_recommends_params(
+    request: &DoubanPageRequest,
+    page_limit: i32,
+    page_start: i32,
+) -> DoubanRecommendsParams {
+    let selection = request.multi_level_selection.as_ref();
+    let region = extract_multi_value(selection, "region");
+    let year = extract_multi_value(selection, "year");
+    let platform = extract_multi_value(selection, "platform");
+    let sort = extract_multi_value(selection, "sort");
+    let label = extract_multi_value(selection, "label");
+    let category = if request.request_type == "anime" {
+        "动画".to_string()
+    } else {
+        extract_multi_value(selection, "type")
+    };
+
+    let (kind, format) = if request.request_type == "anime" {
+        if request.primary_selection == "\u{70ed}\u{95e8}" {
+            (Kind::Tv, "\u{7535}\u{89c6}\u{5267}".to_string())
+        } else {
+            (Kind::Movie, String::new())
+        }
+    } else if request.request_type == "show" {
+        (Kind::Tv, "综艺".to_string())
+    } else if request.request_type == "tv" {
+        (Kind::Tv, "\u{7535}\u{89c6}\u{5267}".to_string())
+    } else {
+        (Kind::Movie, String::new())
+    };
+
+    DoubanRecommendsParams {
+        kind,
+        page_limit: Some(page_limit),
+        page_start: Some(page_start),
+        category,
+        format,
+        label,
+        region,
+        year,
+        platform,
+        sort,
+    }
+}
+
+fn build_categories_params(
+    request: &DoubanPageRequest,
+    page_limit: i32,
+    page_start: i32,
+) -> DoubanCategoriesParams {
+    if request.request_type == "tv" || request.request_type == "show" {
+        DoubanCategoriesParams::new(
+            Kind::Tv,
+            request.request_type.clone(),
+            request.secondary_selection.clone(),
+            Some(page_limit),
+            Some(page_start),
+        )
+    } else {
+        let kind = if request.request_type == "movie" {
+            Kind::Movie
+        } else {
+            Kind::Tv
+        };
+        DoubanCategoriesParams::new(
+            kind,
+            request.primary_selection.clone(),
+            request.secondary_selection.clone(),
+            Some(page_limit),
+            Some(page_start),
+        )
+    }
+}
+
+#[tauri::command]
+pub fn get_douban_defaults(request: DoubanDefaultsRequest) -> DoubanDefaultsResponse {
+    resolve_douban_defaults(
+        &request.request_type,
+        request.custom_categories.as_deref(),
+        request.fallback_secondary.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub async fn get_douban_page_data(
+    request: DoubanPageRequest,
+) -> Result<DoubanPageResponse, String> {
+    let page_limit = request.page_limit.unwrap_or(25);
+    let page = request.page.unwrap_or(0).max(0);
+    let page_start = page.saturating_mul(page_limit);
+
+    let mode = resolve_douban_page_mode(&request);
+    let list = match mode {
+        DoubanPageMode::Custom => {
+            let params = DoubanListParams {
+                tag: request.secondary_selection.clone(),
+                type_: request.primary_selection.clone(),
+                page_limit: Some(page_limit),
+                page_start: Some(page_start),
+            };
+            ensure_success(get_douban_list(params).await?)?
+        }
+        DoubanPageMode::AnimeDaily => {
+            if page > 0 {
+                Vec::new()
+            } else {
+                let weekday = resolve_selected_weekday(request.selected_weekday.as_deref());
+                let data = get_bangumi_calendar_data().await?;
+                build_bangumi_daily_list(data, &weekday)?
+            }
+        }
+        DoubanPageMode::Recommends => {
+            let params = build_recommends_params(&request, page_limit, page_start);
+            ensure_success(get_douban_recommends(params).await?)?
+        }
+        DoubanPageMode::Categories => {
+            let params = build_categories_params(&request, page_limit, page_start);
+            ensure_success(get_douban_categories(params).await?)?
+        }
+    };
+
+    let has_more = list.len() == page_limit as usize;
+
+    Ok(DoubanPageResponse { list, has_more })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_douban_page_mode_custom() {
+        let request = DoubanPageRequest {
+            request_type: "custom".to_string(),
+            primary_selection: "movie".to_string(),
+            secondary_selection: "tag".to_string(),
+            multi_level_selection: None,
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+
+        assert_eq!(resolve_douban_page_mode(&request), DoubanPageMode::Custom);
+    }
+
+    #[test]
+    fn resolve_douban_page_mode_anime_daily() {
+        let request = DoubanPageRequest {
+            request_type: "anime".to_string(),
+            primary_selection: "\u{6bcf}\u{65e5}\u{653e}\u{9001}".to_string(),
+            secondary_selection: "全部".to_string(),
+            multi_level_selection: None,
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+
+        assert_eq!(
+            resolve_douban_page_mode(&request),
+            DoubanPageMode::AnimeDaily
+        );
+    }
+
+    #[test]
+    fn resolve_douban_page_mode_recommends() {
+        let request = DoubanPageRequest {
+            request_type: "movie".to_string(),
+            primary_selection: "全部".to_string(),
+            secondary_selection: "全部".to_string(),
+            multi_level_selection: None,
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+
+        assert_eq!(
+            resolve_douban_page_mode(&request),
+            DoubanPageMode::Recommends
+        );
+    }
+
+    #[test]
+    fn build_recommends_params_for_show() {
+        let request = DoubanPageRequest {
+            request_type: "show".to_string(),
+            primary_selection: "全部".to_string(),
+            secondary_selection: "show".to_string(),
+            multi_level_selection: None,
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+        let params = build_recommends_params(&request, 25, 0);
+
+        assert_eq!(params.kind, Kind::Tv);
+        assert_eq!(params.format, "综艺");
+    }
+
+    #[test]
+    fn resolve_douban_defaults_movie() {
+        let defaults = resolve_douban_defaults("movie", None, None);
+        assert_eq!(defaults.primary_selection, "\u{70ed}\u{95e8}");
+        assert_eq!(defaults.secondary_selection, "全部");
+        assert!(defaults.cache_enabled);
+        assert!(defaults.require_secondary);
+    }
+
+    #[test]
+    fn resolve_douban_defaults_anime() {
+        let defaults = resolve_douban_defaults("anime", None, None);
+        assert_eq!(defaults.primary_selection, "\u{6bcf}\u{65e5}\u{653e}\u{9001}");
+        assert_eq!(defaults.secondary_selection, "全部");
+        assert!(defaults.cache_enabled);
+        assert!(!defaults.require_secondary);
+    }
+
+    #[test]
+    fn resolve_douban_defaults_custom_prefers_movie() {
+        let categories = vec![
+            DoubanCustomCategory {
+                name: None,
+                category_type: "tv".to_string(),
+                query: "q1".to_string(),
+                disabled: None,
+            },
+            DoubanCustomCategory {
+                name: None,
+                category_type: "movie".to_string(),
+                query: "q2".to_string(),
+                disabled: None,
+            },
+        ];
+
+        let defaults = resolve_douban_defaults("custom", Some(&categories), Some("fallback"));
+        assert_eq!(defaults.primary_selection, "movie");
+        assert_eq!(defaults.secondary_selection, "q2");
+        assert!(!defaults.cache_enabled);
+    }
+
+    #[test]
+    fn resolve_selected_weekday_prefers_trimmed_value() {
+        let resolved = resolve_selected_weekday(Some("  Wed  "));
+        assert_eq!(resolved, "Wed");
+    }
+
+    #[test]
+    fn resolve_selected_weekday_falls_back_on_empty() {
+        let fallback = current_weekday_en().to_string();
+        let resolved = resolve_selected_weekday(Some("   "));
+        assert_eq!(resolved, fallback);
     }
 }

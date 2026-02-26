@@ -1,6 +1,7 @@
 pub mod bangumi;
 pub mod config;
 pub mod douban_client;
+pub mod home;
 pub mod preload;
 pub mod search;
 pub mod skip;

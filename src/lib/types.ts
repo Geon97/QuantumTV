@@ -56,6 +56,8 @@ export interface PlayerInitialState {
     episode_index: number;
     play_time: number;
   } | null;
+  initial_episode_index: number;
+  resume_time: number | null;
   is_favorited: boolean;
   skip_config: {
     enable: boolean;
@@ -64,6 +66,17 @@ export interface PlayerInitialState {
   } | null;
   block_ad_enabled: boolean;
   optimization_enabled: boolean;
+}
+
+export interface ChangePlaySourceResponse {
+  detail: SearchResult;
+  target_episode_index: number;
+  resume_time: number;
+}
+
+export interface InitializePlayerByQueryResponse {
+  results: SearchResult[];
+  test_results: Array<[string, SourceTestResult]>;
 }
 
 // 收藏数据结构
@@ -169,6 +182,11 @@ export interface SearchFilter {
   year_order: 'none' | 'asc' | 'desc';
 }
 
+export interface SearchPageBootstrap {
+  search_history: string[];
+  fluid_search: boolean;
+}
+
 /** 跳过动作*/
 export type SkipAction = 'None' | { SkipIntro: number } | 'SkipOutro';
 
@@ -187,14 +205,30 @@ export interface DoubanResult {
   list: DoubanItem[];
 }
 
+export interface DoubanPageResponse {
+  list: DoubanItem[];
+  has_more: boolean;
+}
+
+export interface DoubanDefaultsResponse {
+  primarySelection: string;
+  secondarySelection: string;
+  multiLevelSelection: Record<string, string>;
+  cacheEnabled: boolean;
+  requireSecondary: boolean;
+}
+
 // 跳过片头片尾配置数据结构
 export interface SkipConfig {
   enable: boolean; // 是否启用跳过片头片尾
-  intro_time: number; // 片头时间（秒）
-  outro_time: number; // 片尾时间（秒）
+  intro_time: number; // 跳过片头时间（秒）
+  outro_time: number; // 跳过片尾时间（秒）
 }
 
-// 本地定义版本状态枚举，不再从外部导入
+export interface ApplySkipConfigResponse {
+  deleted: boolean;
+}
+
 export enum UpdateStatus {
   CHECKING = 'Checking',
   HAS_UPDATE = 'HasUpdate',
@@ -229,26 +263,47 @@ export interface RustPlayRecord {
   search_title: string;
 }
 
+export interface BangumiItem {
+  id: number;
+  name: string;
+  name_cn: string;
+  rating?: {
+    score?: number;
+  };
+  air_date?: string;
+  images?: {
+    large?: string;
+    common?: string;
+    medium?: string;
+    small?: string;
+    grid?: string;
+  };
+}
+
+export interface HomePageData {
+  hotMovies: DoubanItem[];
+  hotTvShows: DoubanItem[];
+  hotVarietyShows: DoubanItem[];
+  todayBangumi: BangumiItem[];
+}
+
+export interface FavoriteCard {
+  id: string;
+  source: string;
+  title: string;
+  year: string;
+  poster: string;
+  episodes: number;
+  source_name: string;
+  currentEpisode?: number;
+  search_title: string;
+}
+
 export interface BangumiCalendarData {
   weekday: {
     en: string;
   };
-  items: {
-    id: number;
-    name: string;
-    name_cn: string;
-    rating?: {
-      score?: number;
-    };
-    air_date?: string;
-    images?: {
-      large?: string;
-      common?: string;
-      medium?: string;
-      small?: string;
-      grid?: string;
-    };
-  }[];
+  items?: BangumiItem[];
 }
 // Rust 返回类型定义
 export interface SourceTestResult {

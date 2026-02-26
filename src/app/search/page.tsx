@@ -6,7 +6,12 @@ import { ChevronUp, Search, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
-import { AggregatedGroup, SearchFilter, SearchResult } from '@/lib/types';
+import {
+  AggregatedGroup,
+  SearchFilter,
+  SearchPageBootstrap,
+  SearchResult,
+} from '@/lib/types';
 import { subscribeToDataUpdates } from '@/lib/utils';
 import { useImagePreload } from '@/hooks/useImagePreload';
 
@@ -48,7 +53,6 @@ function SearchPageClient() {
     qParam && qParam === globalSearchUIState.query && searchCache.has(qParam);
   const currentQueryRef = useRef<string>('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [normalizedQuery, setNormalizedQuery] = useState('');
 
   const [isLoading, setIsLoading] = useState(!isReturning && !!qParam);
   const [showResults, setShowResults] = useState(!!qParam);
@@ -56,11 +60,8 @@ function SearchPageClient() {
     isReturning ? searchCache.get(qParam)! : [],
   );
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const eventSourceRef = useRef<EventSource | null>(null);
   const [totalSources, setTotalSources] = useState(0);
   const [completedSources, setCompletedSources] = useState(0);
-  const pendingResultsRef = useRef<SearchResult[]>([]);
-  const flushTimerRef = useRef<number | null>(null);
   const [useFluidSearch, setUseFluidSearch] = useState(true);
   // 聚合卡片 refs
   const groupRefs = useRef<
@@ -107,156 +108,71 @@ function SearchPageClient() {
     isReturning ? globalSearchUIState.viewMode : 'agg',
   );
 
-  // 当搜索结果变化时，调用 Rust 进行聚合
-  useEffect(() => {
-    if (searchResults.length === 0) {
-      setAggregatedGroups(new Map());
-      return;
-    }
+  const [filterOptions, setFilterOptions] = useState<{
+    categoriesAll: SearchFilterCategory[];
+    categoriesAgg: SearchFilterCategory[];
+  }>({
+    categoriesAll: [],
+    categoriesAgg: [],
+  });
 
-    const query = currentQueryRef.current;
-    const filter: SearchFilter = {
-      source: filterAgg.source,
-      title: filterAgg.title,
-      year: filterAgg.year,
-      year_order: filterAgg.yearOrder as 'none' | 'asc' | 'desc',
-    };
-
-    invoke<Array<[string, AggregatedGroup]>>(
-      'aggregate_search_results_filtered_command',
-      {
-        results: searchResults,
-        query,
-        normalizedQuery: normalizedQuery || null,
-        filter,
-      },
-    )
-      .then((aggregatedEntries) => {
-        setAggregatedGroups(new Map(aggregatedEntries));
-
-        // 输出缓存统计信息
-        invoke<Record<string, { entry_count: number; weighted_size: number }>>(
-          'get_cache_stats',
-        )
-          .then((stats) => {
-            console.log(
-              '📊 缓存统计 | 视频缓存:',
-              stats.video.entry_count,
-              '条 | 搜索缓存:',
-              stats.search.entry_count,
-              '条',
-            );
-          })
-          .catch(console.error);
-      })
-      .catch(console.error);
-  }, [searchResults, normalizedQuery, filterAgg]);
-
-  // 构建筛选选项
-  const filterOptions = useMemo(() => {
-    const sourcesSet = new Map<string, string>();
-    const titlesSet = new Set<string>();
-    const yearsSet = new Set<string>();
-
-    searchResults.forEach((item) => {
-      if (item.source && item.source_name) {
-        sourcesSet.set(item.source, item.source_name);
-      }
-      if (item.title) titlesSet.add(item.title);
-      if (item.year) yearsSet.add(item.year);
-    });
-
-    const sourceOptions: { label: string; value: string }[] = [
-      { label: '全部来源', value: 'all' },
-      ...Array.from(sourcesSet.entries())
-        .sort((a, b) => a[1].localeCompare(b[1]))
-        .map(([value, label]) => ({ label, value })),
-    ];
-
-    const titleOptions: { label: string; value: string }[] = [
-      { label: '全部标题', value: 'all' },
-      ...Array.from(titlesSet.values())
-        .sort((a, b) => a.localeCompare(b))
-        .map((t) => ({ label: t, value: t })),
-    ];
-
-    // 年份: 将 unknown 放末尾
-    const years = Array.from(yearsSet.values());
-    const knownYears = years
-      .filter((y) => y !== 'unknown')
-      .sort((a, b) => parseInt(b) - parseInt(a));
-    const hasUnknown = years.includes('unknown');
-    const yearOptions: { label: string; value: string }[] = [
-      { label: '全部年份', value: 'all' },
-      ...knownYears.map((y) => ({ label: y, value: y })),
-      ...(hasUnknown ? [{ label: '未知', value: 'unknown' }] : []),
-    ];
-
-    const categoriesAll: SearchFilterCategory[] = [
-      { key: 'source', label: '来源', options: sourceOptions },
-      { key: 'title', label: '标题', options: titleOptions },
-      { key: 'year', label: '年份', options: yearOptions },
-    ];
-
-    const categoriesAgg: SearchFilterCategory[] = [
-      { key: 'source', label: '来源', options: sourceOptions },
-      { key: 'title', label: '标题', options: titleOptions },
-      { key: 'year', label: '年份', options: yearOptions },
-    ];
-
-    return { categoriesAll, categoriesAgg };
-  }, [searchResults]);
-
-  // 非聚合：应用筛选与排序 (使用 Rust)
+  // 聚合与过滤由 Rust 统一处理
   const [filteredAllResults, setFilteredAllResults] = useState<SearchResult[]>(
     [],
   );
 
   useEffect(() => {
-    if (searchResults.length === 0) {
-      setFilteredAllResults([]);
-      return;
-    }
-
-    const filter: SearchFilter = {
+    const query = currentQueryRef.current;
+    const filterAggPayload: SearchFilter = {
+      source: filterAgg.source,
+      title: filterAgg.title,
+      year: filterAgg.year,
+      year_order: filterAgg.yearOrder as 'none' | 'asc' | 'desc',
+    };
+    const filterAllPayload: SearchFilter = {
       source: filterAll.source,
       title: filterAll.title,
       year: filterAll.year,
       year_order: filterAll.yearOrder as 'none' | 'asc' | 'desc',
     };
 
-    invoke<SearchResult[]>('filter_and_sort_results', {
+    invoke<{
+      aggregatedEntries: Array<[string, AggregatedGroup]>;
+      filteredResults: SearchResult[];
+      filterCategoriesAll: SearchFilterCategory[];
+      filterCategoriesAgg: SearchFilterCategory[];
+    }>('build_search_page_state', {
       results: searchResults,
-      filter,
+      query,
+      normalizedQuery: null,
+      filterAgg: filterAggPayload,
+      filterAll: filterAllPayload,
     })
-      .then(setFilteredAllResults)
+      .then((response) => {
+        setAggregatedGroups(new Map(response.aggregatedEntries));
+        setFilteredAllResults(response.filteredResults);
+        setFilterOptions({
+          categoriesAll: response.filterCategoriesAll,
+          categoriesAgg: response.filterCategoriesAgg,
+        });
+      })
       .catch(console.error);
-  }, [searchResults, filterAll]);
+  }, [searchResults, filterAgg, filterAll]);
 
   useEffect(() => {
     // 无搜索参数时聚焦搜索框
     !searchParams.get('q') && document.getElementById('searchInput')?.focus();
 
-    // 初始加载搜索历史
-    invoke<string[]>('get_search_history')
-      .then(setSearchHistory)
-      .catch(console.error);
-
-    // 读取流式搜索设置 - 从用户偏好配置读取
-    const loadFluidSearchSetting = async () => {
-      try {
-        const prefs = await invoke<{ fluid_search: boolean }>(
-          'get_user_preferences',
-        );
-        setUseFluidSearch(prefs.fluid_search);
-      } catch (error) {
-        console.error('读取流式搜索设置失败:', error);
-        // 降级到默认值
+    // 初始加载搜索历史 + 流式搜索设置
+    invoke<SearchPageBootstrap>('get_search_page_bootstrap')
+      .then((bootstrap) => {
+        setSearchHistory(bootstrap.search_history);
+        setUseFluidSearch(bootstrap.fluid_search);
+      })
+      .catch((error) => {
+        console.error('加载搜索初始化数据失败:', error);
         setUseFluidSearch(true);
-      }
-    };
-
-    loadFluidSearchSetting();
+      });
 
     // 监听搜索历史更新事件
     const unsubscribe = subscribeToDataUpdates(
@@ -337,7 +253,6 @@ function SearchPageClient() {
     // 清空之前的进度
     setTotalSources(0);
     setCompletedSources(0);
-    pendingResultsRef.current = [];
 
     // 如果启用流式搜索，监听事件
     if (useFluidSearch) {
@@ -424,22 +339,7 @@ function SearchPageClient() {
     globalSearchUIState.filterAll = filterAll;
   }, [qParam, viewMode, filterAgg, filterAll]);
   // 组件卸载时，关闭可能存在的连接
-  useEffect(() => {
-    return () => {
-      if (eventSourceRef.current) {
-        try {
-          eventSourceRef.current.close();
-        } catch {}
-        eventSourceRef.current = null;
-      }
-      if (flushTimerRef.current) {
-        clearTimeout(flushTimerRef.current);
-        flushTimerRef.current = null;
-      }
-      pendingResultsRef.current = [];
-    };
-  }, []);
-
+  
   // 输入框内容变化时触发，显示搜索建议
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;

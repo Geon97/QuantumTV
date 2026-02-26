@@ -15,7 +15,6 @@ import {
   restrictToVerticalAxis,
 } from '@dnd-kit/modifiers';
 import {
-  arrayMove,
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
@@ -241,38 +240,6 @@ const ConfigImportExportModal = ({
     document.body,
   );
 };
-
-// 获取默认配置
-function getDefaultConfig(): AdminConfig {
-  return {
-    ConfigFile: '',
-    ConfigSubscribtion: {
-      URL: '',
-      AutoUpdate: false,
-      LastCheck: '',
-    },
-    UserPreferences: {
-      site_name: 'QuantumTV',
-      announcement: '本应用仅提供影视信息搜索服务，所有内容均来自第三方网站。',
-      search_downstream_max_page: 5,
-      site_interface_cache_time: 7200,
-      disable_yellow_filter: false,
-      douban_data_source: 'cmliussss-cdn-tencent',
-      douban_proxy_url: '',
-      douban_image_proxy_type: 'cmliussss-cdn-tencent',
-      douban_image_proxy_url: '',
-      enable_optimization: true,
-      fluid_search: true,
-      player_buffer_mode: 'standard',
-      has_seen_announcement: '',
-    },
-    UserConfig: {
-      Users: [{ username: 'admin', role: 'owner', banned: false }],
-    },
-    SourceConfig: [],
-    CustomCategories: [],
-  };
-}
 
 // 通用弹窗组件
 export interface AlertModalProps {
@@ -508,7 +475,6 @@ interface SourceConfigProps {
 }
 
 const SourceConfig = ({ config, onUpdate, showAlert }: SourceConfigProps) => {
-  const [sources, setSources] = useState<any[]>([]);
   const [editingSource, setEditingSource] = useState<any | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newSource, setNewSource] = useState({
@@ -526,52 +492,67 @@ const SourceConfig = ({ config, onUpdate, showAlert }: SourceConfigProps) => {
     }),
   );
 
-  useEffect(() => {
-    // 确保当 config 变化时始终同步 sources 状态
-    const sourceConfig = config?.SourceConfig || [];
-    setSources([...sourceConfig]);
-  }, [config?.SourceConfig]);
+  const sources = config?.SourceConfig || [];
 
   const handleDragEnd = (event: any) => {
     const { active, over } = event;
-    if (active.id !== over?.id) {
-      const oldIndex = sources.findIndex((s) => s.key === active.id);
-      const newIndex = sources.findIndex((s) => s.key === over.id);
-      const newSources = arrayMove(sources, oldIndex, newIndex);
-      void saveChanges(newSources);
-    }
-  };
-
-  const saveChanges = async (newSources: any[]) => {
-    setSources(newSources);
-    try {
-      const newConfig = await invoke<AdminConfig>('update_source_config', {
-        sources: newSources,
-      });
-      onUpdate(newConfig);
-    } catch (error) {
-      console.error('保存视频源失败:', error);
-      const message =
-        error instanceof Error
-          ? error.message
-          : typeof error === 'string'
-            ? error
-            : '保存失败';
-      showAlert('error', '保存失败', message);
+    if (active.id !== over?.id && over?.id) {
+      void invoke<AdminConfig>('admin_apply_source_config', {
+        action: 'reorder',
+        activeKey: active.id,
+        overKey: over.id,
+      })
+        .then(onUpdate)
+        .catch((error) => {
+          console.error('保存视频源失败:', error);
+          const message =
+            error instanceof Error
+              ? error.message
+              : typeof error === 'string'
+                ? error
+                : '保存失败';
+          showAlert('error', '保存失败', message);
+        });
     }
   };
 
   const handleToggle = (key: string) => {
-    const newSources = sources.map((s) =>
-      s.key === key ? { ...s, disabled: !s.disabled } : s,
-    );
-    void saveChanges(newSources);
+    void invoke<AdminConfig>('admin_apply_source_config', {
+      action: 'toggle',
+      key,
+    })
+      .then(onUpdate)
+      .catch((error) => {
+        console.error('保存视频源失败:', error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : '保存失败';
+        showAlert('error', '保存失败', message);
+      });
   };
 
   const handleDelete = (key: string) => {
-    const newSources = sources.filter((s) => s.key !== key);
-    void saveChanges(newSources);
-    showAlert('success', '删除成功');
+    void invoke<AdminConfig>('admin_apply_source_config', {
+      action: 'delete',
+      key,
+    })
+      .then((newConfig) => {
+        onUpdate(newConfig);
+        showAlert('success', '删除成功');
+      })
+      .catch((error) => {
+        console.error('保存视频源失败:', error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : '保存失败';
+        showAlert('error', '保存失败', message);
+      });
   };
 
   const handleAdd = async () => {
@@ -579,28 +560,25 @@ const SourceConfig = ({ config, onUpdate, showAlert }: SourceConfigProps) => {
       showAlert('error', '请填写完整信息');
       return;
     }
-    if (sources.some((s) => s.key === newSource.key)) {
-      showAlert('error', '源标识已存在');
-      return;
-    }
 
     try {
-      const normalized = await invoke<any>('normalize_source_config', {
+      const newConfig = await invoke<AdminConfig>('admin_apply_source_config', {
+        action: 'add',
         source: newSource,
-        defaultFrom: 'custom',
       });
-
-      const newSources = [
-        ...sources,
-        { ...normalized, disabled: false },
-      ];
-      await saveChanges(newSources);
+      onUpdate(newConfig);
       setNewSource({ key: '', name: '', api: '', detail: '', is_adult: false });
       setIsAddModalOpen(false);
       showAlert('success', '添加成功');
     } catch (error) {
-      console.warn('成人内容检测失败:', error);
-      showAlert('error', '添加失败', '无法解析视频源');
+      console.warn('保存视频源失败:', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : '无法解析视频源';
+      showAlert('error', '添加失败', message);
     }
   };
   const handleEdit = (source: any) => {
@@ -611,20 +589,22 @@ const SourceConfig = ({ config, onUpdate, showAlert }: SourceConfigProps) => {
     if (!editingSource) return;
 
     try {
-      const normalized = await invoke<any>('normalize_source_config', {
+      const newConfig = await invoke<AdminConfig>('admin_apply_source_config', {
+        action: 'edit',
         source: editingSource,
-        defaultFrom: editingSource.from || 'custom',
       });
-
-      const newSources = sources.map((s) =>
-        s.key === editingSource.key ? normalized : s,
-      );
-      await saveChanges(newSources);
+      onUpdate(newConfig);
       setEditingSource(null);
       showAlert('success', '保存成功');
     } catch (error) {
-      console.warn('成人内容检测失败:', error);
-      showAlert('error', '保存失败', '无法解析视频源');
+      console.warn('保存视频源失败:', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : '无法解析视频源';
+      showAlert('error', '保存失败', message);
     }
   };
   return (
@@ -858,7 +838,6 @@ interface CategoryConfigProps {
 }
 
 const CategoryConfig = ({ config, onUpdate, showAlert }: CategoryConfigProps) => {
-  const [categories, setCategories] = useState<any[]>([]);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newCategory, setNewCategory] = useState({
     name: '',
@@ -866,42 +845,45 @@ const CategoryConfig = ({ config, onUpdate, showAlert }: CategoryConfigProps) =>
     type: 'movie' as 'movie' | 'tv',
   });
 
-  useEffect(() => {
-    // 确保当 config 变化时始终同步 categories 状态
-    const customCategories = config?.CustomCategories || [];
-    setCategories([...customCategories]);
-  }, [config?.CustomCategories]);
-
-  const saveChanges = async (newCategories: any[]) => {
-    setCategories(newCategories);
-    try {
-      const newConfig = await invoke<AdminConfig>('update_custom_categories', {
-        categories: newCategories,
-      });
-      onUpdate(newConfig);
-    } catch (error) {
-      console.error('保存分类失败:', error);
-      const message =
-        error instanceof Error
-          ? error.message
-          : typeof error === 'string'
-            ? error
-            : '保存失败';
-      showAlert('error', '保存失败', message);
-    }
-  };
+  const categories = config?.CustomCategories || [];
 
   const handleToggle = (index: number) => {
-    const newCategories = categories.map((c, i) =>
-      i === index ? { ...c, disabled: !c.disabled } : c,
-    );
-    void saveChanges(newCategories);
+    void invoke<AdminConfig>('admin_apply_custom_category', {
+      action: 'toggle',
+      index,
+    })
+      .then(onUpdate)
+      .catch((error) => {
+        console.error('保存分类失败:', error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : '保存失败';
+        showAlert('error', '保存失败', message);
+      });
   };
 
   const handleDelete = (index: number) => {
-    const newCategories = categories.filter((_, i) => i !== index);
-    void saveChanges(newCategories);
-    showAlert('success', '删除成功');
+    void invoke<AdminConfig>('admin_apply_custom_category', {
+      action: 'delete',
+      index,
+    })
+      .then((newConfig) => {
+        onUpdate(newConfig);
+        showAlert('success', '删除成功');
+      })
+      .catch((error) => {
+        console.error('保存分类失败:', error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : '保存失败';
+        showAlert('error', '保存失败', message);
+      });
   };
 
   const handleAdd = () => {
@@ -909,14 +891,26 @@ const CategoryConfig = ({ config, onUpdate, showAlert }: CategoryConfigProps) =>
       showAlert('error', '请填写完整信息');
       return;
     }
-    const newCategories = [
-      ...categories,
-      { ...newCategory, from: 'custom', disabled: false },
-    ];
-    void saveChanges(newCategories);
-    setNewCategory({ name: '', query: '', type: 'movie' });
-    setIsAddModalOpen(false);
-    showAlert('success', '添加成功');
+    void invoke<AdminConfig>('admin_apply_custom_category', {
+      action: 'add',
+      category: newCategory,
+    })
+      .then((newConfig) => {
+        onUpdate(newConfig);
+        setNewCategory({ name: '', query: '', type: 'movie' });
+        setIsAddModalOpen(false);
+        showAlert('success', '添加成功');
+      })
+      .catch((error) => {
+        console.error('保存分类失败:', error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : '保存失败';
+        showAlert('error', '保存失败', message);
+      });
   };
 
   return (
@@ -1359,20 +1353,10 @@ function AdminPageContent() {
   const loadConfig = async () => {
     setIsLoading(true);
     try {
-      // 从 Tauri 后端加载配置
-      try {
-        const tauriData = await invoke<AdminConfig>('get_config_with_defaults');
-        setConfig(tauriData);
-      } catch (tauriError) {
-        console.warn('从 Tauri 后端加载配置失败:', tauriError);
-        // 加载失败时使用默认配置
-        const defaultConfig = getDefaultConfig();
-        setConfig(defaultConfig);
-      }
+      const tauriData = await invoke<AdminConfig>('get_config_with_defaults');
+      setConfig(tauriData);
     } catch (error) {
       console.error('加载配置失败:', error);
-      const defaultConfig = getDefaultConfig();
-      setConfig(defaultConfig);
     } finally {
       setIsLoading(false);
     }

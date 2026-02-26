@@ -454,6 +454,237 @@ pub async fn get_config_with_defaults(state: State<'_, StorageManager>) -> Resul
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(tag = "action", rename_all = "camelCase")]
+pub enum SourceConfigAction {
+    Reorder { active_key: String, over_key: String },
+    Toggle { key: String },
+    Delete { key: String },
+    Add { source: Value },
+    Edit { source: Value },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "action", rename_all = "camelCase")]
+pub enum CustomCategoryAction {
+    Toggle { index: usize },
+    Delete { index: usize },
+    Add { category: Value },
+}
+
+fn extract_non_empty_string(value: &Value, field: &str) -> Option<String> {
+    value
+        .get(field)
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+}
+
+fn apply_source_config_action(config: &Value, action: SourceConfigAction) -> Result<Value, String> {
+    let mut merged = merge_admin_config_with_defaults(config);
+    let mut sources = merged
+        .get("SourceConfig")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    match action {
+        SourceConfigAction::Reorder { active_key, over_key } => {
+            let from_index = sources.iter().position(|item| {
+                item.get("key")
+                    .and_then(|v| v.as_str())
+                    .map(|v| v == active_key)
+                    .unwrap_or(false)
+            });
+            let to_index = sources.iter().position(|item| {
+                item.get("key")
+                    .and_then(|v| v.as_str())
+                    .map(|v| v == over_key)
+                    .unwrap_or(false)
+            });
+
+            if let (Some(from), Some(to)) = (from_index, to_index) {
+                if from != to {
+                    let item = sources.remove(from);
+                    sources.insert(to, item);
+                }
+            }
+        }
+        SourceConfigAction::Toggle { key } => {
+            for item in &mut sources {
+                if item
+                    .get("key")
+                    .and_then(|v| v.as_str())
+                    .map(|v| v == key)
+                    .unwrap_or(false)
+                {
+                    let disabled = item
+                        .get("disabled")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    if let Some(obj) = item.as_object_mut() {
+                        obj.insert("disabled".to_string(), Value::Bool(!disabled));
+                    }
+                    break;
+                }
+            }
+        }
+        SourceConfigAction::Delete { key } => {
+            sources.retain(|item| {
+                item.get("key")
+                    .and_then(|v| v.as_str())
+                    .map(|v| v != key)
+                    .unwrap_or(true)
+            });
+        }
+        SourceConfigAction::Add { source } => {
+            if extract_non_empty_string(&source, "key").is_none()
+                || extract_non_empty_string(&source, "name").is_none()
+                || extract_non_empty_string(&source, "api").is_none()
+            {
+                return Err("请填写完整信息".to_string());
+            }
+
+            let key = extract_non_empty_string(&source, "key").unwrap_or_default();
+            if sources.iter().any(|item| {
+                item.get("key")
+                    .and_then(|v| v.as_str())
+                    .map(|v| v == key)
+                    .unwrap_or(false)
+            }) {
+                return Err("源标识已存在".to_string());
+            }
+
+            let mut normalized = normalize_source_config_core(&source, "custom")?;
+            if let Some(obj) = normalized.as_object_mut() {
+                obj.insert("disabled".to_string(), Value::Bool(false));
+            }
+            sources.push(normalized);
+        }
+        SourceConfigAction::Edit { source } => {
+            let key = extract_non_empty_string(&source, "key")
+                .ok_or_else(|| "缺少源标识".to_string())?;
+            let default_from = source
+                .get("from")
+                .and_then(|v| v.as_str())
+                .unwrap_or("custom");
+
+            let mut normalized = normalize_source_config_core(&source, default_from)?;
+
+            if let Some(existing) = sources.iter().find(|item| {
+                item.get("key")
+                    .and_then(|v| v.as_str())
+                    .map(|v| v == key)
+                    .unwrap_or(false)
+            }) {
+                if let (Some(obj), Some(existing_disabled)) = (
+                    normalized.as_object_mut(),
+                    existing.get("disabled").and_then(|v| v.as_bool()),
+                ) {
+                    obj.entry("disabled".to_string())
+                        .or_insert_with(|| Value::Bool(existing_disabled));
+                }
+            }
+
+            let mut replaced = false;
+            for item in &mut sources {
+                if item
+                    .get("key")
+                    .and_then(|v| v.as_str())
+                    .map(|v| v == key)
+                    .unwrap_or(false)
+                {
+                    *item = normalized.clone();
+                    replaced = true;
+                    break;
+                }
+            }
+
+            if !replaced {
+                return Err("源不存在".to_string());
+            }
+        }
+    }
+
+    if let Some(obj) = merged.as_object_mut() {
+        obj.insert("SourceConfig".to_string(), Value::Array(sources));
+    }
+    Ok(merged)
+}
+
+fn apply_custom_category_action(
+    config: &Value,
+    action: CustomCategoryAction,
+) -> Result<Value, String> {
+    let mut merged = merge_admin_config_with_defaults(config);
+    let mut categories = merged
+        .get("CustomCategories")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    match action {
+        CustomCategoryAction::Toggle { index } => {
+            if let Some(item) = categories.get_mut(index) {
+                let disabled = item
+                    .get("disabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                if let Some(obj) = item.as_object_mut() {
+                    obj.insert("disabled".to_string(), Value::Bool(!disabled));
+                }
+            }
+        }
+        CustomCategoryAction::Delete { index } => {
+            if index < categories.len() {
+                categories.remove(index);
+            }
+        }
+        CustomCategoryAction::Add { category } => {
+            if extract_non_empty_string(&category, "name").is_none()
+                || extract_non_empty_string(&category, "query").is_none()
+            {
+                return Err("请填写完整信息".to_string());
+            }
+
+            let mut obj = category.as_object().cloned().unwrap_or_default();
+            obj.insert("from".to_string(), Value::String("custom".to_string()));
+            obj.insert("disabled".to_string(), Value::Bool(false));
+            categories.push(Value::Object(obj));
+        }
+    }
+
+    if let Some(obj) = merged.as_object_mut() {
+        obj.insert("CustomCategories".to_string(), Value::Array(categories));
+    }
+    Ok(merged)
+}
+
+/// Admin: apply source config action in Rust, update storage and return config.
+#[tauri::command]
+pub async fn admin_apply_source_config(
+    action: SourceConfigAction,
+    state: State<'_, StorageManager>,
+) -> Result<Value, String> {
+    let data = state.get_data()?;
+    let updated = apply_source_config_action(&data.config, action)?;
+    state.update_config(updated.clone())?;
+    Ok(updated)
+}
+
+/// Admin: apply custom category action in Rust, update storage and return config.
+#[tauri::command]
+pub async fn admin_apply_custom_category(
+    action: CustomCategoryAction,
+    state: State<'_, StorageManager>,
+) -> Result<Value, String> {
+    let data = state.get_data()?;
+    let updated = apply_custom_category_action(&data.config, action)?;
+    state.update_config(updated.clone())?;
+    Ok(updated)
+}
+
 /// 规范化单个视频源配置（Rust 端统一成人检测与字段补全）
 #[tauri::command]
 pub async fn normalize_source_config(
@@ -809,11 +1040,15 @@ pub async fn is_adult_source(names: Vec<String>) -> Vec<bool> {
 #[cfg(test)]
 mod tests {
     use super::{
+        apply_custom_category_action,
+        apply_source_config_action,
         apply_player_config_patch,
         apply_user_preferences_patch,
         format_rfc3339_utc_from_secs,
         player_config_from_config,
         resolve_subscription_json,
+        CustomCategoryAction,
+        SourceConfigAction,
         user_preferences_from_config,
         validate_subscription_json,
         PlayerConfig,
@@ -936,5 +1171,104 @@ mod tests {
         assert!(!updated.enable_optimization);
         assert_eq!(updated.player_buffer_mode, "max");
         assert_eq!(updated.site_name, base.site_name);
+    }
+
+    #[test]
+    fn source_action_toggle_updates_disabled() {
+        let config = json!({
+            "SourceConfig": [
+                { "key": "s1", "name": "A", "api": "http://a", "disabled": false }
+            ]
+        });
+
+        let updated =
+            apply_source_config_action(&config, SourceConfigAction::Toggle { key: "s1".to_string() })
+                .unwrap();
+        let sources = updated.get("SourceConfig").unwrap().as_array().unwrap();
+        let disabled = sources[0].get("disabled").and_then(|v| v.as_bool()).unwrap();
+        assert!(disabled);
+    }
+
+    #[test]
+    fn source_action_reorder_swaps_items() {
+        let config = json!({
+            "SourceConfig": [
+                { "key": "s1", "name": "A", "api": "http://a" },
+                { "key": "s2", "name": "B", "api": "http://b" }
+            ]
+        });
+
+        let updated = apply_source_config_action(
+            &config,
+            SourceConfigAction::Reorder {
+                active_key: "s1".to_string(),
+                over_key: "s2".to_string(),
+            },
+        )
+        .unwrap();
+        let sources = updated.get("SourceConfig").unwrap().as_array().unwrap();
+        let first_key = sources[0].get("key").and_then(|v| v.as_str()).unwrap();
+        assert_eq!(first_key, "s2");
+    }
+
+    #[test]
+    fn source_action_add_validates_required_fields() {
+        let config = json!({ "SourceConfig": [] });
+        let err = apply_source_config_action(
+            &config,
+            SourceConfigAction::Add { source: json!({ "name": "A", "api": "http://a" }) },
+        )
+        .unwrap_err();
+        assert_eq!(err, "请填写完整信息");
+    }
+
+    #[test]
+    fn source_action_add_rejects_duplicate_key() {
+        let config = json!({
+            "SourceConfig": [
+                { "key": "s1", "name": "A", "api": "http://a" }
+            ]
+        });
+        let err = apply_source_config_action(
+            &config,
+            SourceConfigAction::Add {
+                source: json!({ "key": "s1", "name": "B", "api": "http://b" }),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err, "源标识已存在");
+    }
+
+    #[test]
+    fn category_action_add_sets_defaults() {
+        let config = json!({ "CustomCategories": [] });
+        let updated = apply_custom_category_action(
+            &config,
+            CustomCategoryAction::Add {
+                category: json!({ "name": "Marvel", "query": "漫威", "type": "movie" }),
+            },
+        )
+        .unwrap();
+        let categories = updated.get("CustomCategories").unwrap().as_array().unwrap();
+        let first = categories[0].as_object().unwrap();
+        assert_eq!(first.get("from").unwrap(), "custom");
+        assert_eq!(first.get("disabled").unwrap(), false);
+    }
+
+    #[test]
+    fn category_action_toggle_flips_disabled() {
+        let config = json!({
+            "CustomCategories": [
+                { "name": "Marvel", "query": "漫威", "type": "movie", "disabled": false }
+            ]
+        });
+        let updated = apply_custom_category_action(
+            &config,
+            CustomCategoryAction::Toggle { index: 0 },
+        )
+        .unwrap();
+        let categories = updated.get("CustomCategories").unwrap().as_array().unwrap();
+        let disabled = categories[0].get("disabled").and_then(|v| v.as_bool()).unwrap();
+        assert!(disabled);
     }
 }

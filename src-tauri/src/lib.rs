@@ -91,6 +91,8 @@ pub fn run() {
             commands::config::save_admin_config_from_json,
             commands::config::update_subscription_settings,
             commands::config::get_config_with_defaults,
+            commands::config::admin_apply_source_config,
+            commands::config::admin_apply_custom_category,
             commands::config::normalize_source_config,
             commands::config::save_config,
             commands::config::reset_config,
@@ -102,17 +104,20 @@ pub fn run() {
             commands::config::set_user_preferences,
             commands::config::update_user_preferences,
             commands::search::get_search_suggestions,
-            commands::search::aggregate_search_results_filtered_command,
-            commands::search::filter_and_sort_results,
+            commands::search::build_search_page_state,
+            commands::search::get_search_page_bootstrap,
             commands::config::is_adult_source,
             // 跳过片头片尾
             commands::skip::check_skip_action,
             // 预载下一集
-            commands::preload::preload_next_episode,
+            commands::preload::preload_next_episode_if_needed,
             // 视频
             commands::video::search,
             commands::video::get_video_detail,
             commands::video::get_video_detail_optimized,
+            commands::video::change_play_source,
+            commands::video::save_play_progress,
+            commands::video::initialize_player_by_query,
             commands::video::initialize_player_view,
             commands::video::get_cache_stats,
             commands::video::proxy_image,
@@ -146,9 +151,11 @@ pub fn run() {
             db::play_skip::get_skip_config,
             db::play_skip::save_skip_config,
             db::play_skip::delete_skip_config,
+            db::play_skip::apply_skip_config,
             // 导入导出清除
             db::db_handlers::export_json,
             db::db_handlers::import_json,
+            db::db_handlers::import_json_bytes,
             db::db_handlers::clear_cache,
             // 图片缓存
             db::image_cache::get_cached_image,
@@ -167,6 +174,11 @@ pub fn run() {
             commands::douban_client::fetch_douban_list,
             commands::douban_client::get_douban_recommends,
             commands::douban_client::get_douban_list,
+            commands::douban_client::get_douban_page_data,
+            commands::douban_client::get_douban_defaults,
+            commands::home::get_home_data,
+            commands::home::get_favorite_cards,
+            commands::home::get_continue_watching,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
