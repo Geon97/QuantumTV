@@ -2,10 +2,14 @@
 use crate::db::db_client::Db;
 use rusqlite::params;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 #[tauri::command]
-pub fn add_search_history(db: State<'_, Db>, keyword: String) -> Result<(), String> {
+pub fn add_search_history(
+    app: AppHandle,
+    db: State<'_, Db>,
+    keyword: String,
+) -> Result<(), String> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| e.to_string())?
@@ -16,24 +20,34 @@ pub fn add_search_history(db: State<'_, Db>, keyword: String) -> Result<(), Stri
             params![keyword, now],
         )?;
         Ok(())
-    })
+    })?;
+    let _ = app.emit("searchHistoryUpdated", ());
+    Ok(())
 }
 #[tauri::command]
-pub fn clear_search_history(db: State<'_, Db>) -> Result<(), String> {
+pub fn clear_search_history(app: AppHandle, db: State<'_, Db>) -> Result<(), String> {
     db.with_conn(|conn| {
         conn.execute("DELETE FROM search_history", [])?;
         Ok(())
-    })
+    })?;
+    let _ = app.emit("searchHistoryUpdated", ());
+    Ok(())
 }
 #[tauri::command]
-pub fn delete_search_history(db: State<'_, Db>, keyword: String) -> Result<(), String> {
+pub fn delete_search_history(
+    app: AppHandle,
+    db: State<'_, Db>,
+    keyword: String,
+) -> Result<(), String> {
     db.with_conn(|conn| {
         conn.execute(
             "DELETE FROM search_history WHERE keyword = ?1",
             params![keyword],
         )?;
         Ok(())
-    })
+    })?;
+    let _ = app.emit("searchHistoryUpdated", ());
+    Ok(())
 }
 #[tauri::command]
 pub fn get_search_history(db: State<'_, Db>) -> Result<Vec<String>, String> {

@@ -725,16 +725,15 @@ fn parse_episodes(play_url: &str) -> (Vec<String>, Vec<String>) {
     (episodes, titles)
 }
 
-#[tauri::command]
-pub async fn search(
+pub(crate) async fn search_with_cache_hit(
     query: String,
     app_handle: tauri::AppHandle,
     storage: State<'_, StorageManager>,
     cache: State<'_, SearchCacheManager>,
-) -> Result<Vec<SearchResult>, String> {
+) -> Result<(Vec<SearchResult>, bool), String> {
     // 首先尝试从缓存获取结果
     if let Some(cached_results) = cache.get(&query).await {
-        return Ok(cached_results);
+        return Ok((cached_results, true));
     }
 
     let data = storage.get_data()?;
@@ -774,7 +773,7 @@ pub async fn search(
     };
 
     if sites.is_empty() {
-        return Ok(vec![]);
+        return Ok((vec![], false));
     }
 
     // 读取过滤配置
@@ -791,7 +790,7 @@ pub async fn search(
 
     // 过滤后如果没有源了，直接返回
     if sites.is_empty() {
-        return Ok(vec![]);
+        return Ok((vec![], false));
     }
 
     let total_sources = sites.len() as i32;
@@ -1009,7 +1008,18 @@ pub async fn search(
     // 缓存搜索结果
     cache.set(query, unique_results.clone()).await;
 
-    Ok(unique_results)
+    Ok((unique_results, false))
+}
+
+#[tauri::command]
+pub async fn search(
+    query: String,
+    app_handle: tauri::AppHandle,
+    storage: State<'_, StorageManager>,
+    cache: State<'_, SearchCacheManager>,
+) -> Result<Vec<SearchResult>, String> {
+    let (results, _cache_hit) = search_with_cache_hit(query, app_handle, storage, cache).await?;
+    Ok(results)
 }
 
 #[tauri::command]
@@ -2051,9 +2061,14 @@ pub fn change_play_source(
 #[tauri::command]
 pub fn save_play_progress(
     request: SavePlayProgressRequest,
+    app: tauri::AppHandle,
     db: State<'_, crate::db::db_client::Db>,
 ) -> Result<bool, String> {
-    save_play_progress_inner(&db, request)
+    let saved = save_play_progress_inner(&db, request)?;
+    if saved {
+        let _ = app.emit("playRecordsUpdated", ());
+    }
+    Ok(saved)
 }
 
 /// 初始化播放器视图 - 聚合所有初始化数据

@@ -85,7 +85,6 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
             onClick={async () => {
               await invoke('clear_all_play_records');
               setPlayRecords([]);
-              window.dispatchEvent(new CustomEvent('playRecordsUpdated', { detail: {} }));
             }}
           >
             清空

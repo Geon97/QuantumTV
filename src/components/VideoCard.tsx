@@ -30,7 +30,6 @@ import { ImagePlaceholder } from '@/components/ImagePlaceholder';
 import MobileActionSheet from '@/components/MobileActionSheet';
 import { SimpleRatingBadge } from '@/components/RatingBadge';
 
-
 export interface VideoCardProps {
   id?: string;
   source?: string;
@@ -140,9 +139,10 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
 
       const fetchFavoriteStatus = async () => {
         try {
-          const allFavorites = await invoke<RustFavorite[]>('get_play_favorites');
+          const allFavorites =
+            await invoke<RustFavorite[]>('get_play_favorites');
           const key = generateStorageKey(actualSource, actualId);
-          const fav = allFavorites.some(f => f.key === key);
+          const fav = allFavorites.some((f) => f.key === key);
           setFavorited(fav);
         } catch (_err) {
           throw new Error('检查收藏状态失败');
@@ -158,8 +158,11 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         async () => {
           // 重新检查收藏状态
           try {
-            const allFavorites = await invoke<RustFavorite[]>('get_play_favorites');
-            const isNowFavorited = allFavorites.some(f => f.key === storageKey);
+            const allFavorites =
+              await invoke<RustFavorite[]>('get_play_favorites');
+            const isNowFavorited = allFavorites.some(
+              (f) => f.key === storageKey,
+            );
             setFavorited(isNowFavorited);
           } catch (_err) {
             // ignore
@@ -177,23 +180,10 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         if (from === 'douban' || !actualSource || !actualId) return;
 
         try {
-          // 确定当前收藏状态
-          const currentFavorited =
-            from === 'search' ? searchFavorited : favorited;
-
           const key = generateStorageKey(actualSource, actualId);
-
-          if (currentFavorited) {
-            // 如果已收藏，删除收藏
-            await invoke('delete_play_favorite', { key });
-            if (from === 'search') {
-              setSearchFavorited(false);
-            } else {
-              setFavorited(false);
-            }
-          } else {
-            // 如果未收藏，添加收藏
-            await invoke('save_play_favorite', {
+          const response = await invoke<{ favorited: boolean }>(
+            'toggle_play_favorite',
+            {
               record: {
                 key,
                 title: actualTitle,
@@ -201,19 +191,16 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                 year: actualYear || '',
                 cover: actualPoster,
                 episode_index: 1,
-                total_episodes: actualEpisodes ?? 1,
                 save_time: Math.floor(Date.now() / 1000),
                 search_title: actualQuery || '',
               },
-            });
-            if (from === 'search') {
-              setSearchFavorited(true);
-            } else {
-              setFavorited(true);
-            }
+            },
+          );
+          if (from === 'search') {
+            setSearchFavorited(response.favorited);
+          } else {
+            setFavorited(response.favorited);
           }
-          // 触发事件通知其他组件
-          window.dispatchEvent(new CustomEvent('favoritesUpdated', { detail: {} }));
         } catch (_err) {
           throw new Error('切换收藏状态失败');
         }
@@ -227,8 +214,6 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         actualYear,
         actualPoster,
         actualEpisodes,
-        favorited,
-        searchFavorited,
         actualQuery,
       ],
     );
@@ -242,20 +227,15 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
           const key = generateStorageKey(actualSource, actualId);
           await invoke('delete_play_record', { key });
           onDelete?.();
-          // 触发事件通知其他组件
-          window.dispatchEvent(new CustomEvent('playRecordsUpdated', { detail: {} }));
         } catch (_err) {
-          throw new Error('删除播放记录失败');
+          throw new Error('\u5220\u9664\u64ad\u653e\u8bb0\u5f55\u5931\u8d25');
         }
       },
       [from, actualSource, actualId, onDelete],
     );
 
     const handleClick = useCallback(() => {
-      if (
-        from === 'douban' ||
-        (isAggregate && !actualSource && !actualId)
-      ) {
+      if (from === 'douban' || (isAggregate && !actualSource && !actualId)) {
         const url = `/play?title=${encodeURIComponent(actualTitle.trim())}${
           actualYear ? `&year=${actualYear}` : ''
         }${actualSearchType ? `&stype=${actualSearchType}` : ''}${isAggregate ? '&prefer=true' : ''}${actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''}`;
@@ -285,10 +265,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
 
     // 新标签页播放处理函数
     const handlePlayInNewTab = useCallback(() => {
-      if (
-        from === 'douban' ||
-        (isAggregate && !actualSource && !actualId)
-      ) {
+      if (from === 'douban' || (isAggregate && !actualSource && !actualId)) {
         const url = `/play?title=${encodeURIComponent(actualTitle.trim())}${actualYear ? `&year=${actualYear}` : ''}${actualSearchType ? `&stype=${actualSearchType}` : ''}${isAggregate ? '&prefer=true' : ''}${actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''}`;
         window.open(url, '_blank');
       } else if (actualSource && actualId) {
@@ -323,9 +300,10 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         searchFavorited === null
       ) {
         try {
-          const allFavorites = await invoke<RustFavorite[]>('get_play_favorites');
+          const allFavorites =
+            await invoke<RustFavorite[]>('get_play_favorites');
           const key = generateStorageKey(actualSource, actualId);
-          const fav = allFavorites.some(f => f.key === key);
+          const fav = allFavorites.some((f) => f.key === key);
           setSearchFavorited(fav);
         } catch (_err) {
           setSearchFavorited(false);
@@ -830,7 +808,6 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                 )}
               </div>
             )}
-
 
             {/* 聚合播放源指示器 */}
             {isAggregate &&

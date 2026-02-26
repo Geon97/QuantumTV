@@ -106,6 +106,7 @@ pub fn run() {
             commands::search::get_search_suggestions,
             commands::search::build_search_page_state,
             commands::search::get_search_page_bootstrap,
+            commands::search::search_page_query,
             commands::config::is_adult_source,
             // 跳过片头片尾
             commands::skip::check_skip_action,
@@ -135,6 +136,7 @@ pub fn run() {
             db::play_favorite::get_play_favorites,
             db::play_favorite::save_play_favorite,
             db::play_favorite::delete_play_favorite,
+            db::play_favorite::toggle_play_favorite,
             db::play_favorite::get_play_favorites_by_title,
             db::play_favorite::clear_all_favorites,
             // 播放记录

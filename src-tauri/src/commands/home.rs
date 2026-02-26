@@ -3,10 +3,11 @@ use crate::commands::douban_client::{
     get_douban_categories, DoubanCategoriesParams, DoubanItem, DoubanResult, Kind,
 };
 use crate::db::db_client::Db;
-use serde::Serialize;
+use crate::db::page_cache::PageCacheManager;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HomePageData {
     pub hot_movies: Vec<DoubanItem>,
@@ -157,8 +158,11 @@ fn extract_list_or_empty(result: DoubanResult) -> Vec<DoubanItem> {
     }
 }
 
-#[tauri::command]
-pub async fn get_home_data(weekday: Option<String>) -> Result<HomePageData, String> {
+fn home_cache_key(weekday: &str) -> String {
+    format!("home:{}", weekday)
+}
+
+async fn fetch_home_data_for_weekday(weekday: &str) -> Result<HomePageData, String> {
     let movie_params = DoubanCategoriesParams::new(Kind::Movie, "热门", "全部", None, None);
     let tv_params = DoubanCategoriesParams::new(Kind::Tv, "tv", "tv", None, None);
     let show_params = DoubanCategoriesParams::new(Kind::Tv, "show", "show", None, None);
@@ -170,8 +174,7 @@ pub async fn get_home_data(weekday: Option<String>) -> Result<HomePageData, Stri
         get_bangumi_calendar_data(),
     )?;
 
-    let weekday = resolve_weekday_input(weekday.as_deref(), current_weekday_en());
-    let today_bangumi = select_bangumi_for_weekday(&bangumi, &weekday);
+    let today_bangumi = select_bangumi_for_weekday(&bangumi, weekday);
 
     Ok(HomePageData {
         hot_movies: extract_list_or_empty(movie_res),
@@ -179,6 +182,35 @@ pub async fn get_home_data(weekday: Option<String>) -> Result<HomePageData, Stri
         hot_variety_shows: extract_list_or_empty(show_res),
         today_bangumi,
     })
+}
+
+async fn get_home_data_cached(
+    weekday: Option<String>,
+    cache: &PageCacheManager,
+) -> Result<HomePageData, String> {
+    let resolved_weekday = resolve_weekday_input(weekday.as_deref(), current_weekday_en());
+    let cache_key = home_cache_key(&resolved_weekday);
+
+    if let Ok(Some(cached)) = cache.get(&cache_key) {
+        if let Ok(parsed) = serde_json::from_str::<HomePageData>(&cached) {
+            return Ok(parsed);
+        }
+    }
+
+    let data = fetch_home_data_for_weekday(&resolved_weekday).await?;
+    if let Ok(serialized) = serde_json::to_string(&data) {
+        let _ = cache.set(&cache_key, &serialized);
+    }
+
+    Ok(data)
+}
+
+#[tauri::command]
+pub async fn get_home_data(
+    weekday: Option<String>,
+    cache: State<'_, PageCacheManager>,
+) -> Result<HomePageData, String> {
+    get_home_data_cached(weekday, &cache).await
 }
 
 #[tauri::command]
@@ -248,6 +280,15 @@ pub fn get_continue_watching(db: State<'_, Db>) -> Result<Vec<ContinueWatchingIt
 mod tests {
     use super::*;
     use crate::commands::bangumi::Weekday;
+    use crate::db::page_cache::PageCacheManager;
+    use rusqlite::Connection;
+
+    fn setup_page_cache() -> PageCacheManager {
+        let conn = Connection::open_in_memory().expect("open cache db");
+        let cache = PageCacheManager::new(conn);
+        cache.init_table().expect("init cache table");
+        cache
+    }
 
     #[test]
     fn build_favorite_cards_sorts_and_maps_episode() {
@@ -377,5 +418,33 @@ mod tests {
     fn resolve_weekday_input_uses_fallback_for_empty() {
         let resolved = resolve_weekday_input(Some("   "), "Thu");
         assert_eq!(resolved, "Thu");
+    }
+
+    #[tokio::test]
+    async fn get_home_data_uses_cache_when_available() {
+        let cache = setup_page_cache();
+        let cached = HomePageData {
+            hot_movies: vec![DoubanItem {
+                id: "1".to_string(),
+                title: "cached".to_string(),
+                poster: "p".to_string(),
+                rate: "9.0".to_string(),
+                year: "2024".to_string(),
+            }],
+            hot_tv_shows: Vec::new(),
+            hot_variety_shows: Vec::new(),
+            today_bangumi: Vec::new(),
+        };
+
+        let key = home_cache_key("Mon");
+        let payload = serde_json::to_string(&cached).expect("serialize cached data");
+        cache.set(&key, &payload).expect("seed cache");
+
+        let data = get_home_data_cached(Some("Mon".to_string()), &cache)
+            .await
+            .expect("get home data");
+
+        assert_eq!(data.hot_movies.len(), 1);
+        assert_eq!(data.hot_movies[0].title, "cached");
     }
 }

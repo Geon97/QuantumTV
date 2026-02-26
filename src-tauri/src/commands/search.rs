@@ -10,6 +10,7 @@ use rusqlite::params;
 use serde::Serialize;
 use tauri::State;
 use crate::commands::config::{get_user_preferences, UserPreferences};
+use crate::commands::video::{search_with_cache_hit, SearchCacheManager};
 
 #[tauri::command]
 pub fn get_search_suggestions(db: State<'_, Db>, query: String) -> Result<Vec<String>, String> {
@@ -55,6 +56,15 @@ pub struct SearchPageStateResponse {
 pub struct SearchPageBootstrap {
     pub search_history: Vec<String>,
     pub fluid_search: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchPageQueryResponse {
+    pub results: Vec<SearchResult>,
+    pub cache_hit: bool,
+    pub filter_categories_all: Vec<SearchFilterCategory>,
+    pub filter_categories_agg: Vec<SearchFilterCategory>,
 }
 
 fn build_filter_categories(results: &[SearchResult]) -> Vec<SearchFilterCategory> {
@@ -188,6 +198,25 @@ pub async fn get_search_page_bootstrap(
     let search_history = get_search_history(db)?;
     let preferences = get_user_preferences(storage).await?;
     Ok(build_search_bootstrap(search_history, preferences))
+}
+
+#[tauri::command]
+pub async fn search_page_query(
+    query: String,
+    app_handle: tauri::AppHandle,
+    storage: State<'_, StorageManager>,
+    cache: State<'_, SearchCacheManager>,
+) -> Result<SearchPageQueryResponse, String> {
+    let (results, cache_hit) =
+        search_with_cache_hit(query, app_handle, storage, cache).await?;
+    let filter_categories = build_filter_categories(&results);
+
+    Ok(SearchPageQueryResponse {
+        results,
+        cache_hit,
+        filter_categories_all: filter_categories.clone(),
+        filter_categories_agg: filter_categories,
+    })
 }
 
 #[cfg(test)]

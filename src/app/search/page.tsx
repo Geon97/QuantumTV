@@ -21,24 +21,14 @@ import SearchResultFilter, {
 } from '@/components/SearchResultFilter';
 import SearchSuggestions from '@/components/SearchSuggestions';
 import VideoCard, { VideoCardHandle } from '@/components/VideoCard';
-const globalSearchUIState = {
-  query: '',
-  viewMode: 'agg' as 'agg' | 'all',
-  filterAgg: {
-    source: 'all',
-    title: 'all',
-    year: 'all',
-    yearOrder: 'none' as const,
-  },
-  filterAll: {
-    source: 'all',
-    title: 'all',
-    year: 'all',
-    yearOrder: 'none' as const,
-  },
+
+type SearchPageQueryResponse = {
+  results: SearchResult[];
+  cacheHit: boolean;
+  filterCategoriesAll: SearchFilterCategory[];
+  filterCategoriesAgg: SearchFilterCategory[];
 };
-// 搜索缓存
-const searchCache = new Map<string, SearchResult[]>();
+
 function SearchPageClient() {
   // 搜索历史
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
@@ -49,16 +39,12 @@ function SearchPageClient() {
   const searchParams = useSearchParams();
   // 避免渲染时的“初次加载”闪烁
   const qParam = searchParams.get('q') || '';
-  const isReturning =
-    qParam && qParam === globalSearchUIState.query && searchCache.has(qParam);
   const currentQueryRef = useRef<string>('');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const [isLoading, setIsLoading] = useState(!isReturning && !!qParam);
+  const [isLoading, setIsLoading] = useState(!!qParam);
   const [showResults, setShowResults] = useState(!!qParam);
-  const [searchResults, setSearchResults] = useState<SearchResult[]>(
-    isReturning ? searchCache.get(qParam)! : [],
-  );
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [totalSources, setTotalSources] = useState(0);
   const [completedSources, setCompletedSources] = useState(0);
@@ -83,30 +69,20 @@ function SearchPageClient() {
   >(new Map());
 
   // 过滤器：非聚合与聚合
-  const [filterAll, setFilterAll] = useState(
-    isReturning
-      ? globalSearchUIState.filterAll
-      : {
-          source: 'all',
-          title: 'all',
-          year: 'all',
-          yearOrder: 'none' as const,
-        },
-  );
-  const [filterAgg, setFilterAgg] = useState(
-    isReturning
-      ? globalSearchUIState.filterAgg
-      : {
-          source: 'all',
-          title: 'all',
-          year: 'all',
-          yearOrder: 'none' as const,
-        },
-  );
+  const [filterAll, setFilterAll] = useState({
+    source: 'all',
+    title: 'all',
+    year: 'all',
+    yearOrder: 'none' as const,
+  });
+  const [filterAgg, setFilterAgg] = useState({
+    source: 'all',
+    title: 'all',
+    year: 'all',
+    yearOrder: 'none' as const,
+  });
 
-  const [viewMode, setViewMode] = useState<'agg' | 'all'>(
-    isReturning ? globalSearchUIState.viewMode : 'agg',
-  );
+  const [viewMode, setViewMode] = useState<'agg' | 'all'>('agg');
 
   const [filterOptions, setFilterOptions] = useState<{
     categoriesAll: SearchFilterCategory[];
@@ -239,21 +215,12 @@ function SearchPageClient() {
       return;
     }
 
-    // ✅ 返回搜索页：直接恢复，不做任何事
-    if (qParam === globalSearchUIState.query && searchCache.has(qParam)) {
-      setSearchResults(searchCache.get(qParam)!);
-      setIsLoading(false);
-      setShowResults(true);
-      return;
-    }
-
     setIsLoading(true);
     setShowResults(true);
 
     // 清空之前的进度
     setTotalSources(0);
     setCompletedSources(0);
-
     // 如果启用流式搜索，监听事件
     if (useFluidSearch) {
       let unlistenStream: (() => void) | null = null;
@@ -303,11 +270,18 @@ function SearchPageClient() {
       setupListeners();
 
       // 调用搜索命令
-      invoke<SearchResult[]>('search', { query: qParam })
-        .then((results) => {
-          const safeResults = results || [];
-          searchCache.set(qParam, safeResults);
+      invoke<SearchPageQueryResponse>('search_page_query', { query: qParam })
+        .then((response) => {
+          const safeResults = response?.results || [];
+          const cacheHit = response?.cacheHit ?? false;
           setSearchResults(safeResults);
+          setFilterOptions({
+            categoriesAll: response?.filterCategoriesAll || [],
+            categoriesAgg: response?.filterCategoriesAgg || [],
+          });
+          if (cacheHit) {
+            setIsLoading(false);
+          }
         })
         .catch((err) => {
           console.error('Search error:', err);
@@ -320,11 +294,14 @@ function SearchPageClient() {
         });
     } else {
       // 非流式搜索：原有逻辑
-      invoke<SearchResult[]>('search', { query: qParam })
-        .then((results) => {
-          const safeResults = results || [];
-          searchCache.set(qParam, safeResults);
+      invoke<SearchPageQueryResponse>('search_page_query', { query: qParam })
+        .then((response) => {
+          const safeResults = response?.results || [];
           setSearchResults(safeResults);
+          setFilterOptions({
+            categoriesAll: response?.filterCategoriesAll || [],
+            categoriesAgg: response?.filterCategoriesAgg || [],
+          });
         })
         .catch(console.error)
         .finally(() => {
@@ -332,12 +309,6 @@ function SearchPageClient() {
         });
     }
   }, [qParam, useFluidSearch]);
-  useEffect(() => {
-    globalSearchUIState.query = qParam;
-    globalSearchUIState.viewMode = viewMode;
-    globalSearchUIState.filterAgg = filterAgg;
-    globalSearchUIState.filterAll = filterAll;
-  }, [qParam, viewMode, filterAgg, filterAll]);
   // 组件卸载时，关闭可能存在的连接
   
   // 输入框内容变化时触发，显示搜索建议
@@ -368,9 +339,6 @@ function SearchPageClient() {
     // 保存搜索历史
     try {
       await invoke('add_search_history', { keyword: trimmed });
-      window.dispatchEvent(
-        new CustomEvent('searchHistoryUpdated', { detail: {} }),
-      );
     } catch (err) {
       console.error('Failed to save search history:', err);
     }
@@ -389,9 +357,6 @@ function SearchPageClient() {
     // 保存搜索历史
     try {
       await invoke('add_search_history', { keyword: suggestion });
-      window.dispatchEvent(
-        new CustomEvent('searchHistoryUpdated', { detail: {} }),
-      );
     } catch (err) {
       console.error('Failed to save search history:', err);
     }
@@ -469,9 +434,6 @@ function SearchPageClient() {
                   // 保存搜索历史
                   try {
                     await invoke('add_search_history', { keyword: trimmed });
-                    window.dispatchEvent(
-                      new CustomEvent('searchHistoryUpdated', { detail: {} }),
-                    );
                   } catch (err) {
                     console.error('Failed to save search history:', err);
                   }
@@ -626,9 +588,6 @@ function SearchPageClient() {
                     onClick={async () => {
                       await invoke('clear_search_history');
                       setSearchHistory([]);
-                      window.dispatchEvent(
-                        new CustomEvent('searchHistoryUpdated', { detail: {} }),
-                      );
                     }}
                     className='ml-3 text-sm text-gray-500 hover:text-red-500 transition-colors dark:text-gray-400 dark:hover:text-red-500'
                   >
@@ -648,11 +607,6 @@ function SearchPageClient() {
                           await invoke('add_search_history', {
                             keyword: item.trim(),
                           });
-                          window.dispatchEvent(
-                            new CustomEvent('searchHistoryUpdated', {
-                              detail: {},
-                            }),
-                          );
                         } catch (err) {
                           console.error(
                             'Failed to update search history:',
@@ -679,11 +633,6 @@ function SearchPageClient() {
                         });
                         setSearchHistory((prev) =>
                           prev.filter((h) => h !== item),
-                        );
-                        window.dispatchEvent(
-                          new CustomEvent('searchHistoryUpdated', {
-                            detail: {},
-                          }),
                         );
                       }}
                       className='absolute -top-1 -right-1 w-4 h-4 opacity-0 group-hover:opacity-100 bg-gray-400 hover:bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] transition-colors'

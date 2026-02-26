@@ -11,7 +11,6 @@ import type {
   DoubanPageResponse,
 } from '@/lib/types';
 import { useImagePreload } from '@/hooks/useImagePreload';
-import { useCachedData } from '@/hooks/usePageCache';
 import { useSourceFilter } from '@/hooks/useSourceFilter';
 
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
@@ -82,8 +81,6 @@ function DoubanPageClient() {
 
   // 星期选择器状态
   const [selectedWeekday, setSelectedWeekday] = useState<string>('');
-  const [doubanDefaults, setDoubanDefaults] =
-    useState<DoubanDefaultsResponse | null>(null);
 
   // 数据源筛选 Hook
   const {
@@ -107,24 +104,6 @@ function DoubanPageClient() {
     .filter(Boolean);
   useImagePreload(imageUrls, !loading && doubanData.length > 0);
 
-  // 判断是否为默认状态（可以使用缓存）
-  const isDefaultState = useCallback(() => {
-    if (!doubanDefaults || !doubanDefaults.cacheEnabled) {
-      return false;
-    }
-    if (primarySelection !== doubanDefaults.primarySelection) {
-      return false;
-    }
-    if (
-      doubanDefaults.requireSecondary &&
-      secondarySelection !== doubanDefaults.secondarySelection
-    ) {
-      return false;
-    }
-    return true;
-  }, [doubanDefaults, primarySelection, secondarySelection]);
-
-  // 缓存数据获取函数（仅用于默认状态）
   const buildDoubanRequest = useCallback(
     (page: number) => ({
       type,
@@ -142,30 +121,6 @@ function DoubanPageClient() {
       multiLevelValues,
       selectedWeekday,
     ],
-  );
-
-  const fetchDefaultDoubanData =
-    useCallback(async (): Promise<DoubanPageResponse> => {
-      return await invoke<DoubanPageResponse>('get_douban_page_data', {
-        request: buildDoubanRequest(0),
-      });
-    }, [buildDoubanRequest]);
-
-  // 使用缓存（仅在默认状态时启用）
-  const { fetchData: fetchCachedData } = useCachedData<DoubanPageResponse>(
-    `douban_${type}`,
-    fetchDefaultDoubanData,
-    {
-      enabled: isDefaultState(),
-      staleWhileRevalidate: true,
-      onUpdate: (freshData) => {
-        // 后台更新完成后，如果仍在默认状态，静默更新数据
-        if (isDefaultState()) {
-          setDoubanData(freshData.list);
-          setHasMore(freshData.has_more);
-        }
-      },
-    },
   );
 
   // 选中的源分类
@@ -230,7 +185,6 @@ function DoubanPageClient() {
           },
         );
 
-        setDoubanDefaults(defaults);
         setPrimarySelection(defaults.primarySelection);
         setSecondarySelection(defaults.secondarySelection);
         setMultiLevelValues(defaults.multiLevelSelection);
@@ -312,14 +266,9 @@ function DoubanPageClient() {
 
       let data: DoubanPageResponse;
 
-      // 如果是默认状态，尝试使用缓存
-      if (isDefaultState() && type !== 'custom' && type !== 'anime') {
-        data = await fetchCachedData();
-      } else {
-        data = await invoke<DoubanPageResponse>('get_douban_page_data', {
-          request: buildDoubanRequest(0),
-        });
-      }
+      data = await invoke<DoubanPageResponse>('get_douban_page_data', {
+        request: buildDoubanRequest(0),
+      });
 
       const currentSnapshot = { ...currentParamsRef.current };
       if (isSnapshotEqual(requestSnapshot, currentSnapshot)) {
@@ -340,8 +289,6 @@ function DoubanPageClient() {
     multiLevelValues,
     selectedWeekday,
     buildDoubanRequest,
-    fetchCachedData,
-    isDefaultState,
   ]);
 
   // 只在选择器准备好后才加载数据

@@ -15,7 +15,6 @@ import {
 } from '@/lib/types';
 import { subscribeToDataUpdates } from '@/lib/utils';
 import { useImagePreload } from '@/hooks/useImagePreload';
-import { useCachedData } from '@/hooks/usePageCache';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
@@ -84,23 +83,11 @@ function HomeClient() {
     return await invoke<HomePageData>('get_home_data', { weekday });
   };
 
-  // 使用缓存（启用 stale-while-revalidate）
-  const { fetchData } = useCachedData<HomePageData>('home', fetchHomeData, {
-    staleWhileRevalidate: true,
-    onUpdate: (freshData) => {
-      // 后台更新完成后，静默更新状态
-      setHotMovies(freshData.hotMovies);
-      setHotTvShows(freshData.hotTvShows);
-      setHotVarietyShows(freshData.hotVarietyShows);
-      setTodayBangumi(freshData.todayBangumi);
-    },
-  });
-
   useEffect(() => {
     const loadHomeData = async () => {
       try {
         setLoading(true);
-        const data = await fetchData();
+        const data = await fetchHomeData();
         setHotMovies(data.hotMovies);
         setHotTvShows(data.hotTvShows);
         setHotVarietyShows(data.hotVarietyShows);
@@ -193,9 +180,6 @@ function HomeClient() {
                     onClick={async () => {
                       await invoke('clear_all_favorites');
                       setFavoriteItems([]);
-                      window.dispatchEvent(
-                        new CustomEvent('favoritesUpdated', { detail: {} }),
-                      );
                     }}
                   >
                     清空

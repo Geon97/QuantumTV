@@ -1,7 +1,8 @@
 use crate::commands::bangumi::get_bangumi_calendar_data;
+use crate::db::page_cache::PageCacheManager;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, error::Error};
+use std::{collections::{BTreeMap, HashMap}, error::Error};
 use std::time::{SystemTime, UNIX_EPOCH};
 use url::form_urlencoded;
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
@@ -123,7 +124,7 @@ pub struct DoubanPageRequest {
     pub page_limit: Option<i32>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DoubanPageResponse {
     pub list: Vec<DoubanItem>,
     pub has_more: bool,
@@ -1007,6 +1008,60 @@ fn ensure_success(result: DoubanResult) -> Result<Vec<DoubanItem>, String> {
     }
 }
 
+#[derive(Debug, Serialize)]
+struct DoubanCacheKey {
+    request_type: String,
+    primary_selection: String,
+    secondary_selection: String,
+    multi_level_selection: Option<BTreeMap<String, String>>,
+    selected_weekday: Option<String>,
+    page: i32,
+    page_limit: i32,
+}
+
+fn douban_cache_key(request: &DoubanPageRequest, page_limit: i32, page: i32) -> String {
+    let selection = request.multi_level_selection.as_ref().map(|map| {
+        map.iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect::<BTreeMap<String, String>>()
+    });
+
+    let key = DoubanCacheKey {
+        request_type: request.request_type.clone(),
+        primary_selection: request.primary_selection.clone(),
+        secondary_selection: request.secondary_selection.clone(),
+        multi_level_selection: selection,
+        selected_weekday: request.selected_weekday.clone(),
+        page,
+        page_limit,
+    };
+
+    serde_json::to_string(&key)
+        .map(|serialized| format!("douban:{}", serialized))
+        .unwrap_or_else(|_| format!("douban:{}:{}:{}", request.request_type, page_limit, page))
+}
+
+fn should_cache_douban_request(request: &DoubanPageRequest) -> bool {
+    if request.request_type == "custom" || request.request_type == "anime" {
+        return false;
+    }
+
+    let defaults = resolve_douban_defaults(&request.request_type, None, None);
+    if !defaults.cache_enabled {
+        return false;
+    }
+
+    if request.primary_selection != defaults.primary_selection {
+        return false;
+    }
+
+    if defaults.require_secondary && request.secondary_selection != defaults.secondary_selection {
+        return false;
+    }
+
+    true
+}
+
 fn build_bangumi_daily_list(
     data: Vec<crate::commands::bangumi::BangumiCalendarData>,
     weekday: &str,
@@ -1154,13 +1209,27 @@ pub fn get_douban_defaults(request: DoubanDefaultsRequest) -> DoubanDefaultsResp
     )
 }
 
-#[tauri::command]
-pub async fn get_douban_page_data(
+async fn get_douban_page_data_cached(
     request: DoubanPageRequest,
+    cache: &PageCacheManager,
 ) -> Result<DoubanPageResponse, String> {
     let page_limit = request.page_limit.unwrap_or(25);
     let page = request.page.unwrap_or(0).max(0);
     let page_start = page.saturating_mul(page_limit);
+
+    let cache_key = if should_cache_douban_request(&request) {
+        Some(douban_cache_key(&request, page_limit, page))
+    } else {
+        None
+    };
+
+    if let Some(key) = cache_key.as_ref() {
+        if let Ok(Some(cached)) = cache.get(key) {
+            if let Ok(parsed) = serde_json::from_str::<DoubanPageResponse>(&cached) {
+                return Ok(parsed);
+            }
+        }
+    }
 
     let mode = resolve_douban_page_mode(&request);
     let list = match mode {
@@ -1193,13 +1262,37 @@ pub async fn get_douban_page_data(
     };
 
     let has_more = list.len() == page_limit as usize;
+    let response = DoubanPageResponse { list, has_more };
 
-    Ok(DoubanPageResponse { list, has_more })
+    if let Some(key) = cache_key {
+        if let Ok(serialized) = serde_json::to_string(&response) {
+            let _ = cache.set(&key, &serialized);
+        }
+    }
+
+    Ok(response)
+}
+
+#[tauri::command]
+pub async fn get_douban_page_data(
+    request: DoubanPageRequest,
+    cache: tauri::State<'_, PageCacheManager>,
+) -> Result<DoubanPageResponse, String> {
+    get_douban_page_data_cached(request, &cache).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::page_cache::PageCacheManager;
+    use rusqlite::Connection;
+
+    fn setup_page_cache() -> PageCacheManager {
+        let conn = Connection::open_in_memory().expect("open cache db");
+        let cache = PageCacheManager::new(conn);
+        cache.init_table().expect("init cache table");
+        cache
+    }
 
     #[test]
     fn resolve_douban_page_mode_custom() {
@@ -1321,5 +1414,41 @@ mod tests {
         let fallback = current_weekday_en().to_string();
         let resolved = resolve_selected_weekday(Some("   "));
         assert_eq!(resolved, fallback);
+    }
+
+    #[tokio::test]
+    async fn get_douban_page_data_uses_cache_when_available() {
+        let cache = setup_page_cache();
+        let request = DoubanPageRequest {
+            request_type: "movie".to_string(),
+            primary_selection: "热门".to_string(),
+            secondary_selection: "全部".to_string(),
+            multi_level_selection: None,
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+
+        let cached = DoubanPageResponse {
+            list: vec![DoubanItem {
+                id: "1".to_string(),
+                title: "cached".to_string(),
+                poster: "p".to_string(),
+                rate: "9.0".to_string(),
+                year: "2024".to_string(),
+            }],
+            has_more: false,
+        };
+
+        let key = douban_cache_key(&request, 25, 0);
+        let payload = serde_json::to_string(&cached).expect("serialize cached data");
+        cache.set(&key, &payload).expect("seed cache");
+
+        let data = get_douban_page_data_cached(request, &cache)
+            .await
+            .expect("get douban data");
+
+        assert_eq!(data.list.len(), 1);
+        assert_eq!(data.list[0].title, "cached");
     }
 }

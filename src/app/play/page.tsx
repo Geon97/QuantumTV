@@ -969,9 +969,6 @@ function PlayPageClient() {
       }
 
       // Notify other components
-      window.dispatchEvent(
-        new CustomEvent('playRecordsUpdated', { detail: {} }),
-      );
 
       lastSaveTimeRef.current = Date.now();
       console.log('Play progress saved:', {
@@ -1077,13 +1074,9 @@ function PlayPageClient() {
         currentSourceRef.current,
         currentIdRef.current,
       );
-      if (favorited) {
-        // 如果已收藏，删除收藏
-        await invoke('delete_play_favorite', { key });
-        setFavorited(false);
-      } else {
-        // 如果未收藏，添加收藏
-        await invoke('save_play_favorite', {
+      const response = await invoke<{ favorited: boolean }>(
+        'toggle_play_favorite',
+        {
           record: {
             key,
             title: videoTitleRef.current,
@@ -1095,11 +1088,9 @@ function PlayPageClient() {
             save_time: Math.floor(Date.now() / 1000),
             search_title: searchTitle || '',
           },
-        });
-        setFavorited(true);
-      }
-      // 触发事件通知其他组件
-      window.dispatchEvent(new CustomEvent('favoritesUpdated', { detail: {} }));
+        },
+      );
+      setFavorited(response.favorited);
     } catch (err) {
       console.error('切换收藏失败:', err);
     }
