@@ -92,6 +92,16 @@ jobs:
             pkg-config \
             patchelf \
             xdg-utils
+          sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64
+
+      - name: Install WiX Toolset
+        if: runner.os == 'Windows'
+        run: |
+          choco install wixtoolset --version 3.14.1 -y
+          $wixBin = 'C:\\Program Files (x86)\\WiX Toolset v3.14\\bin'
+          if (Test-Path $wixBin) {
+            $wixBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
 
       # ---------------- Toolchains ----------------
       - uses: dtolnay/rust-toolchain@stable
@@ -117,6 +127,8 @@ jobs:
       - name: Build Tauri App
         run: |
           npm run tauri build -- --target ${{ matrix.target }}
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
 
       # ---------------- Upload ----------------
       - name: Upload Desktop Artifacts (macOS)
