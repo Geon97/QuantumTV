@@ -2,8 +2,11 @@ use crate::storage::StorageManager;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::OnceLock;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::State;
 use quantumtv_core::adult;
+use quantumtv_core::default_admin_config_value;
+use quantumtv_core::merge_admin_config_with_defaults;
 use quantumtv_core::normalize_source_config as normalize_source_config_core;
 use quantumtv_core::parse_admin_config as parse_admin_config_core;
 #[derive(Debug, Serialize, Deserialize)]
@@ -153,6 +156,304 @@ pub async fn parse_admin_config(raw_json: String) -> Result<Value, String> {
     parse_admin_config_core(&raw_json)
 }
 
+fn validate_subscription_json(raw_json: &str) -> Result<(), String> {
+    serde_json::from_str::<Value>(raw_json)
+        .map(|_| ())
+        .map_err(|_| "返回内容不是有效的 JSON 格式".to_string())
+}
+
+fn format_rfc3339_utc_from_secs(secs: i64, nanos: u32) -> String {
+    let days = secs.div_euclid(86_400);
+    let seconds_of_day = secs.rem_euclid(86_400);
+    let hour = (seconds_of_day / 3_600) as u32;
+    let minute = ((seconds_of_day % 3_600) / 60) as u32;
+    let second = (seconds_of_day % 60) as u32;
+    let (year, month, day) = civil_from_days(days);
+    let millis = nanos / 1_000_000;
+
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+        year, month, day, hour, minute, second, millis
+    )
+}
+
+fn format_rfc3339_utc_now() -> String {
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    format_rfc3339_utc_from_secs(duration.as_secs() as i64, duration.subsec_nanos())
+}
+
+// Gregorian calendar conversion (days since Unix epoch -> YYYY-MM-DD)
+fn civil_from_days(days: i64) -> (i32, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097; // [0, 146096]
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
+    let m = mp + if mp < 10 { 3 } else { -9 }; // [1, 12]
+    let year = y + if m <= 2 { 1 } else { 0 };
+    (year as i32, m as u32, d as u32)
+}
+
+async fn fetch_subscription_text(url: &str) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let response = client.get(url).send().await.map_err(|e| e.to_string())?;
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status().as_u16()));
+    }
+
+    response.text().await.map_err(|e| e.to_string())
+}
+
+async fn resolve_subscription_json(
+    subscription_url: Option<&str>,
+    raw_json: Option<&str>,
+) -> Result<String, String> {
+    if let Some(raw) = raw_json {
+        if !raw.trim().is_empty() {
+            return Ok(raw.to_string());
+        }
+    }
+
+    if let Some(url) = subscription_url {
+        if !url.trim().is_empty() {
+            return fetch_subscription_text(url).await;
+        }
+    }
+
+    Err("配置内容不能为空".to_string())
+}
+
+/// 订阅拉取（Rust 端完成 HTTP 拉取 + JSON 校验）
+#[tauri::command]
+pub async fn fetch_subscription_config(subscription_url: String) -> Result<String, String> {
+    let url = subscription_url.trim();
+    if url.is_empty() {
+        return Err("请输入订阅URL".to_string());
+    }
+
+    let text = fetch_subscription_text(url).await?;
+    validate_subscription_json(&text)?;
+
+    Ok(text)
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscriptionParseResponse {
+    pub raw_json: String,
+    pub parsed_config: Value,
+}
+
+/// 解析订阅配置（支持 URL 或 JSON）
+#[tauri::command]
+pub async fn parse_subscription_config(
+    subscription_url: Option<String>,
+    raw_json: Option<String>,
+) -> Result<SubscriptionParseResponse, String> {
+    let raw_json = resolve_subscription_json(subscription_url.as_deref(), raw_json.as_deref())
+        .await?;
+
+    let parsed_config = parse_admin_config_core(&raw_json)?;
+    Ok(SubscriptionParseResponse {
+        raw_json,
+        parsed_config,
+    })
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscriptionPullResponse {
+    pub raw_json: String,
+    pub config: Value,
+}
+
+/// 拉取订阅配置并写入 ConfigFile/LastCheck（不解析 SourceConfig）
+#[tauri::command]
+pub async fn pull_subscription_config(
+    subscription_url: String,
+    state: State<'_, StorageManager>,
+) -> Result<SubscriptionPullResponse, String> {
+    let url = subscription_url.trim();
+    if url.is_empty() {
+        return Err("请输入订阅URL".to_string());
+    }
+
+    let text = fetch_subscription_text(url).await?;
+    validate_subscription_json(&text)?;
+
+    let data = state.get_data()?;
+    let mut config = merge_admin_config_with_defaults(&data.config);
+
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert("ConfigFile".to_string(), Value::String(text.clone()));
+        let sub = obj
+            .entry("ConfigSubscribtion".to_string())
+            .or_insert_with(|| serde_json::json!({}));
+        if !sub.is_object() {
+            *sub = serde_json::json!({});
+        }
+        let sub_obj = sub.as_object_mut().unwrap();
+        sub_obj.insert("URL".to_string(), Value::String(url.to_string()));
+        sub_obj.insert(
+            "LastCheck".to_string(),
+            Value::String(format_rfc3339_utc_now()),
+        );
+    }
+
+    state.update_config(config.clone())?;
+
+    Ok(SubscriptionPullResponse {
+        raw_json: text,
+        config,
+    })
+}
+
+/// 保存订阅配置（解析并更新 SourceConfig/CustomCategories）
+#[tauri::command]
+pub async fn save_subscription_config(
+    subscription_url: Option<String>,
+    raw_json: Option<String>,
+    auto_update: Option<bool>,
+    state: State<'_, StorageManager>,
+) -> Result<Value, String> {
+    let raw_json =
+        resolve_subscription_json(subscription_url.as_deref(), raw_json.as_deref()).await?;
+
+    let parsed_config = parse_admin_config_core(&raw_json)?;
+    let sources = parsed_config
+        .get("SourceConfig")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.clone())
+        .unwrap_or_default();
+    let categories = parsed_config
+        .get("CustomCategories")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.clone())
+        .unwrap_or_default();
+
+    let data = state.get_data()?;
+    let mut config = merge_admin_config_with_defaults(&data.config);
+
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert("ConfigFile".to_string(), Value::String(raw_json));
+        obj.insert("SourceConfig".to_string(), Value::Array(sources));
+        obj.insert("CustomCategories".to_string(), Value::Array(categories));
+
+        let sub = obj
+            .entry("ConfigSubscribtion".to_string())
+            .or_insert_with(|| serde_json::json!({}));
+        if !sub.is_object() {
+            *sub = serde_json::json!({});
+        }
+        let sub_obj = sub.as_object_mut().unwrap();
+        if let Some(url) = subscription_url {
+            sub_obj.insert("URL".to_string(), Value::String(url));
+        }
+        if let Some(auto_update) = auto_update {
+            sub_obj.insert("AutoUpdate".to_string(), Value::Bool(auto_update));
+        }
+    }
+
+    state.update_config(config.clone())?;
+    Ok(config)
+}
+
+/// 更新视频源配置
+#[tauri::command]
+pub async fn update_source_config(
+    sources: Vec<Value>,
+    state: State<'_, StorageManager>,
+) -> Result<Value, String> {
+    let data = state.get_data()?;
+    let mut config = merge_admin_config_with_defaults(&data.config);
+
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert("SourceConfig".to_string(), Value::Array(sources));
+    }
+
+    state.update_config(config.clone())?;
+    Ok(config)
+}
+
+/// 更新自定义分类配置
+#[tauri::command]
+pub async fn update_custom_categories(
+    categories: Vec<Value>,
+    state: State<'_, StorageManager>,
+) -> Result<Value, String> {
+    let data = state.get_data()?;
+    let mut config = merge_admin_config_with_defaults(&data.config);
+
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert("CustomCategories".to_string(), Value::Array(categories));
+    }
+
+    state.update_config(config.clone())?;
+    Ok(config)
+}
+
+/// 从 JSON 导入完整配置并保存
+#[tauri::command]
+pub async fn save_admin_config_from_json(
+    raw_json: String,
+    state: State<'_, StorageManager>,
+) -> Result<Value, String> {
+    let parsed_config = parse_admin_config_core(&raw_json)?;
+    state.update_config(parsed_config.clone())?;
+    Ok(parsed_config)
+}
+
+/// 更新订阅设置（仅 URL/AutoUpdate）
+#[tauri::command]
+pub async fn update_subscription_settings(
+    subscription_url: Option<String>,
+    auto_update: bool,
+    state: State<'_, StorageManager>,
+) -> Result<Value, String> {
+    let data = state.get_data()?;
+    let mut config = merge_admin_config_with_defaults(&data.config);
+
+    if let Some(obj) = config.as_object_mut() {
+        let sub = obj
+            .entry("ConfigSubscribtion".to_string())
+            .or_insert_with(|| serde_json::json!({}));
+        if !sub.is_object() {
+            *sub = serde_json::json!({});
+        }
+        let sub_obj = sub.as_object_mut().unwrap();
+        if let Some(url) = subscription_url {
+            sub_obj.insert("URL".to_string(), Value::String(url));
+        }
+        sub_obj.insert(
+            "AutoUpdate".to_string(),
+            Value::Bool(auto_update),
+        );
+    }
+
+    state.update_config(config.clone())?;
+    Ok(config)
+}
+
+/// 获取配置（自动补全默认字段）
+#[tauri::command]
+pub async fn get_config_with_defaults(state: State<'_, StorageManager>) -> Result<Value, String> {
+    match state.get_data() {
+        Ok(data) => Ok(merge_admin_config_with_defaults(&data.config)),
+        Err(_) => Ok(default_admin_config_value()),
+    }
+}
+
 /// 规范化单个视频源配置（Rust 端统一成人检测与字段补全）
 #[tauri::command]
 pub async fn normalize_source_config(
@@ -173,20 +474,22 @@ pub async fn reset_config(state: State<'_, StorageManager>) -> Result<(), String
     state.reset_config()
 }
 
+fn player_config_from_config(config: &Value) -> PlayerConfig {
+    if let Some(player_config) = config.get("PlayerConfig") {
+        if let Ok(config) = serde_json::from_value::<PlayerConfig>(player_config.clone()) {
+            return config;
+        }
+    }
+
+    PlayerConfig::default()
+}
+
 /// 获取播放器配置（去广告、优选等）
 #[tauri::command]
 pub async fn get_player_config(state: State<'_, StorageManager>) -> Result<PlayerConfig, String> {
     let data = state.get_data()?;
 
-    // 尝试从配置中获取播放器配置
-    if let Some(player_config) = data.config.get("PlayerConfig") {
-        if let Ok(config) = serde_json::from_value::<PlayerConfig>(player_config.clone()) {
-            return Ok(config);
-        }
-    }
-
-    // 返回默认配置
-    Ok(PlayerConfig::default())
+    Ok(player_config_from_config(&data.config))
 }
 
 /// 保存播放器配置
@@ -229,6 +532,46 @@ impl Default for PlayerConfig {
             optimization_enabled: true,
         }
     }
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct PlayerConfigPatch {
+    pub block_ad_enabled: Option<bool>,
+    pub optimization_enabled: Option<bool>,
+}
+
+fn apply_player_config_patch(mut config: PlayerConfig, patch: PlayerConfigPatch) -> PlayerConfig {
+    if let Some(value) = patch.block_ad_enabled {
+        config.block_ad_enabled = value;
+    }
+    if let Some(value) = patch.optimization_enabled {
+        config.optimization_enabled = value;
+    }
+    config
+}
+
+/// Update player config (partial).
+#[tauri::command]
+pub async fn update_player_config(
+    config: PlayerConfigPatch,
+    state: State<'_, StorageManager>,
+) -> Result<PlayerConfig, String> {
+    let mut data = state.get_data()?;
+    let current = player_config_from_config(&data.config);
+    let updated = apply_player_config_patch(current, config);
+
+    if !data.config.is_object() {
+        data.config = serde_json::json!({});
+    }
+
+    let config_obj = data.config.as_object_mut().unwrap();
+    config_obj.insert(
+        "PlayerConfig".to_string(),
+        serde_json::to_value(updated.clone()).map_err(|e| e.to_string())?,
+    );
+
+    state.update_config(data.config)?;
+    Ok(updated)
 }
 
 /// 用户偏好配置结构（统一配置，包含原 SiteConfig 字段）
@@ -292,23 +635,79 @@ impl Default for UserPreferences {
         }
     }
 }
+#[derive(Debug, Deserialize, Default)]
+pub struct UserPreferencesPatch {
+    pub site_name: Option<String>,
+    pub announcement: Option<String>,
+    pub search_downstream_max_page: Option<u32>,
+    pub site_interface_cache_time: Option<u32>,
+    pub disable_yellow_filter: Option<bool>,
+    pub douban_data_source: Option<String>,
+    pub douban_proxy_url: Option<String>,
+    pub douban_image_proxy_type: Option<String>,
+    pub douban_image_proxy_url: Option<String>,
+    pub enable_optimization: Option<bool>,
+    pub fluid_search: Option<bool>,
+    pub player_buffer_mode: Option<String>,
+    pub has_seen_announcement: Option<String>,
+}
 
-/// 获取用户偏好配置（统一配置，自动从 SiteConfig 迁移）
-#[tauri::command]
-pub async fn get_user_preferences(state: State<'_, StorageManager>) -> Result<UserPreferences, String> {
-    let data = state.get_data()?;
+fn apply_user_preferences_patch(
+    mut preferences: UserPreferences,
+    patch: UserPreferencesPatch,
+) -> UserPreferences {
+    if let Some(value) = patch.site_name {
+        preferences.site_name = value;
+    }
+    if let Some(value) = patch.announcement {
+        preferences.announcement = value;
+    }
+    if let Some(value) = patch.search_downstream_max_page {
+        preferences.search_downstream_max_page = value;
+    }
+    if let Some(value) = patch.site_interface_cache_time {
+        preferences.site_interface_cache_time = value;
+    }
+    if let Some(value) = patch.disable_yellow_filter {
+        preferences.disable_yellow_filter = value;
+    }
+    if let Some(value) = patch.douban_data_source {
+        preferences.douban_data_source = value;
+    }
+    if let Some(value) = patch.douban_proxy_url {
+        preferences.douban_proxy_url = value;
+    }
+    if let Some(value) = patch.douban_image_proxy_type {
+        preferences.douban_image_proxy_type = value;
+    }
+    if let Some(value) = patch.douban_image_proxy_url {
+        preferences.douban_image_proxy_url = value;
+    }
+    if let Some(value) = patch.enable_optimization {
+        preferences.enable_optimization = value;
+    }
+    if let Some(value) = patch.fluid_search {
+        preferences.fluid_search = value;
+    }
+    if let Some(value) = patch.player_buffer_mode {
+        preferences.player_buffer_mode = value;
+    }
+    if let Some(value) = patch.has_seen_announcement {
+        preferences.has_seen_announcement = value;
+    }
+    preferences
+}
 
-    // 尝试从配置中获取用户偏好
-    if let Some(user_prefs) = data.config.get("UserPreferences") {
+fn user_preferences_from_config(config: &Value) -> UserPreferences {
+    if let Some(user_prefs) = config.get("UserPreferences") {
         if let Ok(prefs) = serde_json::from_value::<UserPreferences>(user_prefs.clone()) {
-            return Ok(prefs);
+            return prefs;
         }
     }
 
-    // 如果 UserPreferences 不存在或解析失败，
     let mut prefs = UserPreferences::default();
 
-    if let Some(site_config) = data.config.get("SiteConfig") {
+    if let Some(site_config) = config.get("SiteConfig") {
         if let Some(site_name) = site_config.get("SiteName").and_then(|v| v.as_str()) {
             prefs.site_name = site_name.to_string();
         }
@@ -341,7 +740,16 @@ pub async fn get_user_preferences(state: State<'_, StorageManager>) -> Result<Us
         }
     }
 
-    Ok(prefs)
+    prefs
+}
+
+
+
+/// 获取用户偏好配置（统一配置，自动从 SiteConfig 迁移）
+#[tauri::command]
+pub async fn get_user_preferences(state: State<'_, StorageManager>) -> Result<UserPreferences, String> {
+    let data = state.get_data()?;
+    Ok(user_preferences_from_config(&data.config))
 }
 
 /// 保存用户偏好配置
@@ -368,8 +776,165 @@ pub async fn set_user_preferences(
     state.update_config(data.config)
 }
 
+/// Update user preferences (partial).
+#[tauri::command]
+pub async fn update_user_preferences(
+    preferences: UserPreferencesPatch,
+    state: State<'_, StorageManager>,
+) -> Result<UserPreferences, String> {
+    let mut data = state.get_data()?;
+    let current = user_preferences_from_config(&data.config);
+    let updated = apply_user_preferences_patch(current, preferences);
+
+    if !data.config.is_object() {
+        data.config = serde_json::json!({});
+    }
+
+    let config_obj = data.config.as_object_mut().unwrap();
+    config_obj.insert(
+        "UserPreferences".to_string(),
+        serde_json::to_value(updated.clone()).map_err(|e| e.to_string())?,
+    );
+
+    state.update_config(data.config)?;
+    Ok(updated)
+}
+
 // 是否为成人源 批量判断
 #[tauri::command]
 pub async fn is_adult_source(names: Vec<String>) -> Vec<bool> {
     names.iter().map(|n| adult::is_adult_source(n)).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        apply_player_config_patch,
+        apply_user_preferences_patch,
+        format_rfc3339_utc_from_secs,
+        player_config_from_config,
+        resolve_subscription_json,
+        user_preferences_from_config,
+        validate_subscription_json,
+        PlayerConfig,
+        PlayerConfigPatch,
+        UserPreferences,
+        UserPreferencesPatch,
+    };
+    use serde_json::json;
+
+
+
+    #[test]
+    fn validate_subscription_json_accepts_valid_json() {
+        let result = validate_subscription_json(r#"{ "ok": true }"#);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_subscription_json_rejects_invalid_json() {
+        let result = validate_subscription_json("{");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn format_rfc3339_utc_epoch() {
+        let formatted = format_rfc3339_utc_from_secs(0, 0);
+        assert_eq!(formatted, "1970-01-01T00:00:00.000Z");
+    }
+
+    #[tokio::test]
+    async fn resolve_subscription_json_prefers_raw_json() {
+        let result =
+            resolve_subscription_json(Some("http://example.com"), Some("{\"ok\":true}"))
+                .await
+                .unwrap();
+        assert_eq!(result, "{\"ok\":true}");
+    }
+
+    #[test]
+    fn player_config_from_config_prefers_saved_config() {
+        let config = json!({
+            "PlayerConfig": {
+                "block_ad_enabled": false,
+                "optimization_enabled": false
+            }
+        });
+        let prefs = player_config_from_config(&config);
+        assert!(!prefs.block_ad_enabled);
+        assert!(!prefs.optimization_enabled);
+    }
+
+    #[test]
+    fn apply_player_config_patch_updates_only_fields() {
+        let base = PlayerConfig {
+            block_ad_enabled: true,
+            optimization_enabled: true,
+        };
+        let patch = PlayerConfigPatch {
+            block_ad_enabled: Some(false),
+            optimization_enabled: None,
+        };
+        let updated = apply_player_config_patch(base, patch);
+        assert!(!updated.block_ad_enabled);
+        assert!(updated.optimization_enabled);
+    }
+
+    #[test]
+    fn user_preferences_from_config_prefers_user_preferences() {
+        let config = json!({
+            "UserPreferences": {
+                "site_name": "TestSite",
+                "enable_optimization": false,
+                "fluid_search": false
+            }
+        });
+        let prefs = user_preferences_from_config(&config);
+        assert_eq!(prefs.site_name, "TestSite");
+        assert!(!prefs.enable_optimization);
+        assert!(!prefs.fluid_search);
+    }
+
+    #[test]
+    fn user_preferences_from_config_falls_back_to_site_config() {
+        let config = json!({
+            "SiteConfig": {
+                "SiteName": "LegacySite",
+                "Announcement": "Hello",
+                "SearchDownstreamMaxPage": 9,
+                "SiteInterfaceCacheTime": 3600,
+                "DisableYellowFilter": true,
+                "DoubanProxyType": "direct",
+                "DoubanProxy": "https://proxy.example.com",
+                "DoubanImageProxyType": "direct",
+                "DoubanImageProxy": "https://img.example.com",
+                "FluidSearch": false
+            }
+        });
+        let prefs = user_preferences_from_config(&config);
+        assert_eq!(prefs.site_name, "LegacySite");
+        assert_eq!(prefs.announcement, "Hello");
+        assert_eq!(prefs.search_downstream_max_page, 9);
+        assert_eq!(prefs.site_interface_cache_time, 3600);
+        assert!(prefs.disable_yellow_filter);
+        assert_eq!(prefs.douban_data_source, "direct");
+        assert_eq!(prefs.douban_proxy_url, "https://proxy.example.com");
+        assert_eq!(prefs.douban_image_proxy_type, "direct");
+        assert_eq!(prefs.douban_image_proxy_url, "https://img.example.com");
+        assert!(!prefs.fluid_search);
+    }
+
+    #[test]
+    fn apply_user_preferences_patch_updates_only_fields() {
+        let base = UserPreferences::default();
+        let patch = UserPreferencesPatch {
+            enable_optimization: Some(false),
+            player_buffer_mode: Some("max".to_string()),
+            ..Default::default()
+        };
+        let updated = apply_user_preferences_patch(base.clone(), patch);
+        assert!(!updated.enable_optimization);
+        assert_eq!(updated.player_buffer_mode, "max");
+        assert_eq!(updated.site_name, base.site_name);
+    }
 }

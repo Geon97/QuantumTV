@@ -9,7 +9,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
 import {
-  PlayerConfig,
   PlayerInitialState,
   PreferBestSourceResponse,
   RustFavorite,
@@ -1412,11 +1411,9 @@ function PlayPageClient() {
               const newVal = !blockAdEnabled;
               try {
                 // 保存配置到 Rust
-                const config: PlayerConfig = {
-                  block_ad_enabled: newVal,
-                  optimization_enabled: optimizationEnabled,
-                };
-                await invoke<void>('set_player_config', { config });
+                await invoke<void>('update_player_config', {
+                  config: { block_ad_enabled: newVal },
+                });
                 if (artPlayerRef.current) {
                   resumeTimeRef.current = artPlayerRef.current.currentTime;
                   if (

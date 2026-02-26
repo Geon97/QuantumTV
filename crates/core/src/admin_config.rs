@@ -283,7 +283,7 @@ fn build_config_with_sources(sources: Vec<Value>) -> Value {
     config
 }
 
-fn default_admin_config_value() -> Value {
+pub fn default_admin_config_value() -> Value {
     json!({
         "ConfigFile": "",
         "ConfigSubscribtion": {
@@ -318,6 +318,26 @@ fn default_admin_config_value() -> Value {
         "SourceConfig": [],
         "CustomCategories": []
     })
+}
+
+pub fn merge_admin_config_with_defaults(value: &Value) -> Value {
+    let mut merged = if let Some(map) = value.as_object() {
+        normalize_admin_config_object(map).unwrap_or_else(|_| default_admin_config_value())
+    } else if let Ok(normalized) = normalize_admin_config_value(value.clone()) {
+        normalized
+    } else {
+        default_admin_config_value()
+    };
+
+    if let (Some(src), Some(dst)) = (value.as_object(), merged.as_object_mut()) {
+        for (k, v) in src {
+            if !dst.contains_key(k) {
+                dst.insert(k.clone(), v.clone());
+            }
+        }
+    }
+
+    merged
 }
 
 fn merge_object(default_obj: &Value, override_obj: &Value) -> Value {
@@ -547,5 +567,54 @@ mod tests {
         let obj = result.as_object().unwrap();
         assert_eq!(obj.get("is_adult").unwrap(), true);
         assert_eq!(obj.get("from").unwrap(), "custom");
+    }
+    
+    #[test]
+    fn merge_preserves_extra_top_level_fields() {
+        let input = json!({
+            "PlayerConfig": { "block_ad_enabled": false }
+        });
+
+        let merged = merge_admin_config_with_defaults(&input);
+        let player = merged.get("PlayerConfig").unwrap().as_object().unwrap();
+        assert_eq!(player.get("block_ad_enabled").unwrap(), false);
+        assert!(merged.get("ConfigSubscribtion").is_some());
+    }
+
+    #[test]
+    fn merge_fills_missing_subscription_fields() {
+        let input = json!({
+            "ConfigSubscribtion": { "URL": "http://example.com" }
+        });
+
+        let merged = merge_admin_config_with_defaults(&input);
+        let sub = merged.get("ConfigSubscribtion").unwrap().as_object().unwrap();
+        assert_eq!(sub.get("URL").unwrap(), "http://example.com");
+        assert_eq!(sub.get("AutoUpdate").unwrap(), false);
+        assert_eq!(sub.get("LastCheck").unwrap(), "");
+    }
+
+    #[test]
+    fn merge_uses_config_file_when_sources_missing() {
+        let embedded = json!({
+            "sites": [
+                { "name": "EmbeddedSite", "api": "http://embedded/api" }
+            ]
+        })
+        .to_string();
+
+        let input = json!({
+            "ConfigFile": embedded,
+            "ConfigSubscribtion": {
+                "URL": "http://example.com/config.json"
+            }
+        });
+
+        let merged = merge_admin_config_with_defaults(&input);
+        let sources = merged.get("SourceConfig").unwrap().as_array().unwrap();
+        assert_eq!(sources.len(), 1);
+        let source = sources[0].as_object().unwrap();
+        assert_eq!(source.get("name").unwrap(), "EmbeddedSite");
+        assert_eq!(source.get("from").unwrap(), "config");
     }
 }

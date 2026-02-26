@@ -115,16 +115,24 @@ function SearchPageClient() {
     }
 
     const query = currentQueryRef.current;
-    invoke<Record<string, AggregatedGroup>>(
-      'aggregate_search_results_command',
+    const filter: SearchFilter = {
+      source: filterAgg.source,
+      title: filterAgg.title,
+      year: filterAgg.year,
+      year_order: filterAgg.yearOrder as 'none' | 'asc' | 'desc',
+    };
+
+    invoke<Array<[string, AggregatedGroup]>>(
+      'aggregate_search_results_filtered_command',
       {
         results: searchResults,
         query,
         normalizedQuery: normalizedQuery || null,
+        filter,
       },
     )
-      .then((aggregatedMap) => {
-        setAggregatedGroups(new Map(Object.entries(aggregatedMap)));
+      .then((aggregatedEntries) => {
+        setAggregatedGroups(new Map(aggregatedEntries));
 
         // 输出缓存统计信息
         invoke<Record<string, { entry_count: number; weighted_size: number }>>(
@@ -142,7 +150,7 @@ function SearchPageClient() {
           .catch(console.error);
       })
       .catch(console.error);
-  }, [searchResults, normalizedQuery]);
+  }, [searchResults, normalizedQuery, filterAgg]);
 
   // 构建筛选选项
   const filterOptions = useMemo(() => {

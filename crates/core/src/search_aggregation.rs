@@ -33,6 +33,18 @@ pub enum YearOrder {
     Desc,
 }
 
+/// 聚合搜索结果（支持过滤与排序）
+pub fn aggregate_search_results_with_filter(
+    results: Vec<SearchResult>,
+    query: &str,
+    normalized_query: Option<&str>,
+    filter: &SearchFilter,
+) -> Vec<(String, Vec<SearchResult>)> {
+    let filtered = apply_filter(results, filter);
+    let sorted = sort_by_year(filtered, filter.year_order.clone());
+    aggregate_search_results(sorted, query, normalized_query)
+}
+
 /// 聚合搜索结果
 ///
 /// 按照 title + year + type 进行分组
@@ -478,5 +490,76 @@ mod tests {
         assert_eq!(names.len(), 2);
         assert!(names.contains(&"来源A".to_string()));
         assert!(names.contains(&"来源B".to_string()));
+    }
+
+    #[test]
+    fn test_aggregate_search_results_with_filter_sorts_by_year_desc() {
+        let results = vec![
+            SearchResult {
+                id: "1".to_string(),
+                title: "电影A".to_string(),
+                year: Some("2022".to_string()),
+                episodes: vec!["1".to_string()],
+                ..Default::default()
+            },
+            SearchResult {
+                id: "2".to_string(),
+                title: "电影B".to_string(),
+                year: Some("2024".to_string()),
+                episodes: vec!["1".to_string()],
+                ..Default::default()
+            },
+            SearchResult {
+                id: "3".to_string(),
+                title: "电影C".to_string(),
+                year: Some("2023".to_string()),
+                episodes: vec!["1".to_string()],
+                ..Default::default()
+            },
+        ];
+
+        let filter = SearchFilter {
+            source: "all".to_string(),
+            title: "all".to_string(),
+            year: "all".to_string(),
+            year_order: YearOrder::Desc,
+        };
+
+        let aggregated = aggregate_search_results_with_filter(results, "", None, &filter);
+        assert_eq!(aggregated.len(), 3);
+        assert_eq!(aggregated[0].1[0].year.as_deref(), Some("2024"));
+        assert_eq!(aggregated[1].1[0].year.as_deref(), Some("2023"));
+        assert_eq!(aggregated[2].1[0].year.as_deref(), Some("2022"));
+    }
+
+    #[test]
+    fn test_aggregate_search_results_with_filter_applies_year_filter() {
+        let results = vec![
+            SearchResult {
+                id: "1".to_string(),
+                title: "电影A".to_string(),
+                year: Some("2022".to_string()),
+                episodes: vec!["1".to_string()],
+                ..Default::default()
+            },
+            SearchResult {
+                id: "2".to_string(),
+                title: "电影B".to_string(),
+                year: Some("2023".to_string()),
+                episodes: vec!["1".to_string()],
+                ..Default::default()
+            },
+        ];
+
+        let filter = SearchFilter {
+            source: "all".to_string(),
+            title: "all".to_string(),
+            year: "2023".to_string(),
+            year_order: YearOrder::None,
+        };
+
+        let aggregated = aggregate_search_results_with_filter(results, "", None, &filter);
+        assert_eq!(aggregated.len(), 1);
+        assert_eq!(aggregated[0].1[0].year.as_deref(), Some("2023"));
     }
 }

@@ -105,7 +105,6 @@ export const UserMenu: React.FC = () => {
     'cmliussss-cdn-tencent',
   );
   const [doubanImageProxyUrl, setDoubanImageProxyUrl] = useState('');
-  const [hasSeenAnnouncement, setHasSeenAnnouncement] = useState('');
   const [isDoubanDropdownOpen, setIsDoubanDropdownOpen] = useState(false);
   const [isDoubanImageProxyDropdownOpen, setIsDoubanImageProxyDropdownOpen] =
     useState(false);
@@ -164,7 +163,6 @@ export const UserMenu: React.FC = () => {
           enable_optimization: boolean;
           fluid_search: boolean;
           player_buffer_mode: string;
-          has_seen_announcement: string;
         }>('get_user_preferences');
 
         setDoubanDataSource(prefs.douban_data_source);
@@ -175,7 +173,6 @@ export const UserMenu: React.FC = () => {
         setFluidSearch(prefs.fluid_search);
         // disable_yellow_filter=false 表示开启过滤，所以需要反转
         setFilterAdultContent(!prefs.disable_yellow_filter);
-        setHasSeenAnnouncement(prefs.has_seen_announcement);
 
         // 类型守卫：确保 player_buffer_mode 是有效值
         const validBufferModes = ['standard', 'enhanced', 'max'] as const;
@@ -347,44 +344,10 @@ export const UserMenu: React.FC = () => {
       fluid_search: boolean;
       disable_yellow_filter: boolean;
       player_buffer_mode: string;
-      has_seen_announcement: string;
     }>,
   ) => {
     try {
-      // 获取当前完整配置（包括所有字段）
-      const fullPrefs = await invoke<{
-        site_name: string;
-        announcement: string;
-        search_downstream_max_page: number;
-        site_interface_cache_time: number;
-        disable_yellow_filter: boolean;
-        douban_data_source: string;
-        douban_proxy_url: string;
-        douban_image_proxy_type: string;
-        douban_image_proxy_url: string;
-        enable_optimization: boolean;
-        fluid_search: boolean;
-        player_buffer_mode: string;
-        has_seen_announcement: string;
-      }>('get_user_preferences');
-
-      // 合并当前 UI 状态和更新
-      const currentPrefs = {
-        ...fullPrefs, // 保留所有字段
-        douban_data_source: doubanDataSource,
-        douban_proxy_url: doubanProxyUrl,
-        douban_image_proxy_type: doubanImageProxyType,
-        douban_image_proxy_url: doubanImageProxyUrl,
-        enable_optimization: enableOptimization,
-        fluid_search: fluidSearch,
-        // filterAdultContent=true 表示开启过滤，所以 disable_yellow_filter 要为 false
-        disable_yellow_filter: !filterAdultContent,
-        player_buffer_mode: playerBufferMode,
-        has_seen_announcement: hasSeenAnnouncement,
-        ...updates, // 应用更新
-      };
-
-      await invoke('set_user_preferences', { preferences: currentPrefs });
+      await invoke('update_user_preferences', { preferences: updates });
     } catch (error) {
       console.error('保存用户偏好配置失败:', error);
     }

@@ -105,9 +105,12 @@ const ConfigImportExportModal = ({
 
   const handleImport = async () => {
     try {
-      const finalConfig = await invoke<AdminConfig>('parse_admin_config', {
+      const finalConfig = await invoke<AdminConfig>(
+        'save_admin_config_from_json',
+        {
         rawJson: importText,
-      });
+        },
+      );
 
       onImport(finalConfig);
       setImportText('');
@@ -496,7 +499,7 @@ const SortableSourceItem = ({
 // 视频源配置组件
 interface SourceConfigProps {
   config: AdminConfig | null;
-  onSave: (config: AdminConfig) => void;
+  onUpdate: (config: AdminConfig) => void;
   showAlert: (
     type: 'success' | 'error' | 'warning',
     title: string,
@@ -504,7 +507,7 @@ interface SourceConfigProps {
   ) => void;
 }
 
-const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
+const SourceConfig = ({ config, onUpdate, showAlert }: SourceConfigProps) => {
   const [sources, setSources] = useState<any[]>([]);
   const [editingSource, setEditingSource] = useState<any | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -535,29 +538,39 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
       const oldIndex = sources.findIndex((s) => s.key === active.id);
       const newIndex = sources.findIndex((s) => s.key === over.id);
       const newSources = arrayMove(sources, oldIndex, newIndex);
-      setSources(newSources);
-      saveChanges(newSources);
+      void saveChanges(newSources);
     }
   };
 
-  const saveChanges = (newSources: any[]) => {
-    if (!config) return;
-    const newConfig = { ...config, SourceConfig: newSources };
-    onSave(newConfig);
+  const saveChanges = async (newSources: any[]) => {
+    setSources(newSources);
+    try {
+      const newConfig = await invoke<AdminConfig>('update_source_config', {
+        sources: newSources,
+      });
+      onUpdate(newConfig);
+    } catch (error) {
+      console.error('保存视频源失败:', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : '保存失败';
+      showAlert('error', '保存失败', message);
+    }
   };
 
   const handleToggle = (key: string) => {
     const newSources = sources.map((s) =>
       s.key === key ? { ...s, disabled: !s.disabled } : s,
     );
-    setSources(newSources);
-    saveChanges(newSources);
+    void saveChanges(newSources);
   };
 
   const handleDelete = (key: string) => {
     const newSources = sources.filter((s) => s.key !== key);
-    setSources(newSources);
-    saveChanges(newSources);
+    void saveChanges(newSources);
     showAlert('success', '删除成功');
   };
 
@@ -581,8 +594,7 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
         ...sources,
         { ...normalized, disabled: false },
       ];
-      setSources(newSources);
-      saveChanges(newSources);
+      await saveChanges(newSources);
       setNewSource({ key: '', name: '', api: '', detail: '', is_adult: false });
       setIsAddModalOpen(false);
       showAlert('success', '添加成功');
@@ -607,8 +619,7 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
       const newSources = sources.map((s) =>
         s.key === editingSource.key ? normalized : s,
       );
-      setSources(newSources);
-      saveChanges(newSources);
+      await saveChanges(newSources);
       setEditingSource(null);
       showAlert('success', '保存成功');
     } catch (error) {
@@ -838,7 +849,7 @@ const SourceConfig = ({ config, onSave, showAlert }: SourceConfigProps) => {
 // 自定义分类配置组件
 interface CategoryConfigProps {
   config: AdminConfig | null;
-  onSave: (config: AdminConfig) => void;
+  onUpdate: (config: AdminConfig) => void;
   showAlert: (
     type: 'success' | 'error' | 'warning',
     title: string,
@@ -846,7 +857,7 @@ interface CategoryConfigProps {
   ) => void;
 }
 
-const CategoryConfig = ({ config, onSave, showAlert }: CategoryConfigProps) => {
+const CategoryConfig = ({ config, onUpdate, showAlert }: CategoryConfigProps) => {
   const [categories, setCategories] = useState<any[]>([]);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newCategory, setNewCategory] = useState({
@@ -861,24 +872,35 @@ const CategoryConfig = ({ config, onSave, showAlert }: CategoryConfigProps) => {
     setCategories([...customCategories]);
   }, [config?.CustomCategories]);
 
-  const saveChanges = (newCategories: any[]) => {
-    if (!config) return;
-    const newConfig = { ...config, CustomCategories: newCategories };
-    onSave(newConfig);
+  const saveChanges = async (newCategories: any[]) => {
+    setCategories(newCategories);
+    try {
+      const newConfig = await invoke<AdminConfig>('update_custom_categories', {
+        categories: newCategories,
+      });
+      onUpdate(newConfig);
+    } catch (error) {
+      console.error('保存分类失败:', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : '保存失败';
+      showAlert('error', '保存失败', message);
+    }
   };
 
   const handleToggle = (index: number) => {
     const newCategories = categories.map((c, i) =>
       i === index ? { ...c, disabled: !c.disabled } : c,
     );
-    setCategories(newCategories);
-    saveChanges(newCategories);
+    void saveChanges(newCategories);
   };
 
   const handleDelete = (index: number) => {
     const newCategories = categories.filter((_, i) => i !== index);
-    setCategories(newCategories);
-    saveChanges(newCategories);
+    void saveChanges(newCategories);
     showAlert('success', '删除成功');
   };
 
@@ -891,8 +913,7 @@ const CategoryConfig = ({ config, onSave, showAlert }: CategoryConfigProps) => {
       ...categories,
       { ...newCategory, from: 'custom', disabled: false },
     ];
-    setCategories(newCategories);
-    saveChanges(newCategories);
+    void saveChanges(newCategories);
     setNewCategory({ name: '', query: '', type: 'movie' });
     setIsAddModalOpen(false);
     showAlert('success', '添加成功');
@@ -1043,7 +1064,7 @@ const CategoryConfig = ({ config, onSave, showAlert }: CategoryConfigProps) => {
 // 配置订阅组件
 interface ConfigSubscriptionProps {
   config: AdminConfig | null;
-  onSave: (config: AdminConfig) => void;
+  onUpdate: (config: AdminConfig) => void;
   showAlert: (
     type: 'success' | 'error' | 'warning',
     title: string,
@@ -1053,7 +1074,7 @@ interface ConfigSubscriptionProps {
 
 const ConfigSubscription = ({
   config,
-  onSave,
+  onUpdate,
   showAlert,
 }: ConfigSubscriptionProps) => {
   const [subscriptionUrl, setSubscriptionUrl] = useState('');
@@ -1062,6 +1083,11 @@ const ConfigSubscription = ({
   const [configContent, setConfigContent] = useState('');
   const [isFetching, setIsFetching] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  type SubscriptionPullResponse = {
+    rawJson: string;
+    config: AdminConfig;
+  };
 
   useEffect(() => {
     if (config?.ConfigSubscribtion) {
@@ -1082,44 +1108,30 @@ const ConfigSubscription = ({
 
     setIsFetching(true);
     try {
-      const response = await fetch(subscriptionUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const text = await response.text();
+      const result = await invoke<SubscriptionPullResponse>(
+        'pull_subscription_config',
+        {
+          subscriptionUrl,
+        },
+      );
 
-      // 验证是否为有效的 JSON
-      try {
-        JSON.parse(text);
-      } catch {
-        throw new Error('返回内容不是有效的 JSON 格式');
-      }
-
-      setConfigContent(text);
-      const now = new Date().toISOString();
-      setLastCheckTime(now);
-
-      // 保存订阅信息
-      if (config) {
-        const newConfig = {
-          ...config,
-          ConfigFile: text,
-          ConfigSubscribtion: {
-            ...config.ConfigSubscribtion,
-            URL: subscriptionUrl,
-            LastCheck: now,
-          },
-        };
-        onSave(newConfig);
-      }
+      setConfigContent(result.rawJson);
+      setLastCheckTime(result.config.ConfigSubscribtion.LastCheck || null);
+      onUpdate(result.config);
 
       showAlert('success', '拉取成功', '配置已更新到编辑器中，请确认后保存');
     } catch (error) {
       console.error('拉取配置失败:', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : '网络错误';
       showAlert(
         'error',
         '拉取失败',
-        error instanceof Error ? error.message : '网络错误',
+        message,
       );
     } finally {
       setIsFetching(false);
@@ -1134,54 +1146,65 @@ const ConfigSubscription = ({
 
     setIsSaving(true);
     try {
-      const parsedConfig = await invoke<AdminConfig>('parse_admin_config', {
+      const newConfig = await invoke<AdminConfig>('save_subscription_config', {
+        subscriptionUrl,
         rawJson: configContent,
+        autoUpdate,
       });
 
-      if (config) {
-        const newConfig: AdminConfig = {
-          ...config,
-          ConfigFile: configContent,
-          ConfigSubscribtion: {
-            ...config.ConfigSubscribtion,
-            URL: subscriptionUrl,
-            AutoUpdate: autoUpdate,
-          },
-          SourceConfig: parsedConfig.SourceConfig || [],
-          CustomCategories: parsedConfig.CustomCategories || [],
-        };
-
-        onSave(newConfig);
-        showAlert(
-          'success',
-          '保存成功',
-          `已解析 ${newConfig.SourceConfig?.length || 0} 个视频源`,
-        );
-      }
+      onUpdate(newConfig);
+      showAlert(
+        'success',
+        '保存成功',
+        `已解析 ${newConfig.SourceConfig?.length || 0} 个视频源`,
+      );
     } catch (error) {
       console.error('保存配置失败:', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : '配置格式错误，请检查 JSON 格式';
       showAlert(
         'error',
         '保存失败',
-        error instanceof Error ? error.message : '配置格式错误，请检查 JSON 格式',
+        message,
       );
     } finally {
       setIsSaving(false);
     }
   };
 
+  const updateSubscriptionSettings = async (enabled: boolean) => {
+    try {
+      const newConfig = await invoke<AdminConfig>(
+        'update_subscription_settings',
+        {
+          subscriptionUrl,
+          autoUpdate: enabled,
+        },
+      );
+      onUpdate(newConfig);
+    } catch (error) {
+      console.error('更新订阅设置失败:', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : '更新订阅设置失败';
+      showAlert(
+        'error',
+        '更新失败',
+        message,
+      );
+    }
+  };
+
   const handleAutoUpdateChange = (enabled: boolean) => {
     setAutoUpdate(enabled);
-    if (config) {
-      const newConfig = {
-        ...config,
-        ConfigSubscribtion: {
-          ...config.ConfigSubscribtion,
-          AutoUpdate: enabled,
-        },
-      };
-      onSave(newConfig);
-    }
+    void updateSubscriptionSettings(enabled);
   };
 
   return (
@@ -1338,19 +1361,8 @@ function AdminPageContent() {
     try {
       // 从 Tauri 后端加载配置
       try {
-        const tauriData = await invoke<AdminConfig>('get_config');
-        // 如果 Tauri 后端有配置且有 SourceConfig
-        if (
-          tauriData &&
-          tauriData.SourceConfig &&
-          tauriData.SourceConfig.length > 0
-        ) {
-          setConfig(tauriData);
-        } else {
-          // 如果没有配置，使用默认配置
-          const defaultConfig = getDefaultConfig();
-          setConfig(defaultConfig);
-        }
+        const tauriData = await invoke<AdminConfig>('get_config_with_defaults');
+        setConfig(tauriData);
       } catch (tauriError) {
         console.warn('从 Tauri 后端加载配置失败:', tauriError);
         // 加载失败时使用默认配置
@@ -1366,16 +1378,8 @@ function AdminPageContent() {
     }
   };
 
-  const saveConfig = useCallback(async (newConfig: AdminConfig) => {
-    try {
-      // 保存到 Tauri 后端
-      await invoke('save_config', { config: newConfig });
-      setConfig(newConfig);
-      console.log('配置已保存到 Tauri 后端');
-    } catch (error) {
-      console.error('保存配置失败:', error);
-      showAlert('error', '保存失败', '请检查配置格式');
-    }
+  const replaceConfig = useCallback((newConfig: AdminConfig) => {
+    setConfig(newConfig);
   }, []);
 
   const showAlert = (
@@ -1434,7 +1438,7 @@ function AdminPageContent() {
         >
           <ConfigSubscription
             config={config}
-            onSave={saveConfig}
+            onUpdate={replaceConfig}
             showAlert={showAlert}
           />
         </CollapsibleTab>
@@ -1448,7 +1452,7 @@ function AdminPageContent() {
         >
           <SourceConfig
             config={config}
-            onSave={saveConfig}
+            onUpdate={replaceConfig}
             showAlert={showAlert}
           />
         </CollapsibleTab>
@@ -1462,7 +1466,7 @@ function AdminPageContent() {
         >
           <CategoryConfig
             config={config}
-            onSave={saveConfig}
+            onUpdate={replaceConfig}
             showAlert={showAlert}
           />
         </CollapsibleTab>
@@ -1493,7 +1497,7 @@ function AdminPageContent() {
         onClose={() => setIsImportExportModalOpen(false)}
         config={config}
         onImport={(newConfig) => {
-          saveConfig(newConfig);
+          replaceConfig(newConfig);
           showAlert('success', '导入成功');
         }}
         showAlert={showAlert}

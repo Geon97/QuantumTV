@@ -1,11 +1,10 @@
 use crate::db::db_client::Db;
 use quantumtv_core::search_aggregation::{
-    aggregate_search_results, apply_filter, compute_group_stats, sort_by_year, AggregatedGroup,
-    SearchFilter,
+    aggregate_search_results_with_filter, apply_filter, compute_group_stats,
+    sort_by_year, AggregatedGroup, SearchFilter,
 };
 use quantumtv_core::types::SearchResult;
 use rusqlite::params;
-use std::collections::HashMap;
 use tauri::State;
 
 #[tauri::command]
@@ -23,43 +22,40 @@ pub fn get_search_suggestions(db: State<'_, Db>, query: String) -> Result<Vec<St
     })
 }
 
-/// 聚合搜索结果并返回分组统计
-///
-/// # Arguments
-/// * `results` - 搜索结果列表
-/// * `query` - 搜索查询关键词
-/// * `normalized_query` - 可选的归一化查询(如繁简转换后)
-///
-/// # Returns
-/// 返回聚合后的分组Map: key -> AggregatedGroup
+/// 聚合搜索结果（支持过滤与排序）
 #[tauri::command]
-pub async fn aggregate_search_results_command(
+pub async fn aggregate_search_results_filtered_command(
     results: Vec<SearchResult>,
     query: String,
     normalized_query: Option<String>,
-) -> Result<HashMap<String, AggregatedGroup>, String> {
+    filter: SearchFilter,
+) -> Result<Vec<(String, AggregatedGroup)>, String> {
     let start = std::time::Instant::now();
     let result_count = results.len();
 
-    let aggregated_list =
-        aggregate_search_results(results, &query, normalized_query.as_deref());
+    let aggregated_list = aggregate_search_results_with_filter(
+        results,
+        &query,
+        normalized_query.as_deref(),
+        &filter,
+    );
 
-    let mut aggregated_map: HashMap<String, AggregatedGroup> = HashMap::new();
+    let mut aggregated_entries: Vec<(String, AggregatedGroup)> = Vec::new();
 
     for (key, group) in aggregated_list {
         let stats = compute_group_stats(&group);
-        aggregated_map.insert(key, stats);
+        aggregated_entries.push((key, stats));
     }
 
     let duration = start.elapsed();
     log::info!(
-        "聚合搜索结果完成: {} 条结果 -> {} 个分组, 耗时 {:?}",
+        "聚合搜索结果(过滤/排序)完成: {} 条结果 -> {} 个分组 耗时 {:?}",
         result_count,
-        aggregated_map.len(),
+        aggregated_entries.len(),
         duration
     );
 
-    Ok(aggregated_map)
+    Ok(aggregated_entries)
 }
 
 /// 应用过滤器并排序

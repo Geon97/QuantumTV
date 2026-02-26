@@ -217,12 +217,9 @@ function HomeClient() {
   const handleCloseAnnouncement = async (announcement: string) => {
     setShowAnnouncement(false);
     try {
-      // 获取当前用户偏好
-      const prefs = await invoke<any>('get_user_preferences');
       // 更新已查看的公告
-      await invoke('set_user_preferences', {
+      await invoke('update_user_preferences', {
         preferences: {
-          ...prefs,
           has_seen_announcement: announcement,
         },
       });
