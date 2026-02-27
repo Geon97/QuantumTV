@@ -1285,26 +1285,51 @@ function PlayPageClient() {
               debug: false, // 关闭日志
               enableWorker: true, // WebWorker 解码，降低主线程压力
               lowLatencyMode: false, // 关闭低延迟模式以优化缓冲
+              backBufferLength: 90, // 保留90秒的后缓冲
 
-              // 预加载和缓冲优化
-              maxBufferLength: 90, // 最大缓冲90秒（配合Rust预加载15个片段）
-              maxMaxBufferLength: 180, // 极限缓冲180秒
-              maxBufferSize: 150 * 1000 * 1000, // 150MB缓冲大小
-              maxBufferHole: 0.5, // 允许0.5秒的缓冲空洞
+              // 预加载和缓冲优化（针对慢速网络）
+              maxBufferLength: 120, // 最大缓冲120秒（从90增加）
+              maxMaxBufferLength: 240, // 极限缓冲240秒（从180增加）
+              maxBufferSize: 300 * 1000 * 1000, // 300MB缓冲大小（从150MB增加）
+              maxBufferHole: 0.8, // 允许0.8秒的缓冲空洞（从0.5增加）
+
+              // 前向缓冲优化
+              maxFragLookUpTolerance: 0.5, // 片段查找容差（从0.25增加）
+              nudgeOffset: 0.1, // 缓冲微调偏移
+              nudgeMaxRetry: 5, // 最大微调重试次数
 
               // 预加载策略
               startLevel: -1, // 自动选择起始质量级别
               autoStartLoad: true, // 自动开始加载
               startPosition: -1, // 从当前位置开始
 
-              // 片段加载优化
-              maxFragLookUpTolerance: 0.25, // 片段查找容差优化
+              // 激进的预加载
               progressive: true, // 渐进式下载
 
-              // ABR（自适应码率）优化
-              abrEwmaDefaultEstimate: 500000, // 默认带宽估计 500kbps
-              abrBandWidthFactor: 0.95, // 带宽安全系数
-              abrBandWidthUpFactor: 0.7, // 带宽提升因子
+              // ABR（自适应码率）优化 - 更保守的策略
+              abrEwmaDefaultEstimate: 300000, // 默认带宽估计 300kbps（从500k降低，更保守）
+              abrBandWidthFactor: 0.85, // 带宽安全系数（从0.95降低，更保守）
+              abrBandWidthUpFactor: 0.6, // 带宽提升因子（从0.7降低）
+              abrEwmaFastLive: 2.0, // 快速EWMA权重
+              abrEwmaSlowLive: 6.0, // 慢速EWMA权重
+
+              // 片段加载重试策略（针对网络慢的情况）
+              fragLoadingTimeOut: 25000, // 片段加载超时25秒（从20秒增加）
+              fragLoadingMaxRetry: 6, // 最多重试6次（从4次增加）
+              fragLoadingRetryDelay: 500, // 重试延迟500ms
+              fragLoadingMaxRetryTimeout: 8000, // 最大重试超时8秒
+
+              // Manifest加载重试
+              manifestLoadingTimeOut: 15000, // manifest加载超时15秒
+              manifestLoadingMaxRetry: 4, // 最多重试4次
+              manifestLoadingRetryDelay: 500, // 重试延迟500ms
+              manifestLoadingMaxRetryTimeout: 8000, // 最大重试超时8秒
+
+              // Level加载重试
+              levelLoadingTimeOut: 15000, // level加载超时15秒
+              levelLoadingMaxRetry: 4, // 最多重试4次
+              levelLoadingRetryDelay: 500, // 重试延迟500ms
+              levelLoadingMaxRetryTimeout: 8000, // 最大重试超时8秒
 
               /* 自定义loader - 使用 Tauri fetch_binary（带缓存和预取） */
               loader: TauriHlsJsLoader,

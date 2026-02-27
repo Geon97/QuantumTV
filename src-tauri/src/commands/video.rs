@@ -28,19 +28,24 @@ pub struct CacheStats {
 
 pub struct VideoCacheManager {
     pub cache: Cache<String, Vec<u8>>,
+    pub semaphore: Arc<Semaphore>, // 并发控制
 }
 
 impl VideoCacheManager {
     pub fn new() -> Self {
         // 优化缓存配置：
-        // - 最大 500 条目（从300增加到500，支持更多预加载）
-        // - TTL 15分钟（从10分钟增加到15分钟，减少重复下载）
-        // 假设每个 ts 片段约 1-2MB，500个约 500MB-1GB
+        // - 最大 800 条目（从500增加到800，支持更多预加载）
+        // - TTL 20分钟（从15分钟增加到20分钟，减少重复下载）
+        // 假设每个 ts 片段约 1-2MB，800个约 800MB-1.6GB
         let cache = Cache::builder()
-            .max_capacity(500)
-            .time_to_live(std::time::Duration::from_secs(900))
+            .max_capacity(800)
+            .time_to_live(std::time::Duration::from_secs(1200))
             .build();
-        Self { cache }
+
+        // 并发限制：最多同时下载30个片段
+        let semaphore = Arc::new(Semaphore::new(30));
+
+        Self { cache, semaphore }
     }
 
     pub async fn get(&self, url: &str) -> Option<Vec<u8>> {
@@ -634,8 +639,8 @@ fn get_video_client() -> &'static reqwest::Client {
     VIDEO_CLIENT.get_or_init(|| {
         reqwest::Client::builder()
             // 大幅增加连接池大小，允许更高并发
-            .pool_max_idle_per_host(100)
-            .pool_idle_timeout(std::time::Duration::from_secs(120))
+            .pool_max_idle_per_host(150) // 从100增加到150
+            .pool_idle_timeout(std::time::Duration::from_secs(180)) // 从120增加到180秒
             // 开启 TCP_NODELAY，减少小包延迟
             .tcp_nodelay(true)
             .tcp_keepalive(std::time::Duration::from_secs(60))
@@ -643,13 +648,16 @@ fn get_video_client() -> &'static reqwest::Client {
             .http2_adaptive_window(true)
             // 保持 H2 连接活跃，防止中间设备切断
             .http2_keep_alive_interval(std::time::Duration::from_secs(30))
+            .http2_keep_alive_timeout(std::time::Duration::from_secs(20))
             // 增加超时时间，适应跨国慢速网络
-            .timeout(std::time::Duration::from_secs(30))
-            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(40)) // 从30增加到40秒
+            .connect_timeout(std::time::Duration::from_secs(15)) // 从10增加到15秒
             // 烂证书 野鸡CDN 连接问题
             .danger_accept_invalid_certs(true) // 忽略证书无效/过期/自签名
             .danger_accept_invalid_hostnames(true) // 忽略域名不匹配
             .no_proxy() // (可选) 避免被系统代理设置干扰，直连
+            // 禁用重定向限制（某些CDN可能有多次重定向）
+            .redirect(reqwest::redirect::Policy::limited(10))
             .build()
             .expect("Failed to create global video client")
     })
@@ -1348,28 +1356,47 @@ pub async fn fetch_url(
 
     Ok(FetchResponse { status, body })
 }
-// 带重试的请求 重试2次
+// 带重试和指数退避的请求 重试3次
 async fn fetch_with_retry(
     url: &str,
     method: reqwest::Method,
     headers: HeaderMap,
 ) -> Result<reqwest::Response, String> {
     let client = get_video_client();
-    let mut retries = 2;
+    let mut retries = 3; // 增加到3次
+    let mut delay_ms = 300; // 初始延迟300ms
 
     loop {
-        let req = client.request(method.clone(), url).headers(headers.clone());
+        let req = client
+            .request(method.clone(), url)
+            .headers(headers.clone())
+            .timeout(std::time::Duration::from_secs(20)); // 增加到20秒超时
+
         match req.send().await {
-            Ok(resp) => return Ok(resp),
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    return Ok(resp);
+                } else if resp.status().as_u16() == 404 {
+                    // 404不需要重试
+                    return Err(format!("404 Not Found: {}", url));
+                }
+                // 其他错误状态继续重试
+                retries -= 1;
+                if retries == 0 {
+                    return Err(format!("HTTP {}: {}", resp.status(), url));
+                }
+            }
             Err(e) => {
                 retries -= 1;
                 if retries == 0 {
-                    return Err(e.to_string());
+                    return Err(format!("Network error: {} - {}", e, url));
                 }
-                // 指数退避或固定等待
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             }
         }
+
+        // 指数退避
+        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+        delay_ms = (delay_ms * 2).min(3000); // 最大延迟3秒
     }
 }
 #[derive(Debug, Serialize, Deserialize)]
@@ -1436,10 +1463,11 @@ pub async fn fetch_binary(
 
         if url.contains(".ts") {
             let cache_clone = cache_manager.cache.clone();
+            let semaphore_clone = cache_manager.semaphore.clone();
             let headers_clone = headers_opt.clone();
 
             tokio::spawn(async move {
-                prefetch_next_segments(url, headers_clone, cache_clone).await;
+                prefetch_next_segments(url, headers_clone, cache_clone, semaphore_clone).await;
             });
         }
     }
@@ -1505,11 +1533,12 @@ pub async fn fetch_m3u8(
     Ok(result)
 }
 
-// 预测并预取后续分片
+// 预测并预取后续分片（优化版：更多并发+更多预取）
 async fn prefetch_next_segments(
     current_url: String,
     headers: Option<HashMap<String, String>>,
     cache: Cache<String, Vec<u8>>,
+    semaphore: Arc<Semaphore>,
 ) {
     // 简单的数字预测 logic: 查找末尾连续的数字
     // 如 segment_01.ts -> segment_02.ts
@@ -1547,9 +1576,9 @@ async fn prefetch_next_segments(
     // 直接加上 Range
     final_headers.insert(RANGE, HeaderValue::from_static("bytes=0-"));
 
-    // 预取接下来的 15 个分片
+    // 预取接下来的 25 个分片（从15增加到25）
     let mut handles = Vec::new();
-    for i in 1..=15 {
+    for i in 1..=25 {
         let next_num = current_num + i;
         let next_num_str = format!("{:0width$}", next_num, width = padding);
         let next_url = format!("{}{}{}", prefix, next_num_str, suffix);
@@ -1559,37 +1588,51 @@ async fn prefetch_next_segments(
             continue;
         }
 
-        // 并发下载（使用并发限制避免过载）
+        // 并发下载（使用信号量控制）
         let client_clone = client.clone();
         let request_headers = final_headers.clone();
         let cache_clone = cache.clone();
         let next_url_clone = next_url.clone();
+        let semaphore_clone = semaphore.clone();
 
         let handle = tokio::spawn(async move {
+            // 获取信号量许可
+            let _permit = semaphore_clone.acquire().await.ok();
+
             // 增强的重试逻辑：3次重试
             let mut retries = 3;
+            let mut delay_ms = 200;
+
             while retries > 0 {
-                let resp = client_clone
-                    .get(&next_url_clone)
-                    .headers(request_headers.clone())
-                    .timeout(std::time::Duration::from_secs(10)) // 10秒超时
-                    .send()
-                    .await;
+                let resp = timeout(
+                    Duration::from_secs(15), // 15秒超时
+                    client_clone
+                        .get(&next_url_clone)
+                        .headers(request_headers.clone())
+                        .send()
+                ).await;
 
                 match resp {
-                    Ok(r) if r.status().is_success() => {
+                    Ok(Ok(r)) if r.status().is_success() => {
                         if let Ok(data) = r.bytes().await {
                             // moka 会自动处理 LRU 淘汰和 TTL 过期
-                            cache_clone.insert(next_url_clone, data.to_vec()).await;
+                            cache_clone.insert(next_url_clone.clone(), data.to_vec()).await;
+                            log::debug!("✅ 预取成功: {} ({} bytes)", next_url_clone, data.len());
                         }
-                        break; // 成功则退出循环
+                        break;
+                    }
+                    Ok(Ok(r)) if r.status().as_u16() == 404 => {
+                        // 404说明后续片段不存在，停止预取
+                        log::debug!("⏹️ 预取停止（404）: {}", next_url_clone);
+                        break;
                     }
                     _ => {
                         retries -= 1;
                         if retries > 0 {
-                            // 指数退避：200ms, 400ms, 800ms
-                            let delay = 200 * (4 - retries);
-                            tokio::time::sleep(std::time::Duration::from_millis(delay as u64)).await;
+                            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                            delay_ms = (delay_ms * 2).min(2000);
+                        } else {
+                            log::debug!("❌ 预取失败: {}", next_url_clone);
                         }
                     }
                 }
