@@ -1,4 +1,4 @@
-/* eslint-disable no-console,react-hooks/exhaustive-deps,@typescript-eslint/no-explicit-any */
+﻿/* eslint-disable no-console,react-hooks/exhaustive-deps,@typescript-eslint/no-explicit-any */
 
 'use client';
 import { invoke } from '@tauri-apps/api/core';
@@ -10,6 +10,7 @@ import type {
   DoubanItem,
   DoubanPageResponse,
 } from '@/lib/types';
+import { appLayoutClasses, getGridColumnsClass } from '@/lib/ui-layout';
 import { useImagePreload } from '@/hooks/useImagePreload';
 import { useSourceFilter } from '@/hooks/useSourceFilter';
 
@@ -241,8 +242,6 @@ function DoubanPageClient() {
     },
     [],
   );
-
-  // 生成API请求参数的辅助函数
 
   // 防抖的数据加载函数
   const fetchDoubanPageData = useCallback(
@@ -747,22 +746,24 @@ function DoubanPageClient() {
 
   return (
     <PageLayout activePath={getActivePath()}>
-      <div className='px-4 sm:px-10 py-4 sm:py-8 overflow-visible'>
+      <div
+        className={`${appLayoutClasses.pageShell} py-4 max-[375px]:py-3.5 min-[834px]:py-7 min-[1440px]:py-9 overflow-visible`}
+      >
         {/* 页面标题和选择器 */}
-        <div className='mb-6 sm:mb-8 space-y-4 sm:space-y-6'>
+        <div className='mb-6 space-y-4 max-[375px]:mb-5 min-[834px]:mb-9 min-[834px]:space-y-6'>
           {/* 页面标题 */}
           <div>
-            <h1 className='text-2xl sm:text-3xl font-bold text-gray-800 mb-1 sm:mb-2 dark:text-gray-200'>
+            <h1 className='mb-1 text-xl font-bold text-gray-800 max-[375px]:text-lg min-[834px]:mb-2 min-[834px]:text-[2rem] min-[1440px]:text-[2.25rem] dark:text-gray-200'>
               {getPageTitle()}
             </h1>
-            <p className='text-sm sm:text-base text-gray-600 dark:text-gray-400'>
+            <p className='text-sm max-[375px]:text-[0.82rem] min-[834px]:text-base min-[1440px]:text-[1.05rem] text-gray-600 dark:text-gray-400'>
               {getPageDescription()}
             </p>
           </div>
 
           {/* 选择器组件 */}
           {type !== 'custom' ? (
-            <div className='bg-white/60 dark:bg-gray-800/40 rounded-2xl p-4 sm:p-6 border border-gray-200/30 dark:border-gray-700/30'>
+            <div className='rounded-2xl border border-gray-200/30 bg-white/60 p-4 max-[375px]:p-3 min-[834px]:p-6 min-[1440px]:p-7 dark:border-gray-700/30 dark:bg-gray-800/40'>
               <DoubanSelector
                 type={type as 'movie' | 'tv' | 'show' | 'anime'}
                 primarySelection={primarySelection}
@@ -791,7 +792,7 @@ function DoubanPageClient() {
               />
             </div>
           ) : (
-            <div className='bg-white/60 dark:bg-gray-800/40 rounded-2xl p-4 sm:p-6 border border-gray-200/30 dark:border-gray-700/30'>
+            <div className='rounded-2xl border border-gray-200/30 bg-white/60 p-4 max-[375px]:p-3 min-[834px]:p-6 min-[1440px]:p-7 dark:border-gray-700/30 dark:bg-gray-800/40'>
               <DoubanCustomSelector
                 customCategories={customCategories}
                 primarySelection={primarySelection}
@@ -804,9 +805,11 @@ function DoubanPageClient() {
         </div>
 
         {/* 内容展示区域 */}
-        <div className='max-w-[95%] mx-auto mt-8 overflow-visible'>
+        <div
+          className={`${appLayoutClasses.pageContent} mt-8 max-[375px]:mt-6 min-[834px]:mt-9 min-[1440px]:mt-10 overflow-visible`}
+        >
           {/* 内容网格 */}
-          <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'>
+          <div className={getGridColumnsClass('dense')}>
             {loading || isLoadingSourceData || !selectorsReady ? (
               // 显示骨架屏
               skeletonData.map((index) => <DoubanCardSkeleton key={index} />)
@@ -825,13 +828,13 @@ function DoubanPageClient() {
               ))
             ) : currentSource !== 'auto' && selectedSourceCategory ? (
               // 选择了源分类但没有数据
-              <div className='col-span-full text-center py-12 text-gray-500 dark:text-gray-400'>
+              <div className='col-span-full py-10 text-center text-gray-500 max-[375px]:py-8 min-[834px]:py-12 dark:text-gray-400'>
                 <p>该分类暂无数据</p>
                 <p className='text-sm mt-2'>请尝试选择其他分类</p>
               </div>
             ) : currentSource !== 'auto' && !selectedSourceCategory ? (
               // 选择了源但未选择分类
-              <div className='col-span-full text-center py-12 text-gray-500 dark:text-gray-400'>
+              <div className='col-span-full py-10 text-center text-gray-500 max-[375px]:py-8 min-[834px]:py-12 dark:text-gray-400'>
                 <p>请选择一个分类</p>
                 <p className='text-sm mt-2'>从上方分类列表中选择</p>
               </div>
@@ -866,7 +869,7 @@ function DoubanPageClient() {
                   ).current = el;
                 }
               }}
-              className='flex justify-center mt-12 py-8'
+              className='mt-12 flex justify-center py-8 max-[375px]:mt-9 min-[834px]:mt-14'
             >
               {isLoadingMore && (
                 <div className='flex items-center gap-2'>

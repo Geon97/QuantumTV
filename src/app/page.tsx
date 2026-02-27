@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/exhaustive-deps, no-console */
+﻿/* eslint-disable no-console */
 
 'use client';
 
@@ -13,6 +13,11 @@ import {
   FavoriteCard,
   HomePageData,
 } from '@/lib/types';
+import {
+  appLayoutClasses,
+  getGridColumnsClass,
+  getRailItemClass,
+} from '@/lib/ui-layout';
 import { subscribeToDataUpdates } from '@/lib/utils';
 import { useImagePreload } from '@/hooks/useImagePreload';
 
@@ -34,7 +39,7 @@ function HomeClient() {
 
   const [showAnnouncement, setShowAnnouncement] = useState(false);
 
-  // 检查公告弹窗状态
+  // 妫€鏌ュ叕鍛婂脊绐楃姸鎬?
   useEffect(() => {
     const checkAnnouncement = async () => {
       if (typeof window !== 'undefined' && announcement) {
@@ -73,8 +78,6 @@ function HomeClient() {
 
   // 自动预加载（延迟 500ms，避免阻塞首屏渲染）
   useImagePreload(allImageUrls, !loading);
-
-  // 定义首页数据类型
 
   // 数据获取函数
   const fetchHomeData = async (): Promise<HomePageData> => {
@@ -142,7 +145,7 @@ function HomeClient() {
 
   // 骨架屏组件
   const SkeletonCard = () => (
-    <div className='min-w-24 w-24 sm:min-w-45 sm:w-44'>
+    <div className={getRailItemClass('default')}>
       <div className='relative aspect-2/3 w-full overflow-hidden rounded-xl bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-800 dark:to-gray-700 animate-pulse'>
         <div className='absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer' />
       </div>
@@ -165,18 +168,18 @@ function HomeClient() {
           />
         </div>
 
-        <div className='max-w-[95%] mx-auto'>
+        <div className={appLayoutClasses.pageContent}>
           {activeTab === 'favorites' ? (
             // 收藏夹视图
             <section className='mb-8'>
               <div className='mb-6 flex items-center justify-between'>
-                <h2 className='text-xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2'>
+                <h2 className='flex items-center gap-2 text-lg font-bold text-gray-800 max-[375px]:text-base min-[834px]:text-[1.35rem] min-[1440px]:text-[1.5rem] dark:text-gray-100'>
                   <Sparkles className='w-5 h-5 text-purple-500' />
                   我的收藏
                 </h2>
                 {favoriteItems.length > 0 && (
                   <button
-                    className='text-sm text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400 transition-colors'
+                    className='tap-target px-2 text-sm text-gray-500 transition-colors hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400'
                     onClick={async () => {
                       await invoke('clear_all_favorites');
                       setFavoriteItems([]);
@@ -186,7 +189,7 @@ function HomeClient() {
                   </button>
                 )}
               </div>
-              <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] sm:gap-x-8'>
+              <div className={getGridColumnsClass('dense')}>
                 {favoriteItems.map((item) => (
                   <div key={item.id + item.source} className='w-full'>
                     <VideoCard
@@ -214,14 +217,14 @@ function HomeClient() {
               <ContinueWatching />
 
               {/* 热门电影 */}
-              <section className='mb-10'>
+              <section className={appLayoutClasses.sectionGap}>
                 <div className='mb-5 flex items-center justify-between'>
-                  <h2 className='text-xl font-bold text-gray-800 dark:text-gray-100'>
+                  <h2 className='text-lg font-bold text-gray-800 max-[375px]:text-base min-[834px]:text-[1.35rem] min-[1440px]:text-[1.5rem] dark:text-gray-100'>
                     热门电影
                   </h2>
                   <Link
                     href='/douban?type=movie'
-                    className='flex items-center text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 transition-colors group'
+                    className='tap-target flex items-center px-2 text-sm text-purple-600 transition-colors group hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300'
                   >
                     查看更多
                     <ChevronRight className='w-4 h-4 ml-0.5 group-hover:translate-x-0.5 transition-transform' />
@@ -235,7 +238,7 @@ function HomeClient() {
                     : hotMovies.map((movie, index) => (
                         <div
                           key={index}
-                          className='min-w-24 w-24 sm:min-w-45 sm:w-44'
+                          className={getRailItemClass('default')}
                         >
                           <VideoCard
                             from='douban'
@@ -252,14 +255,14 @@ function HomeClient() {
               </section>
 
               {/* 热门剧集 */}
-              <section className='mb-10'>
+              <section className={appLayoutClasses.sectionGap}>
                 <div className='mb-5 flex items-center justify-between'>
-                  <h2 className='text-xl font-bold text-gray-800 dark:text-gray-100'>
+                  <h2 className='text-lg font-bold text-gray-800 max-[375px]:text-base min-[834px]:text-[1.35rem] min-[1440px]:text-[1.5rem] dark:text-gray-100'>
                     热门剧集
                   </h2>
                   <Link
                     href='/douban?type=tv'
-                    className='flex items-center text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 transition-colors group'
+                    className='tap-target flex items-center px-2 text-sm text-purple-600 transition-colors group hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300'
                   >
                     查看更多
                     <ChevronRight className='w-4 h-4 ml-0.5 group-hover:translate-x-0.5 transition-transform' />
@@ -273,7 +276,7 @@ function HomeClient() {
                     : hotTvShows.map((show, index) => (
                         <div
                           key={index}
-                          className='min-w-24 w-24 sm:min-w-45 sm:w-44'
+                          className={getRailItemClass('default')}
                         >
                           <VideoCard
                             from='douban'
@@ -289,14 +292,14 @@ function HomeClient() {
               </section>
 
               {/* 每日新番放送 */}
-              <section className='mb-10'>
+              <section className={appLayoutClasses.sectionGap}>
                 <div className='mb-5 flex items-center justify-between'>
-                  <h2 className='text-xl font-bold text-gray-800 dark:text-gray-100'>
+                  <h2 className='text-lg font-bold text-gray-800 max-[375px]:text-base min-[834px]:text-[1.35rem] min-[1440px]:text-[1.5rem] dark:text-gray-100'>
                     新番放送
                   </h2>
                   <Link
                     href='/douban?type=anime'
-                    className='flex items-center text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 transition-colors group'
+                    className='tap-target flex items-center px-2 text-sm text-purple-600 transition-colors group hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300'
                   >
                     查看更多
                     <ChevronRight className='w-4 h-4 ml-0.5 group-hover:translate-x-0.5 transition-transform' />
@@ -310,7 +313,7 @@ function HomeClient() {
                     : todayBangumi.map((anime, index) => (
                         <div
                           key={`${anime.id}-${index}`}
-                          className='min-w-24 w-24 sm:min-w-45 sm:w-44'
+                          className={getRailItemClass('default')}
                         >
                           <VideoCard
                             from='douban'
@@ -334,14 +337,14 @@ function HomeClient() {
               </section>
 
               {/* 热门综艺 */}
-              <section className='mb-10'>
+              <section className={appLayoutClasses.sectionGap}>
                 <div className='mb-5 flex items-center justify-between'>
-                  <h2 className='text-xl font-bold text-gray-800 dark:text-gray-100'>
+                  <h2 className='text-lg font-bold text-gray-800 max-[375px]:text-base min-[834px]:text-[1.35rem] min-[1440px]:text-[1.5rem] dark:text-gray-100'>
                     热门综艺
                   </h2>
                   <Link
                     href='/douban?type=show'
-                    className='flex items-center text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 transition-colors group'
+                    className='tap-target flex items-center px-2 text-sm text-purple-600 transition-colors group hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300'
                   >
                     查看更多
                     <ChevronRight className='w-4 h-4 ml-0.5 group-hover:translate-x-0.5 transition-transform' />
@@ -355,7 +358,7 @@ function HomeClient() {
                     : hotVarietyShows.map((show, index) => (
                         <div
                           key={index}
-                          className='min-w-24 w-24 sm:min-w-45 sm:w-44'
+                          className={getRailItemClass('default')}
                         >
                           <VideoCard
                             from='douban'

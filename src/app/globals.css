@@ -216,6 +216,17 @@
   --blur-md: 12px;
   --blur-lg: 24px;
   --blur-xl: 40px;
+
+  /* === App Layout === */
+  --app-mobile-header-height: 3.5rem;
+  --app-mobile-nav-height: 4.25rem;
+  --app-top-offset: calc(
+    var(--app-mobile-header-height) + env(safe-area-inset-top)
+  );
+  --app-bottom-offset: calc(
+    var(--app-mobile-nav-height) + env(safe-area-inset-bottom)
+  );
+  --tap-target-size: 42px;
 }
 
 html.dark {
@@ -234,6 +245,36 @@ html.dark {
   --input-bg: #18181b;
   --input-border: #3f3f46;
   --input-focus-ring: rgba(168, 85, 247, 0.5);
+}
+
+@media (max-width: 375px) {
+  :root {
+    --app-mobile-header-height: 3.25rem;
+    --app-mobile-nav-height: 4rem;
+    --tap-target-size: 40px;
+  }
+}
+
+@media (min-width: 834px) {
+  :root {
+    --app-mobile-header-height: 3.75rem;
+    --app-mobile-nav-height: 4.5rem;
+    --tap-target-size: 46px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --app-top-offset: 5.25rem;
+    --app-bottom-offset: 0px;
+  }
+}
+
+@media (min-width: 1440px) {
+  :root {
+    --app-top-offset: 5.5rem;
+    --tap-target-size: 48px;
+  }
 }
 
 /* ========================================
@@ -563,6 +604,11 @@ html:not(.dark)::view-transition-new(root) {
    8. UTILITY CLASSES
    ======================================== */
 @layer utilities {
+  .tap-target {
+    min-width: var(--tap-target-size);
+    min-height: var(--tap-target-size);
+  }
+
   /* === Animation Utilities === */
   .animate-fade-in {
     animation: fadeIn 0.3s ease-out;

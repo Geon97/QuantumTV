@@ -17,6 +17,7 @@ import {
   SearchResult,
   SkipAction,
 } from '@/lib/types';
+import { appLayoutClasses } from '@/lib/ui-layout';
 import { generateStorageKey, subscribeToDataUpdates } from '@/lib/utils';
 import { useProxyImage } from '@/hooks/useProxyImage';
 
@@ -1880,10 +1881,12 @@ function PlayPageClient() {
 
   return (
     <PageLayout activePath='/play'>
-      <div className='flex flex-col gap-3 py-4 px-5 lg:px-12 2xl:px-20'>
+      <div
+        className={`${appLayoutClasses.pageShell} flex flex-col gap-4 py-4 max-[375px]:py-3.5 min-[834px]:py-6 min-[1440px]:py-8`}
+      >
         {/* 第一行：影片标题 */}
         <div className='py-1 flex justify-between items-center gap-2'>
-          <h1 className='text-xl font-semibold text-gray-900 dark:text-gray-100 truncate'>
+          <h1 className='truncate text-lg font-semibold text-gray-900 max-[375px]:text-base min-[834px]:text-2xl min-[1440px]:text-[1.75rem] dark:text-gray-100'>
             {videoTitle || '影片标题'}
             {totalEpisodes > 1 && (
               <span className='text-gray-500 dark:text-gray-400 ml-2 text-base font-normal'>
@@ -1898,7 +1901,7 @@ function PlayPageClient() {
           {/* 移动端跳过设置按钮 */}
           <button
             onClick={() => setIsSkipConfigPanelOpen(true)}
-            className={`lg:hidden shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${
+            className={`tap-target lg:hidden shrink-0 flex items-center gap-1.5 px-3 py-1.5 max-[375px]:px-2.5 min-[834px]:px-4 rounded-full text-xs min-[834px]:text-sm font-medium transition-all duration-200 ${
               skipConfig.enable
                 ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 ring-1 ring-purple-500/20'
                 : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 ring-1 ring-gray-500/10'
@@ -1923,11 +1926,11 @@ function PlayPageClient() {
         {/* 第二行：播放器和选集 */}
         <div className='space-y-2'>
           {/* 折叠控制和跳过设置 - 仅在 lg 及以上屏幕显示 */}
-          <div className='hidden lg:flex justify-between items-center'>
+          <div className='hidden lg:flex items-center justify-between'>
             {/* 跳过片头片尾设置按钮 */}
             <button
               onClick={() => setIsSkipConfigPanelOpen(true)}
-              className={`group relative flex items-center space-x-2 px-4 py-2 rounded-xl bg-linear-to-r transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 ${
+              className={`tap-target group relative flex items-center space-x-2 px-4 py-2 rounded-xl bg-linear-to-r transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 ${
                 skipConfig.enable
                   ? 'from-purple-600 via-pink-500 to-indigo-600 text-white'
                   : 'from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 text-gray-700 dark:text-gray-300'
@@ -1959,7 +1962,7 @@ function PlayPageClient() {
               onClick={() =>
                 setIsEpisodeSelectorCollapsed(!isEpisodeSelectorCollapsed)
               }
-              className='group relative flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white/80 hover:bg-white dark:bg-gray-800/80 dark:hover:bg-gray-800 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/50 shadow-sm hover:shadow-md transition-all duration-200'
+              className='tap-target group relative flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white/80 hover:bg-white dark:bg-gray-800/80 dark:hover:bg-gray-800 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/50 shadow-sm hover:shadow-md transition-all duration-200'
               title={
                 isEpisodeSelectorCollapsed ? '显示选集面板' : '隐藏选集面板'
               }
@@ -1995,7 +1998,7 @@ function PlayPageClient() {
           </div>
 
           <div
-            className={`grid gap-4 lg:h-125 xl:h-162.5 2xl:h-187.5 transition-all duration-300 ease-in-out ${
+            className={`grid gap-4 transition-all duration-300 ease-in-out lg:h-[70vh] min-[834px]:h-[72vh] min-[1440px]:h-[78vh] 2xl:h-[80vh] ${
               isEpisodeSelectorCollapsed
                 ? 'grid-cols-1'
                 : 'grid-cols-1 md:grid-cols-4'
@@ -2007,7 +2010,7 @@ function PlayPageClient() {
                 isEpisodeSelectorCollapsed ? 'col-span-1' : 'md:col-span-3'
               }`}
             >
-              <div className='relative w-full h-75 lg:h-full'>
+              <div className='relative h-[18rem] w-full max-[375px]:h-[16rem] sm:h-[20rem] md:h-[24rem] min-[834px]:h-[26rem] lg:h-full'>
                 <div
                   ref={artRef}
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
@@ -2031,7 +2034,7 @@ function PlayPageClient() {
 
             {/* 选集和换源 - 在移动端始终显示，在 lg 及以上可折叠 */}
             <div
-              className={`h-75 lg:h-full md:overflow-hidden transition-all duration-300 ease-in-out ${
+              className={`h-[18rem] max-[375px]:h-[16rem] sm:h-[20rem] md:h-[24rem] min-[834px]:h-[26rem] lg:h-full md:overflow-hidden transition-all duration-300 ease-in-out ${
                 isEpisodeSelectorCollapsed
                   ? 'md:col-span-1 lg:hidden lg:opacity-0 lg:scale-95'
                   : 'md:col-span-1 lg:opacity-100 lg:scale-100'
@@ -2057,12 +2060,12 @@ function PlayPageClient() {
         </div>
 
         {/* 详情展示 */}
-        <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
+        <div className='grid grid-cols-1 gap-4 lg:grid-cols-5 lg:gap-6'>
           {/* 文字区 */}
-          <div className='md:col-span-3'>
-            <div className='p-6 flex flex-col min-h-0'>
+          <div className='lg:col-span-3'>
+            <div className='flex min-h-0 flex-col p-5 max-[375px]:p-4 min-[834px]:p-6 min-[1440px]:p-7'>
               {/* 标题 */}
-              <h1 className='text-3xl font-bold mb-2 tracking-wide flex items-center shrink-0 text-center md:text-left w-full text-slate-900 dark:text-gray-100'>
+              <h1 className='mb-2 flex w-full shrink-0 items-center text-center text-xl font-bold tracking-wide text-slate-900 dark:text-gray-100 sm:text-2xl lg:text-left lg:text-3xl'>
                 {videoTitle || '影片标题'}
                 <button
                   onClick={(e) => {
@@ -2076,7 +2079,7 @@ function PlayPageClient() {
               </h1>
 
               {/* 关键信息行 */}
-              <div className='flex flex-wrap items-center gap-3 text-base mb-4 shrink-0 text-slate-700 dark:text-gray-300'>
+              <div className='mb-4 flex shrink-0 flex-wrap items-center gap-3 text-sm min-[834px]:text-base min-[1440px]:text-[1.05rem] text-slate-700 dark:text-gray-300'>
                 {detail?.class && (
                   <span className='text-green-600 dark:text-green-400 font-semibold'>
                     {detail.class}
@@ -2111,8 +2114,8 @@ function PlayPageClient() {
           </div>
 
           {/* 封面展示 */}
-          <div className='hidden md:block md:col-span-1 md:order-first'>
-            <div className='pl-0 py-4 pr-6'>
+          <div className='hidden lg:order-first lg:col-span-2 lg:block'>
+            <div className='px-0 py-4 lg:pr-6'>
               <div className='relative bg-gray-300 dark:bg-gray-700 aspect-2/3 flex items-center justify-center rounded-xl overflow-hidden'>
                 {videoCover ? (
                   <>

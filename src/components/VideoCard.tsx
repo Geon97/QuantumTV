@@ -538,8 +538,17 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
     return (
       <>
         <div
-          className='group relative w-full rounded-xl bg-transparent cursor-pointer transition-all duration-300 ease-out hover:scale-[1.03] hover:z-500'
+          className='group relative w-full cursor-pointer rounded-xl bg-transparent transition-all duration-300 ease-out hover:scale-[1.02] hover:z-[50] motion-reduce:hover:scale-100'
           onClick={handleClick}
+          role='button'
+          tabIndex={0}
+          aria-label={`播放 ${actualTitle}`}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handleClick();
+            }
+          }}
           {...longPressProps}
           style={
             {

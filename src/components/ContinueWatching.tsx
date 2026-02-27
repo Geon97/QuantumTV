@@ -1,10 +1,11 @@
-/* eslint-disable no-console */
+﻿/* eslint-disable no-console */
 'use client';
 
 import { invoke } from '@tauri-apps/api/core';
 import { useEffect, useState } from 'react';
 
 import { RustPlayRecord } from '@/lib/types';
+import { getRailItemClass } from '@/lib/ui-layout';
 import { subscribeToDataUpdates } from '@/lib/utils';
 
 import ScrollableRow from '@/components/ScrollableRow';
@@ -26,7 +27,9 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
         setLoading(true);
 
         // 从 Rust 获取所有播放记录
-        const allRecords = await invoke<RustPlayRecord[]>('get_continue_watching');
+        const allRecords = await invoke<RustPlayRecord[]>(
+          'get_continue_watching',
+        );
         setPlayRecords(allRecords);
       } catch (error) {
         console.error('获取播放记录失败:', error);
@@ -43,12 +46,14 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
       'playRecordsUpdated',
       async () => {
         try {
-          const allRecords = await invoke<RustPlayRecord[]>('get_continue_watching');
+          const allRecords = await invoke<RustPlayRecord[]>(
+            'get_continue_watching',
+          );
           setPlayRecords(allRecords);
         } catch (err) {
           console.error('获取播放记录失败:', err);
         }
-      }
+      },
     );
 
     return unsubscribe;
@@ -74,14 +79,16 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
   };
 
   return (
-    <section className={`mb-8 ${className || ''}`}>
+    <section
+      className={`mb-8 max-[375px]:mb-7 min-[834px]:mb-10 ${className || ''}`}
+    >
       <div className='mb-4 flex items-center justify-between'>
-        <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
+        <h2 className='text-lg font-bold text-gray-800 max-[375px]:text-base min-[834px]:text-[1.35rem] min-[1440px]:text-[1.5rem] dark:text-gray-200'>
           继续观看
         </h2>
         {!loading && playRecords.length > 0 && (
           <button
-            className='text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+            className='tap-target px-2 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
             onClick={async () => {
               await invoke('clear_all_play_records');
               setPlayRecords([]);
@@ -95,10 +102,7 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
         {loading
           ? // 加载状态显示灰色占位数据
             Array.from({ length: 6 }).map((_, index) => (
-              <div
-                key={index}
-                className='min-w-24 w-24 sm:min-w-45 sm:w-44'
-              >
+              <div key={index} className={getRailItemClass('default')}>
                 <div className='relative aspect-2/3 w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
                   <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
                 </div>
@@ -110,10 +114,7 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
             playRecords.map((record) => {
               const { source, id } = parseKey(record.key);
               return (
-                <div
-                  key={record.key}
-                  className='min-w-24 w-24 sm:min-w-45 sm:w-44'
-                >
+                <div key={record.key} className={getRailItemClass('default')}>
                   <VideoCard
                     id={id}
                     title={record.title}
@@ -128,7 +129,7 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
                     from='playrecord'
                     onDelete={() =>
                       setPlayRecords((prev) =>
-                        prev.filter((r) => r.key !== record.key)
+                        prev.filter((r) => r.key !== record.key),
                       )
                     }
                     type={record.total_episodes > 1 ? 'tv' : ''}

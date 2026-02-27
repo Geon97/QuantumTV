@@ -43,6 +43,7 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { AdminConfig } from '@/lib/admin.types';
+import { appLayoutClasses } from '@/lib/ui-layout';
 
 import DatabaseImportExport, {
   ConfirmModal,
@@ -107,7 +108,7 @@ const ConfigImportExportModal = ({
       const finalConfig = await invoke<AdminConfig>(
         'save_admin_config_from_json',
         {
-        rawJson: importText,
+          rawJson: importText,
         },
       );
 
@@ -837,7 +838,11 @@ interface CategoryConfigProps {
   ) => void;
 }
 
-const CategoryConfig = ({ config, onUpdate, showAlert }: CategoryConfigProps) => {
+const CategoryConfig = ({
+  config,
+  onUpdate,
+  showAlert,
+}: CategoryConfigProps) => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newCategory, setNewCategory] = useState({
     name: '',
@@ -1122,11 +1127,7 @@ const ConfigSubscription = ({
           : typeof error === 'string'
             ? error
             : '网络错误';
-      showAlert(
-        'error',
-        '拉取失败',
-        message,
-      );
+      showAlert('error', '拉取失败', message);
     } finally {
       setIsFetching(false);
     }
@@ -1160,11 +1161,7 @@ const ConfigSubscription = ({
           : typeof error === 'string'
             ? error
             : '配置格式错误，请检查 JSON 格式';
-      showAlert(
-        'error',
-        '保存失败',
-        message,
-      );
+      showAlert('error', '保存失败', message);
     } finally {
       setIsSaving(false);
     }
@@ -1188,11 +1185,7 @@ const ConfigSubscription = ({
           : typeof error === 'string'
             ? error
             : '更新订阅设置失败';
-      showAlert(
-        'error',
-        '更新失败',
-        message,
-      );
+      showAlert('error', '更新失败', message);
     }
   };
 
@@ -1397,16 +1390,18 @@ function AdminPageContent() {
 
   return (
     <PageLayout activePath='/admin'>
-      <div className='max-w-4xl mx-auto px-4 py-6 space-y-4'>
+      <div
+        className={`${appLayoutClasses.pageShell} mx-auto max-w-[1200px] space-y-4 py-5 max-[375px]:py-4 min-[834px]:py-7 min-[1440px]:py-8`}
+      >
         {/* 页面标题 */}
-        <div className='flex items-center justify-between'>
-          <h1 className='text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2'>
+        <div className='flex items-center justify-between gap-3 max-[375px]:flex-col max-[375px]:items-start'>
+          <h1 className='flex items-center gap-2 text-xl font-bold text-gray-900 max-[375px]:text-lg min-[834px]:text-[1.7rem] min-[1440px]:text-[1.9rem] dark:text-gray-100'>
             <Settings className='w-6 h-6' />
             设置
           </h1>
           <button
             onClick={() => setIsImportExportModalOpen(true)}
-            className='flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors'
+            className='tap-target flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-blue-700 min-[834px]:px-4'
           >
             <Database className='w-4 h-4' />
             配置迁移
@@ -1497,8 +1492,3 @@ export default function AdminPage() {
     </Suspense>
   );
 }
-
-
-
-
-

@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 
 import { BackButton } from './BackButton';
 import MobileBottomNav from './MobileBottomNav';
@@ -10,38 +10,31 @@ interface PageLayoutProps {
 }
 
 const PageLayout = ({ children, activePath = '/' }: PageLayoutProps) => {
+  const showBackButton = ['/play', '/live'].includes(activePath);
+
   return (
-    <div className='w-full min-h-screen'>
-      {/* 移动端头部 */}
-      <MobileHeader showBackButton={['/play', '/live'].includes(activePath)} />
+    <div className='w-full min-h-dvh'>
+      <MobileHeader showBackButton={showBackButton} />
 
-      {/* 主要布局容器：桌面端移除侧边栏，改为顶部导航占位 */}
-      <div className='w-full min-h-screen md:min-h-auto'>
-        {/* 主内容区域 */}
-        <div className='relative min-w-0 flex-1 transition-all duration-300'>
-          {/* 桌面端左上角返回按钮 */}
-          {['/play', '/live'].includes(activePath) && (
-            <div className='absolute top-3 left-1 z-20 hidden md:flex'>
-              <BackButton />
-            </div>
-          )}
+      <div className='relative w-full min-h-dvh'>
+        {showBackButton && (
+          <div className='absolute left-4 top-4 z-[70] hidden lg:flex'>
+            <BackButton />
+          </div>
+        )}
 
-          {/* 主内容 - 适配刘海屏/状态栏 */}
-          <main
-            className='flex-1 md:min-h-0 mb-14 md:mb-0 md:mt-17'
-            style={{
-              // 移动端顶部适配刘海屏: 14 (header) + safe-area
-              marginTop: 'calc(3.5rem + env(safe-area-inset-top))',
-              paddingBottom: 'calc(5rem + env(safe-area-inset-bottom))',
-            }}
-          >
-            {children}
-          </main>
-        </div>
+        <main
+          className='min-h-dvh lg:min-h-0'
+          style={{
+            marginTop: 'var(--app-top-offset)',
+            paddingBottom: 'var(--app-bottom-offset)',
+          }}
+        >
+          {children}
+        </main>
       </div>
 
-      {/* 移动端底部导航 */}
-      <div className='md:hidden'>
+      <div className='lg:hidden'>
         <MobileBottomNav activePath={activePath} />
       </div>
     </div>
