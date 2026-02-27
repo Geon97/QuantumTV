@@ -96,7 +96,6 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
 
   // 电影的一级选择器选项
   const moviePrimaryOptions: SelectorOption[] = [
-    { label: '全部', value: '全部' },
     { label: '热门电影', value: '热门' },
     { label: '最新电影', value: '最新' },
     { label: '豆瓣高分', value: '豆瓣高分' },
@@ -970,36 +969,20 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
               </div>
             </div>
 
-            {/* 二级选择器 - 只在非"全部"时显示 */}
-            {primarySelection !== '全部' ? (
-              <div className='flex flex-col sm:flex-row sm:items-center gap-2'>
-                <span className='text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400 min-w-12'>
-                  地区
-                </span>
-                <div className='overflow-x-auto'>
-                  {renderCapsuleSelector(
-                    movieSecondaryOptions,
-                    secondarySelection || movieSecondaryOptions[0].value,
-                    onSecondaryChange,
-                    false,
-                  )}
-                </div>
+            {/* 二级选择器 */}
+            <div className='flex flex-col sm:flex-row sm:items-center gap-2'>
+              <span className='text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400 min-w-12'>
+                地区
+              </span>
+              <div className='overflow-x-auto'>
+                {renderCapsuleSelector(
+                  movieSecondaryOptions,
+                  secondarySelection || movieSecondaryOptions[0].value,
+                  onSecondaryChange,
+                  false,
+                )}
               </div>
-            ) : (
-              /* 多级选择器 - 只在选中"全部"时显示 */
-              <div className='flex flex-col sm:flex-row sm:items-center gap-2'>
-                <span className='text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400 min-w-12'>
-                  筛选
-                </span>
-                <div className='overflow-x-auto'>
-                  <MultiLevelSelector
-                    key={`${type}-${primarySelection}`}
-                    onChange={handleMultiLevelChange}
-                    contentType={type}
-                  />
-                </div>
-              </div>
-            )}
+            </div>
           </div>
         )}
 

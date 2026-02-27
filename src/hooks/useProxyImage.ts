@@ -1,10 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useEffect, useRef, useState } from 'react';
 
-// 内存缓存：存储 Blob URL，避免重复创建
-const blobUrlCache = new Map<string, string>();
-// Blob URL 引用计数，防止过早释放
-const blobUrlRefCount = new Map<string, number>();
 // 正在进行的请求，避免重复请求
 const pendingRequests = new Map<string, Promise<Uint8Array>>();
 
@@ -77,21 +73,9 @@ export function useProxyImage(originalUrl: string): {
       .then((imageData) => {
         if (cancelled) return;
 
-        // 检查是否已有缓存的 Blob URL
-        let newBlobUrl = blobUrlCache.get(originalUrl);
-
-        if (!newBlobUrl) {
-          // 只在没有缓存时创建新的 blob URL
-          const blob = new Blob([imageData] as any, { type: 'image/jpeg' });
-          newBlobUrl = URL.createObjectURL(blob);
-          blobUrlCache.set(originalUrl, newBlobUrl);
-          blobUrlRefCount.set(originalUrl, 0);
-        }
-
-        // 增加引用计数
-        const currentCount = blobUrlRefCount.get(originalUrl) || 0;
-        blobUrlRefCount.set(originalUrl, currentCount + 1);
-
+        // 每次挂载都创建新的 blob URL，避免 Android WebView 二次进入后复用失效 URL
+        const blob = new Blob([imageData] as any, { type: 'image/jpeg' });
+        const newBlobUrl = URL.createObjectURL(blob);
         blobUrlRef.current = newBlobUrl;
         setUrl(newBlobUrl);
         setIsLoading(false);
@@ -108,22 +92,10 @@ export function useProxyImage(originalUrl: string): {
     return () => {
       cancelled = true;
 
-      // 组件卸载时减少引用计数
-      if (blobUrlRef.current && originalUrl) {
-        const currentCount = blobUrlRefCount.get(originalUrl) || 0;
-        const newCount = currentCount - 1;
-
-        if (newCount <= 0) {
-          // 引用计数为 0，可以安全释放
-          const blobUrl = blobUrlCache.get(originalUrl);
-          if (blobUrl) {
-            URL.revokeObjectURL(blobUrl);
-            blobUrlCache.delete(originalUrl);
-            blobUrlRefCount.delete(originalUrl);
-          }
-        } else {
-          blobUrlRefCount.set(originalUrl, newCount);
-        }
+      // 组件卸载时释放当前实例创建的 URL
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
       }
     };
   }, [originalUrl]);

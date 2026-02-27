@@ -447,7 +447,12 @@ async fn fetch_douban_categories(
         .connect_timeout(std::time::Duration::from_secs(10)) // 10秒连接超时
         .pool_max_idle_per_host(10) // 连接池优化
         .pool_idle_timeout(std::time::Duration::from_secs(90))
-        .tcp_keepalive(std::time::Duration::from_secs(60)); // TCP keepalive
+        .tcp_keepalive(std::time::Duration::from_secs(60))
+        .http1_only()
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .no_zstd(); // TCP keepalive
 
     let client_builder = if !proxy_url.is_empty() && !use_tencent_cdn && !use_ali_cdn {
         // 只有非 CDN 情况下用代理
@@ -469,6 +474,7 @@ async fn fetch_douban_categories(
             .header("Referer", "https://movie.douban.com/")
             .header("Accept", "application/json, text/plain, */*")
             .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+            .header("Accept-Encoding", "identity")
             .send()
             .await
         {
@@ -476,7 +482,21 @@ async fn fetch_douban_categories(
                 if !response.status().is_success() {
                     return Err(format!("HTTP error! Status: {}", response.status()).into());
                 }
-                let douban_data: DoubanCategoryApiResponse = response.json().await?;
+                let content_encoding = response
+                    .headers()
+                    .get(reqwest::header::CONTENT_ENCODING)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("none")
+                    .to_string();
+                let content_type = response
+                    .headers()
+                    .get(reqwest::header::CONTENT_TYPE)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let douban_data: DoubanCategoryApiResponse = response.json().await.map_err(
+                    |e| format!("JSON parse error (ce={content_encoding}, ct={content_type}): {e}"),
+                )?;
                 let list = douban_data
                     .items
                     .unwrap_or_default()
@@ -529,7 +549,14 @@ async fn fetch_douban_recommends(
     let query = params.build_query_string()?;
     let target_url = format!("{}?{}", base_url, query);
 
-    let client_builder = reqwest::Client::builder();
+    let client_builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .http1_only()
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .no_zstd();
 
     let client_builder = if !proxy_url.is_empty() && !use_tencent_cdn && !use_ali_cdn {
         // 只有非 CDN 情况下用代理
@@ -546,12 +573,27 @@ async fn fetch_douban_recommends(
         .header("Referer", "https://movie.douban.com/")
         .header("Accept", "application/json, text/plain, */*")
         .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+        .header("Accept-Encoding", "identity")
         .send()
         .await?;
     if !response.status().is_success() {
         return Err(format!("HTTP error! Status: {}", response.status()).into());
     }
-    let douban_data: DoubanRecommendApiResponse = response.json().await?;
+    let content_encoding = response
+        .headers()
+        .get(reqwest::header::CONTENT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("none")
+        .to_string();
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+    let douban_data: DoubanRecommendApiResponse = response.json().await.map_err(|e| {
+        format!("JSON parse error (ce={content_encoding}, ct={content_type}): {e}")
+    })?;
     let list = douban_data
         .items
         .unwrap_or_default()
@@ -716,7 +758,14 @@ pub async fn fetch_douban_list(
         "{}?type={}&tag={}&sort=recommend&page_limit={}&page_start={}",
         base_url, params.type_, params.tag, page_limit, page_start
     );
-    let client_builder = reqwest::Client::builder();
+    let client_builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .http1_only()
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .no_zstd();
 
     let client_builder = if !proxy_url.is_empty() && !use_tencent_cdn && !use_ali_cdn {
         // 只有非 CDN 情况下用代理
@@ -733,6 +782,7 @@ pub async fn fetch_douban_list(
         .header("Referer", "https://movie.douban.com/")
         .header("Accept", "application/json, text/plain, */*")
         .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+        .header("Accept-Encoding", "identity")
         .send()
         .await
         .map_err(|e| format!("Network request failed: {}", e))?;
@@ -741,10 +791,21 @@ pub async fn fetch_douban_list(
         return Err(format!("HTTP error! Status: {}", response.status()).into());
     }
 
-    let douban_data: DoubanListApiResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("JSON parse error: {}", e))?;
+    let content_encoding = response
+        .headers()
+        .get(reqwest::header::CONTENT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("none")
+        .to_string();
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+    let douban_data: DoubanListApiResponse = response.json().await.map_err(|e| {
+        format!("JSON parse error (ce={content_encoding}, ct={content_type}): {e}")
+    })?;
 
     // 正则提取年份
     let year_re = Regex::new(r"(\d{4})").unwrap();
@@ -863,7 +924,9 @@ fn resolve_douban_page_mode(request: &DoubanPageRequest) -> DoubanPageMode {
         return DoubanPageMode::Recommends;
     }
 
-    if request.primary_selection == "全部" {
+    if (request.request_type == "tv" || request.request_type == "show")
+        && request.primary_selection == "全部"
+    {
         return DoubanPageMode::Recommends;
     }
 
@@ -1005,6 +1068,48 @@ fn ensure_success(result: DoubanResult) -> Result<Vec<DoubanItem>, String> {
         Ok(result.list)
     } else {
         Err(result.message)
+    }
+}
+
+fn is_body_decode_error(message: &str) -> bool {
+    message
+        .to_ascii_lowercase()
+        .contains("decoding response body")
+}
+
+fn build_recommends_fallback_list_params(
+    request: &DoubanPageRequest,
+    page_limit: i32,
+    page_start: i32,
+) -> DoubanListParams {
+    let request_type = request.request_type.as_str();
+    let content_type = if request_type == "movie" {
+        "movie"
+    } else {
+        "tv"
+    };
+
+    let secondary = request.secondary_selection.trim();
+    let is_generic_secondary = secondary.is_empty()
+        || secondary == "\u{5168}\u{90e8}"
+        || secondary.eq_ignore_ascii_case("tv")
+        || secondary.eq_ignore_ascii_case("show");
+
+    let tag = if is_generic_secondary {
+        if request_type == "anime" {
+            "\u{52a8}\u{753b}".to_string()
+        } else {
+            "\u{70ed}\u{95e8}".to_string()
+        }
+    } else {
+        secondary.to_string()
+    };
+
+    DoubanListParams {
+        tag,
+        type_: content_type.to_string(),
+        page_limit: Some(page_limit),
+        page_start: Some(page_start),
     }
 }
 
@@ -1253,7 +1358,19 @@ async fn get_douban_page_data_cached(
         }
         DoubanPageMode::Recommends => {
             let params = build_recommends_params(&request, page_limit, page_start);
-            ensure_success(get_douban_recommends(params).await?)?
+            match get_douban_recommends(params).await {
+                Ok(result) => ensure_success(result)?,
+                Err(err) => {
+                    if !is_body_decode_error(&err) {
+                        return Err(err);
+                    }
+
+                    let fallback_params =
+                        build_recommends_fallback_list_params(&request, page_limit, page_start);
+                    ensure_success(get_douban_list(fallback_params).await?)
+                        .map_err(|fallback_err| format!("{err}; fallback failed: {fallback_err}"))?
+                }
+            }
         }
         DoubanPageMode::Categories => {
             let params = build_categories_params(&request, page_limit, page_start);
@@ -1330,9 +1447,9 @@ mod tests {
     #[test]
     fn resolve_douban_page_mode_recommends() {
         let request = DoubanPageRequest {
-            request_type: "movie".to_string(),
+            request_type: "show".to_string(),
             primary_selection: "全部".to_string(),
-            secondary_selection: "全部".to_string(),
+            secondary_selection: "show".to_string(),
             multi_level_selection: None,
             selected_weekday: None,
             page: Some(0),
@@ -1343,6 +1460,21 @@ mod tests {
             resolve_douban_page_mode(&request),
             DoubanPageMode::Recommends
         );
+    }
+
+    #[test]
+    fn resolve_douban_page_mode_movie_all_is_categories() {
+        let request = DoubanPageRequest {
+            request_type: "movie".to_string(),
+            primary_selection: "全部".to_string(),
+            secondary_selection: "全部".to_string(),
+            multi_level_selection: None,
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+
+        assert_eq!(resolve_douban_page_mode(&request), DoubanPageMode::Categories);
     }
 
     #[test]
@@ -1414,6 +1546,46 @@ mod tests {
         let fallback = current_weekday_en().to_string();
         let resolved = resolve_selected_weekday(Some("   "));
         assert_eq!(resolved, fallback);
+    }
+
+    #[test]
+    fn build_recommends_fallback_list_params_movie_all() {
+        let request = DoubanPageRequest {
+            request_type: "movie".to_string(),
+            primary_selection: "\u{5168}\u{90e8}".to_string(),
+            secondary_selection: "\u{5168}\u{90e8}".to_string(),
+            multi_level_selection: None,
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+
+        let params = build_recommends_fallback_list_params(&request, 25, 0);
+        assert_eq!(params.type_, "movie");
+        assert_eq!(params.tag, "\u{70ed}\u{95e8}");
+    }
+
+    #[test]
+    fn build_recommends_fallback_list_params_anime_defaults_to_animation_tag() {
+        let request = DoubanPageRequest {
+            request_type: "anime".to_string(),
+            primary_selection: "\u{5168}\u{90e8}".to_string(),
+            secondary_selection: "tv".to_string(),
+            multi_level_selection: None,
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+
+        let params = build_recommends_fallback_list_params(&request, 25, 0);
+        assert_eq!(params.type_, "tv");
+        assert_eq!(params.tag, "\u{52a8}\u{753b}");
+    }
+
+    #[test]
+    fn is_body_decode_error_matches_reqwest_text() {
+        assert!(is_body_decode_error("JSON parse error: error decoding response body"));
+        assert!(!is_body_decode_error("network timeout"));
     }
 
     #[tokio::test]

@@ -245,6 +245,30 @@ function DoubanPageClient() {
   // 生成API请求参数的辅助函数
 
   // 防抖的数据加载函数
+  const fetchDoubanPageData = useCallback(
+    async (page: number, retryCount = 1): Promise<DoubanPageResponse> => {
+      try {
+        return await invoke<DoubanPageResponse>('get_douban_page_data', {
+          request: buildDoubanRequest(page),
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : String(error ?? '');
+        const shouldRetry =
+          retryCount > 0 &&
+          message.toLowerCase().includes('error decoding response body');
+
+        if (!shouldRetry) {
+          throw error;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        return fetchDoubanPageData(page, retryCount - 1);
+      }
+    },
+    [buildDoubanRequest],
+  );
+
   const loadInitialData = useCallback(async () => {
     // 创建当前参数的快照
     const requestSnapshot = {
@@ -264,11 +288,7 @@ function DoubanPageClient() {
       setHasMore(true);
       setIsLoadingMore(false);
 
-      let data: DoubanPageResponse;
-
-      data = await invoke<DoubanPageResponse>('get_douban_page_data', {
-        request: buildDoubanRequest(0),
-      });
+      const data = await fetchDoubanPageData(0);
 
       const currentSnapshot = { ...currentParamsRef.current };
       if (isSnapshotEqual(requestSnapshot, currentSnapshot)) {
@@ -288,7 +308,7 @@ function DoubanPageClient() {
     secondarySelection,
     multiLevelValues,
     selectedWeekday,
-    buildDoubanRequest,
+    fetchDoubanPageData,
   ]);
 
   // 只在选择器准备好后才加载数据
@@ -348,12 +368,7 @@ function DoubanPageClient() {
         try {
           setIsLoadingMore(true);
 
-          const data = await invoke<DoubanPageResponse>(
-            'get_douban_page_data',
-            {
-              request: buildDoubanRequest(currentPage),
-            },
-          );
+          const data = await fetchDoubanPageData(currentPage);
 
           const currentSnapshot = { ...currentParamsRef.current };
 
@@ -386,7 +401,7 @@ function DoubanPageClient() {
     secondarySelection,
     multiLevelValues,
     selectedWeekday,
-    buildDoubanRequest,
+    fetchDoubanPageData,
   ]);
 
   // 设置滚动监听
