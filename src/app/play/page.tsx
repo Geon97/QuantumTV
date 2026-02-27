@@ -308,8 +308,17 @@ function PlayPageClient() {
   }) => {
     if (!currentSourceRef.current || !currentIdRef.current) return;
 
+    console.log('[跳过配置] 更新配置', {
+      old: skipConfigRef.current,
+      new: newConfig,
+    });
+
     try {
       setSkipConfig(newConfig);
+      // 立即更新 ref，确保 timeupdate 事件处理器使用最新值
+      skipConfigRef.current = newConfig;
+
+      console.log('[跳过配置] skipConfigRef已更新', skipConfigRef.current);
 
       const response = await invoke<ApplySkipConfigResponse>(
         'apply_skip_config',
@@ -384,7 +393,68 @@ function PlayPageClient() {
           },
         });
       } else {
-        // ?? Toast ??
+        // 更新Artplayer设置UI
+        if (artPlayerRef.current && artPlayerRef.current.setting) {
+          artPlayerRef.current.setting.update({
+            name: '跳过片头片尾',
+            html: '跳过片头片尾',
+            switch: skipConfigRef.current.enable,
+            onSwitch: function (item: any) {
+              const newConfig = {
+                ...skipConfigRef.current,
+                enable: !item.switch,
+              };
+              handleSkipConfigChange(newConfig);
+              return !item.switch;
+            },
+          });
+          artPlayerRef.current.setting.update({
+            name: '设置片头',
+            html: '设置片头',
+            icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="12" r="2" fill="#ffffff"/><path d="M9 12L17 12" stroke="#ffffff" stroke-width="2"/><path d="M17 6L17 18" stroke="#ffffff" stroke-width="2"/></svg>',
+            tooltip:
+              skipConfigRef.current.intro_time === 0
+                ? '设置片头时间'
+                : `${formatTime(skipConfigRef.current.intro_time)}`,
+            onClick: function () {
+              const currentTime = artPlayerRef.current?.currentTime || 0;
+              if (currentTime > 0) {
+                const newConfig = {
+                  ...skipConfigRef.current,
+                  intro_time: currentTime,
+                };
+                handleSkipConfigChange(newConfig);
+                return `${formatTime(currentTime)}`;
+              }
+            },
+          });
+          artPlayerRef.current.setting.update({
+            name: '设置片尾',
+            html: '设置片尾',
+            icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 6L7 18" stroke="#ffffff" stroke-width="2"/><path d="M7 12L15 12" stroke="#ffffff" stroke-width="2"/><circle cx="19" cy="12" r="2" fill="#ffffff"/></svg>',
+            tooltip:
+              skipConfigRef.current.outro_time >= 0
+                ? '设置片尾时间'
+                : `-${formatTime(-skipConfigRef.current.outro_time)}`,
+            onClick: function () {
+              const outroTime =
+                -(
+                  artPlayerRef.current?.duration -
+                  artPlayerRef.current?.currentTime
+                ) || 0;
+              if (outroTime < 0) {
+                const newConfig = {
+                  ...skipConfigRef.current,
+                  outro_time: outroTime,
+                };
+                handleSkipConfigChange(newConfig);
+                return `-${formatTime(-outroTime)}`;
+              }
+            },
+          });
+        }
+
+        // Toast 提示
         const introText =
           newConfig.intro_time > 0
             ? `片头: ${formatTime(newConfig.intro_time)}`
@@ -439,6 +509,10 @@ function PlayPageClient() {
       this.config = config;
       this.enableAdBlock = config.enableAdBlock || false;
 
+      console.log('[TauriHlsJsLoader] 初始化', {
+        enableAdBlock: this.enableAdBlock,
+      });
+
       // 在构造函数中立即初始化 stats
       this.stats = {
         aborted: false,
@@ -481,6 +555,12 @@ function PlayPageClient() {
 
       // 对于 M3U8 manifest 和 level，使用 Rust 端的 fetch_m3u8 命令（支持去广告）
       if (context.type === 'manifest' || context.type === 'level') {
+        console.log('[TauriHlsJsLoader] 加载M3U8', {
+          url,
+          type: context.type,
+          enableAdBlock: this.enableAdBlock,
+        });
+
         invoke<string>('fetch_m3u8', {
           url,
           enableAdBlock: this.enableAdBlock,
@@ -1464,10 +1544,19 @@ function PlayPageClient() {
         if (skipConfigRef.current.enable && duration > 0) {
           try {
             const skipAction = await invoke<SkipAction>('check_skip_action', {
+              introTime: skipConfigRef.current.intro_time,
+              outroTime: Math.abs(skipConfigRef.current.outro_time), // 转为正数
+              currentTime: currentTime,
+              totalDuration: duration,
+            });
+
+            console.log('[跳过检测]', {
+              enable: skipConfigRef.current.enable,
               intro_time: skipConfigRef.current.intro_time,
-              outro_time: Math.abs(skipConfigRef.current.outro_time), // 转为正数
-              current_time: currentTime,
-              total_duration: duration,
+              outro_time: skipConfigRef.current.outro_time,
+              currentTime,
+              duration,
+              skipAction,
             });
 
             if (
@@ -1477,7 +1566,7 @@ function PlayPageClient() {
             ) {
               // 跳过片头
               const targetTime = skipAction.SkipIntro;
-              console.log('跳过片头: 从', currentTime, '跳到', targetTime);
+              console.log('🎬 跳过片头: 从', currentTime, '跳到', targetTime);
               artPlayerRef.current.currentTime = targetTime;
               artPlayerRef.current.notice.show = `✨ 已跳过片头，跳到 ${formatTime(targetTime)}`;
             } else if (
@@ -1485,7 +1574,7 @@ function PlayPageClient() {
               currentTime < duration - 1
             ) {
               // 跳过片尾
-              console.log('跳过片尾: 在', currentTime, '触发跳转');
+              console.log('🎬 跳过片尾: 在', currentTime, '触发跳转');
               if (
                 currentEpisodeIndexRef.current <
                 (detailRef.current?.episodes?.length || 1) - 1
@@ -1500,7 +1589,7 @@ function PlayPageClient() {
               }
             }
           } catch (err) {
-            console.error('跳过检测失败:', err);
+            console.error('❌ 跳过检测失败:', err);
           }
         }
 
