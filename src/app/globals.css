@@ -9,6 +9,7 @@
    ======================================== */
 
 @import 'tailwindcss';
+@import 'plyr/dist/plyr.css';
 
 /* ========================================
    2. TAILWIND DARK MODE CONFIGURATION
@@ -1977,45 +1978,7 @@ html.dark .tooltip {
   font-size: 0.625rem;
 }
 
-/* === ArtPlayer Overrides === */
-.art-video-player .art-poster {
-  background-size: contain !important;
-  background-position: center center !important;
-  background-repeat: no-repeat !important;
-  background-color: #000 !important;
-}
-
-div[data-media-provider] video {
-  height: 100%;
-  object-fit: contain;
-}
-
-.art-video-player.art-fullscreen,
-.art-video-player.art-fullscreen-web {
-  padding-top: env(safe-area-inset-top) !important;
-  padding-bottom: env(safe-area-inset-bottom) !important;
-  padding-left: env(safe-area-inset-left) !important;
-  padding-right: env(safe-area-inset-right) !important;
-}
-
-.art-video-player.art-fullscreen .art-bottom,
-.art-video-player.art-fullscreen-web .art-bottom {
-  padding-bottom: calc(10px + env(safe-area-inset-bottom)) !important;
-}
-
-.art-video-player.art-fullscreen .art-layers,
-.art-video-player.art-fullscreen-web .art-layers {
-  padding-top: env(safe-area-inset-top) !important;
-}
-
-/* Hide mobile-only controls */
-@media (max-width: 768px) {
-  .art-control-pip,
-  .art-control-fullscreenWeb,
-  .art-control-volume {
-    display: none !important;
-  }
-}
+/* === Player Overrides === */
 
 /* ========================================
    16. LOADING STATES
@@ -2527,24 +2490,91 @@ div[data-media-provider] video {
 }
 
 /* ==== 强化全屏安全区域适配 ==== */
+/* ==== Plyr (Play Page) ==== */
+.quantum-plyr-shell {
+  --plyr-color-main: #22c55e;
+}
+
+.quantum-plyr-shell .plyr {
+  height: 100%;
+}
+
+.quantum-plyr-shell .plyr__video-wrapper {
+  height: 100%;
+  background: #000;
+}
+
+.quantum-plyr-shell video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.quantum-plyr-shell .plyr__controls {
+  gap: 0.45rem;
+  padding: 0.55rem 0.7rem 0.7rem;
+}
+
+.quantum-plyr-shell .plyr__control {
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+}
+
+.quantum-plyr-shell .quantum-plyr-settings {
+  margin-top: 0.25rem;
+  border-top: 1px solid rgb(255 255 255 / 0.1);
+  padding-top: 0.25rem;
+}
+
+.quantum-plyr-shell .quantum-plyr-setting-item {
+  width: 100%;
+  text-align: left;
+}
+
+@media (max-width: 375px) {
+  .quantum-plyr-shell .plyr__controls {
+    gap: 0.35rem;
+    padding: 0.45rem 0.55rem 0.55rem;
+  }
+
+  .quantum-plyr-shell .plyr__control {
+    min-width: 2.1rem;
+    min-height: 2.1rem;
+  }
+
+}
+
+@media (min-width: 834px) {
+  .quantum-plyr-shell .plyr__controls {
+    gap: 0.55rem;
+    padding: 0.65rem 0.9rem 0.8rem;
+  }
+
+  .quantum-plyr-shell .plyr__control {
+    min-width: 2.4rem;
+    min-height: 2.4rem;
+  }
+
+}
+
+@media (min-width: 1440px) {
+  .quantum-plyr-shell .plyr__controls {
+    gap: 0.6rem;
+    padding: 0.8rem 1rem 0.95rem;
+  }
+
+  .quantum-plyr-shell .plyr__control {
+    min-width: 2.55rem;
+    min-height: 2.55rem;
+  }
+
+}
+
 @supports (padding-top: env(safe-area-inset-top)) {
-  .art-video-player.art-fullscreen,
-  .art-video-player.art-fullscreen-web {
-    padding-top: max(env(safe-area-inset-top), 20px) !important;
-    padding-bottom: max(env(safe-area-inset-bottom), 20px) !important;
-    padding-left: env(safe-area-inset-left) !important;
-    padding-right: env(safe-area-inset-right) !important;
-  }
-
-  .art-video-player.art-fullscreen .art-layers,
-  .art-video-player.art-fullscreen-web .art-layers {
-    padding-top: max(env(safe-area-inset-top), 20px) !important;
-  }
-
-  .art-video-player.art-fullscreen .art-bottom,
-  .art-video-player.art-fullscreen-web .art-bottom {
-    padding-bottom: calc(
-      10px + max(env(safe-area-inset-bottom), 20px)
-    ) !important;
+  .plyr--fullscreen-active .plyr__controls {
+    padding-top: max(env(safe-area-inset-top), 16px) !important;
+    padding-bottom: calc(12px + max(env(safe-area-inset-bottom), 16px)) !important;
+    padding-left: calc(12px + env(safe-area-inset-left)) !important;
+    padding-right: calc(12px + env(safe-area-inset-right)) !important;
   }
 }

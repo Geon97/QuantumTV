@@ -66,13 +66,13 @@ QuantumTV 采用现代化的混合应用架构，在一个代码仓库中管理�
 
 ## 🛠 技术栈
 
-| 分类      | 主要依赖                                                                                             |
-| --------- | ---------------------------------------------------------------------------------------------------- |
-| 核心框架  | [Next.js 16](https://nextjs.org/) · [Tauri 2](https://tauri.app/)                                    |
-| 前端      | [React 19](https://react.dev/)                                                                       |
-| UI & 样式 | [Tailwind CSS 4](https://tailwindcss.com/)                                                           |
-| 语言      | [Rust](https://www.rust-lang.org/) · [TypeScript 5](https://www.typescriptlang.org/)                 |
-| 播放器    | [ArtPlayer](https://github.com/zhw2590582/ArtPlayer) · [HLS.js](https://github.com/video-dev/hls.js) |
+| 分类      | 主要依赖                                                                                 |
+| --------- | ---------------------------------------------------------------------------------------- |
+| 核心框架  | [Next.js 16](https://nextjs.org/) · [Tauri 2](https://tauri.app/)                        |
+| 前端      | [React 19](https://react.dev/)                                                           |
+| UI & 样式 | [Tailwind CSS 4](https://tailwindcss.com/)                                               |
+| 语言      | [Rust](https://www.rust-lang.org/) · [TypeScript 5](https://www.typescriptlang.org/)     |
+| 播放器    | [Plyr](https://github.com/sampotts/plyr) · [HLS.js](https://github.com/video-dev/hls.js) |
 
 ## ⚙️ 配置文件
 
@@ -223,7 +223,7 @@ services:
 ## 🙏 致谢
 
 - [DecoTV](https://github.com/Decohererk/DecoTV/releases/tag/v1.1.0) — 本项目的二次开发基础，为 QuantumTV 提供了重要的架构与功能参考。
-- [ArtPlayer](https://github.com/zhw2590582/ArtPlayer), [HLS.js](https://github.com/video-dev/hls.js) — 核心播放器
+- [plyr](https://github.com/sampotts/plyr), [HLS.js](https://github.com/video-dev/hls.js) — 核心播放器
 - [Zwei](https://github.com/bestzwei), [CMLiussss](https://github.com/cmliu) — 豆瓣数据服务
 - 以及所有为学习与研究目的提供公开数据接口的站点与社区！
 
