@@ -1146,6 +1146,31 @@ fn douban_cache_key(request: &DoubanPageRequest, page_limit: i32, page: i32) -> 
         .unwrap_or_else(|_| format!("douban:{}:{}:{}", request.request_type, page_limit, page))
 }
 
+fn is_all_primary_selection(value: &str) -> bool {
+    value.trim() == "\u{5168}\u{90e8}"
+}
+
+fn is_all_secondary_selection(request_type: &str, value: &str) -> bool {
+    let normalized = value.trim();
+    if normalized.is_empty() {
+        return false;
+    }
+
+    if normalized == "\u{5168}\u{90e8}" || normalized.eq_ignore_ascii_case("all") {
+        return true;
+    }
+
+    if request_type == "tv" {
+        return normalized.eq_ignore_ascii_case("tv");
+    }
+
+    if request_type == "show" {
+        return normalized.eq_ignore_ascii_case("show");
+    }
+
+    false
+}
+
 fn should_cache_douban_request(request: &DoubanPageRequest) -> bool {
     if request.request_type == "custom" || request.request_type == "anime" {
         return false;
@@ -1157,10 +1182,15 @@ fn should_cache_douban_request(request: &DoubanPageRequest) -> bool {
     }
 
     if request.primary_selection != defaults.primary_selection {
-        return false;
+        if is_all_primary_selection(&request.primary_selection) {
+            return true;
+        }
     }
 
-    if defaults.require_secondary && request.secondary_selection != defaults.secondary_selection {
+    if defaults.require_secondary
+        && request.secondary_selection != defaults.secondary_selection
+        && !is_all_secondary_selection(&request.request_type, &request.secondary_selection)
+    {
         return false;
     }
 
@@ -1586,6 +1616,51 @@ mod tests {
     fn is_body_decode_error_matches_reqwest_text() {
         assert!(is_body_decode_error("JSON parse error: error decoding response body"));
         assert!(!is_body_decode_error("network timeout"));
+    }
+
+    #[test]
+    fn should_cache_tv_when_primary_is_all() {
+        let request = DoubanPageRequest {
+            request_type: "tv".to_string(),
+            primary_selection: "\u{5168}\u{90e8}".to_string(),
+            secondary_selection: "tv".to_string(),
+            multi_level_selection: Some(default_multi_level_selection()),
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+
+        assert!(should_cache_douban_request(&request));
+    }
+
+    #[test]
+    fn should_cache_movie_when_secondary_is_all() {
+        let request = DoubanPageRequest {
+            request_type: "movie".to_string(),
+            primary_selection: "\u{6700}\u{65b0}".to_string(),
+            secondary_selection: "\u{5168}\u{90e8}".to_string(),
+            multi_level_selection: None,
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+
+        assert!(should_cache_douban_request(&request));
+    }
+
+    #[test]
+    fn should_not_cache_movie_when_secondary_is_not_all_and_not_default() {
+        let request = DoubanPageRequest {
+            request_type: "movie".to_string(),
+            primary_selection: "\u{70ed}\u{95e8}".to_string(),
+            secondary_selection: "\u{97e9}\u{56fd}".to_string(),
+            multi_level_selection: None,
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+
+        assert!(!should_cache_douban_request(&request));
     }
 
     #[tokio::test]
