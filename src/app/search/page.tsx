@@ -9,7 +9,6 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AggregatedGroup,
   SearchFilter,
-  SearchPageBootstrap,
   SearchResult,
 } from '@/lib/types';
 import { appLayoutClasses, getGridColumnsClass } from '@/lib/ui-layout';
@@ -23,7 +22,9 @@ import SearchResultFilter, {
 import SearchSuggestions from '@/components/SearchSuggestions';
 import VideoCard, { VideoCardHandle } from '@/components/VideoCard';
 
-type SearchPageQueryResponse = {
+type SearchPageOpenResponse = {
+  searchHistory: string[];
+  fluidSearch: boolean;
   results: SearchResult[];
   cacheHit: boolean;
   filterCategoriesAll: SearchFilterCategory[];
@@ -144,10 +145,10 @@ function SearchPageClient() {
     !searchParams.get('q') && document.getElementById('searchInput')?.focus();
 
     // 初始加载搜索历史 + 流式搜索设置
-    invoke<SearchPageBootstrap>('get_search_page_bootstrap')
+    invoke<SearchPageOpenResponse>('search_page_open', { query: null })
       .then((bootstrap) => {
-        setSearchHistory(bootstrap.search_history);
-        setUseFluidSearch(bootstrap.fluid_search);
+        setSearchHistory(bootstrap.searchHistory);
+        setUseFluidSearch(bootstrap.fluidSearch);
       })
       .catch((error) => {
         console.error('加载搜索初始化数据失败:', error);
@@ -278,10 +279,12 @@ function SearchPageClient() {
       setupListeners();
 
       // 调用搜索命令
-      invoke<SearchPageQueryResponse>('search_page_query', { query: qParam })
+      invoke<SearchPageOpenResponse>('search_page_open', { query: qParam })
         .then((response) => {
           const safeResults = response?.results || [];
           const cacheHit = response?.cacheHit ?? false;
+          setSearchHistory(response?.searchHistory || []);
+          setUseFluidSearch(response?.fluidSearch ?? true);
           setSearchResults(safeResults);
           setFilterOptions({
             categoriesAll: response?.filterCategoriesAll || [],
@@ -302,9 +305,11 @@ function SearchPageClient() {
         });
     } else {
       // 非流式搜索：原有逻辑
-      invoke<SearchPageQueryResponse>('search_page_query', { query: qParam })
+      invoke<SearchPageOpenResponse>('search_page_open', { query: qParam })
         .then((response) => {
           const safeResults = response?.results || [];
+          setSearchHistory(response?.searchHistory || []);
+          setUseFluidSearch(response?.fluidSearch ?? true);
           setSearchResults(safeResults);
           setFilterOptions({
             categoriesAll: response?.filterCategoriesAll || [],

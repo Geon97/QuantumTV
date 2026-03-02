@@ -4,6 +4,7 @@ pub mod douban_client;
 pub mod home;
 pub mod preload;
 pub mod search;
+pub mod settings;
 pub mod skip;
 pub mod version;
 pub mod version_check;

@@ -66,6 +66,17 @@ pub struct SearchPageQueryResponse {
     pub filter_categories_agg: Vec<SearchFilterCategory>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchPageOpenResponse {
+    pub search_history: Vec<String>,
+    pub fluid_search: bool,
+    pub results: Vec<SearchResult>,
+    pub cache_hit: bool,
+    pub filter_categories_all: Vec<SearchFilterCategory>,
+    pub filter_categories_agg: Vec<SearchFilterCategory>,
+}
+
 fn build_filter_categories(results: &[SearchResult]) -> Vec<SearchFilterCategory> {
     use std::collections::{BTreeSet, HashMap};
 
@@ -205,7 +216,7 @@ pub async fn get_search_page_bootstrap(
     storage: State<'_, StorageManager>,
 ) -> Result<SearchPageBootstrap, String> {
     let search_history = get_search_history(db)?;
-    let preferences = get_user_preferences(storage).await?;
+    let preferences = get_user_preferences(storage.clone()).await?;
     Ok(build_search_bootstrap(search_history, preferences))
 }
 
@@ -220,6 +231,35 @@ pub async fn search_page_query(
     let filter_categories = build_filter_categories(&results);
 
     Ok(SearchPageQueryResponse {
+        results,
+        cache_hit,
+        filter_categories_all: filter_categories.clone(),
+        filter_categories_agg: filter_categories,
+    })
+}
+
+#[tauri::command]
+pub async fn search_page_open(
+    query: Option<String>,
+    db: State<'_, Db>,
+    storage: State<'_, StorageManager>,
+    app_handle: tauri::AppHandle,
+    cache: State<'_, SearchCacheManager>,
+) -> Result<SearchPageOpenResponse, String> {
+    let search_history = get_search_history(db)?;
+    let preferences = get_user_preferences(storage.clone()).await?;
+
+    let trimmed_query = query.unwrap_or_default().trim().to_string();
+    let (results, cache_hit) = if trimmed_query.is_empty() {
+        (Vec::new(), false)
+    } else {
+        search_with_cache_hit(trimmed_query, app_handle, storage, cache).await?
+    };
+    let filter_categories = build_filter_categories(&results);
+
+    Ok(SearchPageOpenResponse {
+        search_history,
+        fluid_search: preferences.fluid_search,
         results,
         cache_hit,
         filter_categories_all: filter_categories.clone(),

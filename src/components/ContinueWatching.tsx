@@ -64,20 +64,6 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
     return null;
   }
 
-  // 计算播放进度百分比
-  const getProgress = (record: RustPlayRecord) => {
-    if (record.total_time === 0) return 0;
-    return (record.play_time / record.total_time) * 100;
-  };
-
-  // 从 key 中解析 source 和 id
-  const parseKey = (key: string) => {
-    const plusIndex = key.indexOf('+');
-    const source = key.slice(0, plusIndex);
-    const id = key.slice(plusIndex + 1);
-    return { source, id };
-  };
-
   return (
     <section
       className={`mb-8 max-[375px]:mb-7 min-[834px]:mb-10 ${className || ''}`}
@@ -112,17 +98,16 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
             ))
           : // 显示真实数据
             playRecords.map((record) => {
-              const { source, id } = parseKey(record.key);
               return (
                 <div key={record.key} className={getRailItemClass('default')}>
                   <VideoCard
-                    id={id}
+                    id={record.id}
                     title={record.title}
                     poster={record.cover}
                     year={record.year}
-                    source={source}
+                    source={record.source}
                     source_name={record.source_name}
-                    progress={getProgress(record)}
+                    progress={record.progress}
                     episodes={record.total_episodes}
                     currentEpisode={record.episode_index}
                     query={record.search_title}

@@ -44,10 +44,13 @@ pub struct FavoriteCard {
 #[derive(Debug, Serialize)]
 pub struct ContinueWatchingItem {
     pub key: String,
+    pub source: String,
+    pub id: String,
     pub title: String,
     pub source_name: String,
     pub year: String,
     pub cover: String,
+    pub progress: f64,
     pub episode_index: i32,
     pub total_episodes: i32,
     pub play_time: i32,
@@ -294,16 +297,29 @@ pub fn get_continue_watching(db: State<'_, Db>) -> Result<Vec<ContinueWatchingIt
             "SELECT key, title, source_name, year, cover, episode_index, total_episodes, play_time, total_time, save_time, search_title FROM play_records",
         )?;
         let rows = stmt.query_map([], |row| {
+            let key: String = row.get(0)?;
+            let (source, id) = split_storage_key(&key);
+            let play_time: i32 = row.get(7)?;
+            let total_time: i32 = row.get(8)?;
+            let progress = if total_time > 0 {
+                (play_time as f64 / total_time as f64 * 100.0).clamp(0.0, 100.0)
+            } else {
+                0.0
+            };
+
             Ok(ContinueWatchingItem {
-                key: row.get(0)?,
+                key,
+                source,
+                id,
                 title: row.get(1)?,
                 source_name: row.get(2)?,
                 year: row.get(3)?,
                 cover: row.get(4)?,
+                progress,
                 episode_index: row.get(5)?,
                 total_episodes: row.get(6)?,
-                play_time: row.get(7)?,
-                total_time: row.get(8)?,
+                play_time,
+                total_time,
                 save_time: row.get(9)?,
                 search_title: row.get(10)?,
             })
@@ -369,10 +385,13 @@ mod tests {
         let records = vec![
             ContinueWatchingItem {
                 key: "k1".to_string(),
+                source: "s1".to_string(),
+                id: "id1".to_string(),
                 title: "A".to_string(),
                 source_name: "S".to_string(),
                 year: "2020".to_string(),
                 cover: "c1".to_string(),
+                progress: 10.0,
                 episode_index: 1,
                 total_episodes: 10,
                 play_time: 10,
@@ -382,10 +401,13 @@ mod tests {
             },
             ContinueWatchingItem {
                 key: "k2".to_string(),
+                source: "s2".to_string(),
+                id: "id2".to_string(),
                 title: "B".to_string(),
                 source_name: "S".to_string(),
                 year: "2021".to_string(),
                 cover: "c2".to_string(),
+                progress: 20.0,
                 episode_index: 2,
                 total_episodes: 2,
                 play_time: 20,

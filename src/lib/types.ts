@@ -259,10 +259,13 @@ export interface RustFavorite {
 
 export interface RustPlayRecord {
   key: string;
+  source: string;
+  id: string;
   title: string;
   source_name: string;
   year: string;
   cover: string;
+  progress: number;
   episode_index: number;
   total_episodes: number;
   play_time: number;

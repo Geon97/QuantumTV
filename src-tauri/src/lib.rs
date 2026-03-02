@@ -74,6 +74,18 @@ pub fn run() {
             page_cache_manager
                 .init_table()
                 .expect("failed to init page cache table");
+            let _ = page_cache_manager.cleanup_expired();
+
+            // 启动后在后台定时清理过期页面缓存，替代前端初始化
+            let page_cache_cleanup_manager = page_cache_manager.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(30 * 60));
+                loop {
+                    interval.tick().await;
+                    let _ = page_cache_cleanup_manager.cleanup_expired();
+                }
+            });
+
             app.manage(page_cache_manager);
 
             Ok(())
@@ -107,6 +119,8 @@ pub fn run() {
             commands::search::build_search_page_state,
             commands::search::get_search_page_bootstrap,
             commands::search::search_page_query,
+            commands::search::search_page_open,
+            commands::settings::get_settings_bootstrap,
             commands::config::is_adult_source,
             // 跳过片头片尾
             commands::skip::check_skip_action,
