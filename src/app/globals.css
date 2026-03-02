@@ -2548,7 +2548,8 @@ html.dark .tooltip {
 .quantum-plyr-shell
   .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback) {
   --qt-control-size: 2.35rem;
-  --qt-time-width: 3.4rem;
+  --qt-time-current-width: 3rem;
+  --qt-time-duration-width: 4rem;
   --qt-volume-width: 6.2rem;
   --qt-row-gap: 0.2rem;
   --qt-col-gap: 0.22rem;
@@ -2598,6 +2599,16 @@ html.dark .tooltip {
   font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
   line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  .plyr__controls__item.plyr__time
+  + .plyr__time:before {
+  margin-right: 0.24rem;
 }
 
 .quantum-plyr-shell
@@ -2665,7 +2676,8 @@ html.dark .tooltip {
   .plyr__controls
   .plyr__controls__item.quantum-plyr-item-time-current {
   order: 30;
-  width: var(--qt-time-width);
+  flex: 0 0 var(--qt-time-current-width);
+  width: var(--qt-time-current-width);
   justify-content: flex-end;
 }
 
@@ -2674,7 +2686,9 @@ html.dark .tooltip {
   .plyr__controls
   .plyr__controls__item.quantum-plyr-item-time-duration {
   order: 40;
-  width: var(--qt-time-width);
+  flex: 0 0 var(--qt-time-duration-width);
+  width: var(--qt-time-duration-width);
+  padding-right: 0.12rem;
   justify-content: flex-start;
 }
 
@@ -2731,19 +2745,25 @@ html.dark .tooltip {
 @media (max-width: 639px) {
   .quantum-plyr-shell
     .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback) {
-    --qt-control-size: 2.05rem;
-    --qt-time-width: 2.9rem;
-    --qt-col-gap: 0.14rem;
-    --qt-row-gap: 0.12rem;
+    --qt-control-size: 1.85rem;
+    --qt-time-current-width: 2rem;
+    --qt-time-duration-width: 3.25rem;
+    --qt-col-gap: 0.08rem;
+    --qt-row-gap: 0.08rem;
   }
 
   .quantum-plyr-shell .plyr__controls {
     row-gap: var(--qt-row-gap);
-    padding: 0.42rem 0.45rem 0.48rem;
+    padding: 0.32rem 0.3rem 0.36rem;
   }
 
   .quantum-plyr-shell .plyr__control {
-    padding: 0.38rem;
+    padding: 0.3rem;
+  }
+
+  .quantum-plyr-shell .plyr__control svg {
+    width: 15px;
+    height: 15px;
   }
 
   .quantum-plyr-shell
@@ -2752,6 +2772,21 @@ html.dark .tooltip {
     .plyr__controls__item.plyr__time {
     font-size: 0.72rem;
     padding-inline: 0.1rem;
+  }
+
+  .quantum-plyr-shell
+    .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+    .plyr__controls
+    .plyr__controls__item.plyr__time
+    + .plyr__time:before {
+    margin-right: 0.12rem;
+  }
+
+  .quantum-plyr-shell
+    .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+    .plyr__controls
+    .plyr__controls__item.plyr__progress__container {
+    margin-bottom: 0;
   }
 
   .quantum-plyr-shell
@@ -2776,7 +2811,8 @@ html.dark .tooltip {
   .quantum-plyr-shell
     .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback) {
     --qt-control-size: 2.45rem;
-    --qt-time-width: 3.65rem;
+    --qt-time-current-width: 3.2rem;
+    --qt-time-duration-width: 4.2rem;
     --qt-volume-width: 7rem;
     --qt-row-gap: 0.22rem;
     --qt-col-gap: 0.28rem;
@@ -2787,7 +2823,8 @@ html.dark .tooltip {
   .quantum-plyr-shell
     .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback) {
     --qt-control-size: 2.55rem;
-    --qt-time-width: 3.9rem;
+    --qt-time-current-width: 3.4rem;
+    --qt-time-duration-width: 4.4rem;
     --qt-volume-width: 7.6rem;
     --qt-row-gap: 0.24rem;
     --qt-col-gap: 0.32rem;
