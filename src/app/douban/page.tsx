@@ -36,6 +36,7 @@ function DoubanPageClient() {
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadingRef = useRef<HTMLDivElement>(null);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const initialLoadRequestIdRef = useRef(0);
 
   // 用于存储最新参数值的 refs
   const currentParamsRef = useRef({
@@ -229,13 +230,15 @@ function DoubanPageClient() {
         selectedWeekday: string;
         currentPage: number;
       },
+      compareCurrentPage = true,
     ) => {
       return (
         snapshot1.type === snapshot2.type &&
         snapshot1.primarySelection === snapshot2.primarySelection &&
         snapshot1.secondarySelection === snapshot2.secondarySelection &&
         snapshot1.selectedWeekday === snapshot2.selectedWeekday &&
-        snapshot1.currentPage === snapshot2.currentPage &&
+        (!compareCurrentPage ||
+          snapshot1.currentPage === snapshot2.currentPage) &&
         JSON.stringify(snapshot1.multiLevelSelection) ===
           JSON.stringify(snapshot2.multiLevelSelection)
       );
@@ -269,6 +272,8 @@ function DoubanPageClient() {
   );
 
   const loadInitialData = useCallback(async () => {
+    const requestId = ++initialLoadRequestIdRef.current;
+
     // 创建当前参数的快照
     const requestSnapshot = {
       type,
@@ -290,16 +295,23 @@ function DoubanPageClient() {
       const data = await fetchDoubanPageData(0);
 
       const currentSnapshot = { ...currentParamsRef.current };
-      if (isSnapshotEqual(requestSnapshot, currentSnapshot)) {
+      const isLatestRequest = requestId === initialLoadRequestIdRef.current;
+      if (!isLatestRequest) {
+        return;
+      }
+
+      if (isSnapshotEqual(requestSnapshot, currentSnapshot, false)) {
         setDoubanData(data.list);
         setHasMore(data.has_more);
-        setLoading(false);
       } else {
         console.log('参数不一致，不执行任何操作，避免设置过期数据');
       }
     } catch (err) {
       console.error(err);
-      setLoading(false);
+    } finally {
+      if (requestId === initialLoadRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [
     type,
@@ -606,6 +618,7 @@ function DoubanPageClient() {
       setSelectedSourceCategory(null); // 清除旧分类ID，防止污染
       setFilteredSourceCategories([]); // 清空过滤后分类列表
       setIsLoadingSourceData(false);
+      initialLoadRequestIdRef.current += 1;
 
       // === Step 2: 切换源状态 ===
       setCurrentSource(sourceKey);
@@ -809,7 +822,9 @@ function DoubanPageClient() {
           className={`${appLayoutClasses.pageContent} mt-8 max-[375px]:mt-6 min-[834px]:mt-9 min-[1440px]:mt-10 overflow-visible`}
         >
           {/* 内容网格 */}
-          <div className={getGridColumnsClass('dense')}>
+          <div
+            className={`${getGridColumnsClass('dense')} grid-cols-3 max-[375px]:grid-cols-3 gap-y-6 max-[375px]:gap-y-5`}
+          >
             {loading || isLoadingSourceData || !selectorsReady ? (
               // 显示骨架屏
               skeletonData.map((index) => <DoubanCardSkeleton key={index} />)

@@ -518,7 +518,10 @@ function SearchPageClient() {
                   </div>
                 )
               ) : (
-                <div key={`search-results-${viewMode}`} className={getGridColumnsClass('dense')}>
+                <div
+                  key={`search-results-${viewMode}`}
+                  className={`${getGridColumnsClass('dense')} grid-cols-3 max-[375px]:grid-cols-3 gap-y-6 max-[375px]:gap-y-5`}
+                >
                   {viewMode === 'agg'
                     ? Array.from(aggregatedGroups.entries()).map(
                         ([mapKey, group]) => {

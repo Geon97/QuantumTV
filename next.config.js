@@ -1,5 +1,5 @@
 /** @type {import('next').NextConfig} */
- 
+
 const isProd = process.env.NODE_ENV === 'production';
 const internalHost = process.env.TAURI_DEV_HOST || 'localhost';
 
@@ -46,19 +46,35 @@ const nextConfig = {
   // experimental: {
   //   optimizeCss: true, // Requires 'critters' package - disabled to avoid errors
   // },
-    async headers() {
+  async headers() {
     return [
       {
-        // 允许所有 API 路由跨域 (方便调试)
-        source: "/api/:path*",
+        // 允许所有 API 路由跨域（便于调试）
+        source: '/api/:path*',
         headers: [
-          { key: "Access-Control-Allow-Credentials", value: "true" },
-          { key: "Access-Control-Allow-Origin", value: "*" }, 
-          { key: "Access-Control-Allow-Methods", value: "GET,DELETE,PATCH,POST,PUT" },
-          { key: "Access-Control-Allow-Headers", value: "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version" },
-        ]
-      }
-    ]
+          { key: 'Access-Control-Allow-Credentials', value: 'true' },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          {
+            key: 'Access-Control-Allow-Methods',
+            value: 'GET,DELETE,PATCH,POST,PUT',
+          },
+          {
+            key: 'Access-Control-Allow-Headers',
+            value:
+              'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version',
+          },
+        ],
+      },
+      {
+        // 允许 Next 静态资源（包含字体）被 tauri.localhost 引用
+        source: '/_next/static/:path*',
+        headers: [
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET,OPTIONS' },
+          { key: 'Cross-Origin-Resource-Policy', value: 'cross-origin' },
+        ],
+      },
+    ];
   },
   assetPrefix: isProd ? undefined : `http://${internalHost}:3000`,
 };

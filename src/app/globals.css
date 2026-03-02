@@ -2544,6 +2544,256 @@ html.dark .tooltip {
 
 }
 
+/* 非全屏：统一两行控制栏（跨手机/平板/桌面） */
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback) {
+  --qt-control-size: 2.35rem;
+  --qt-time-width: 3.4rem;
+  --qt-volume-width: 6.2rem;
+  --qt-row-gap: 0.2rem;
+  --qt-col-gap: 0.22rem;
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls {
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: var(--qt-row-gap);
+  column-gap: var(--qt-col-gap);
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  .plyr__controls__item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0;
+  flex: 0 0 auto;
+  min-width: var(--qt-control-size);
+  min-height: var(--qt-control-size);
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  > .plyr__controls__item:first-child {
+  margin-right: 0;
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  .plyr__controls__item:not(.plyr__progress__container) {
+  order: 200;
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  .plyr__controls__item.plyr__time {
+  padding-inline: 0.2rem;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  .plyr__controls__item.plyr__progress__container {
+  order: -1;
+  display: block;
+  justify-content: initial;
+  flex: 0 0 100%;
+  width: 100%;
+  min-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 0;
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__progress {
+  width: 100%;
+  max-width: none;
+  left: 0;
+  margin-right: 0;
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__progress
+  input[type='range'],
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__progress__buffer {
+  width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-prev {
+  order: 5;
+  width: var(--qt-control-size);
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-play {
+  order: 10;
+  width: var(--qt-control-size);
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-next {
+  order: 15;
+  width: var(--qt-control-size);
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-time-current {
+  order: 30;
+  width: var(--qt-time-width);
+  justify-content: flex-end;
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-time-duration {
+  order: 40;
+  width: var(--qt-time-width);
+  justify-content: flex-start;
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-mute {
+  order: 50;
+  width: var(--qt-control-size);
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-volume {
+  order: 60;
+  width: var(--qt-volume-width);
+  min-width: var(--qt-volume-width);
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-settings {
+  order: 90;
+  margin-left: auto;
+  width: var(--qt-control-size);
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-pip {
+  order: 100;
+  width: var(--qt-control-size);
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-airplay {
+  order: 110;
+  width: var(--qt-control-size);
+}
+
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-fullscreen {
+  order: 120;
+  width: var(--qt-control-size);
+}
+
+@media (max-width: 639px) {
+  .quantum-plyr-shell
+    .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback) {
+    --qt-control-size: 2.05rem;
+    --qt-time-width: 2.9rem;
+    --qt-col-gap: 0.14rem;
+    --qt-row-gap: 0.12rem;
+  }
+
+  .quantum-plyr-shell .plyr__controls {
+    row-gap: var(--qt-row-gap);
+    padding: 0.42rem 0.45rem 0.48rem;
+  }
+
+  .quantum-plyr-shell .plyr__control {
+    padding: 0.38rem;
+  }
+
+  .quantum-plyr-shell
+    .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+    .plyr__controls
+    .plyr__controls__item.plyr__time {
+    font-size: 0.72rem;
+    padding-inline: 0.1rem;
+  }
+
+  .quantum-plyr-shell
+    .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+    .plyr__volume {
+    display: none;
+  }
+
+  .quantum-plyr-shell
+    .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+    .plyr__controls
+    .plyr__controls__item.quantum-plyr-item-pip,
+  .quantum-plyr-shell
+    .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+    .plyr__controls
+    .plyr__controls__item.quantum-plyr-item-airplay {
+    display: none;
+  }
+}
+
+@media (min-width: 834px) and (max-width: 1279px) {
+  .quantum-plyr-shell
+    .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback) {
+    --qt-control-size: 2.45rem;
+    --qt-time-width: 3.65rem;
+    --qt-volume-width: 7rem;
+    --qt-row-gap: 0.22rem;
+    --qt-col-gap: 0.28rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  .quantum-plyr-shell
+    .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback) {
+    --qt-control-size: 2.55rem;
+    --qt-time-width: 3.9rem;
+    --qt-volume-width: 7.6rem;
+    --qt-row-gap: 0.24rem;
+    --qt-col-gap: 0.32rem;
+  }
+}
+
 @media (min-width: 834px) {
   .quantum-plyr-shell .plyr__controls {
     gap: 0.55rem;

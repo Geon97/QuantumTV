@@ -210,6 +210,16 @@ function PlayPageClient() {
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const gestureTouchStartRef = useRef<{
+    x: number;
+    y: number;
+    timestamp: number;
+  } | null>(null);
+  const lastTapRef = useRef<{
+    x: number;
+    y: number;
+    timestamp: number;
+  } | null>(null);
 
   // Wake Lock 相关
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
@@ -780,6 +790,139 @@ function PlayPageClient() {
   }, []);
 
   // ---------------------------------------------------------------------------
+  // 移动端手势
+  // 双击：播放/暂停
+  // 左右滑动：快退/快进
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (loading) return;
+
+    const container = playerContainerRef.current;
+    if (!container || typeof window === 'undefined') return;
+
+    const isTouchDevice =
+      window.matchMedia?.('(pointer: coarse)')?.matches ||
+      'ontouchstart' in window;
+    if (!isTouchDevice) return;
+
+    const tapMaxDistance = 20;
+    const doubleTapMaxDistance = 40;
+    const doubleTapIntervalMs = 320;
+    const swipeMinDistance = 45;
+    const swipeHorizontalRatio = 1.3;
+    const seekSecondsPerPx = 0.12;
+    const maxSeekSeconds = 120;
+
+    const seekPlayerBy = (seconds: number) => {
+      const player = plyrRef.current;
+      if (!player) return;
+
+      const duration = Number(player.duration) || 0;
+      if (duration <= 0) return;
+
+      const currentTime = Number(player.currentTime) || 0;
+      const targetTime = Math.max(
+        0,
+        Math.min(duration - 0.1, currentTime + seconds),
+      );
+
+      if (Math.abs(targetTime - currentTime) < 0.5) return;
+
+      player.currentTime = targetTime;
+      showToast(
+        seconds > 0
+          ? `快进 ${Math.round(Math.abs(seconds))} 秒`
+          : `后退 ${Math.round(Math.abs(seconds))} 秒`,
+        'info',
+      );
+    };
+
+    const handleTouchStart = (event: TouchEvent) => {
+      if (event.touches.length !== 1) {
+        gestureTouchStartRef.current = null;
+        return;
+      }
+
+      const touch = event.touches[0];
+      gestureTouchStartRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        timestamp: Date.now(),
+      };
+    };
+
+    const handleTouchEnd = (event: TouchEvent) => {
+      const start = gestureTouchStartRef.current;
+      gestureTouchStartRef.current = null;
+      if (!start || event.changedTouches.length !== 1) return;
+
+      const touch = event.changedTouches[0];
+      const now = Date.now();
+      const dx = touch.clientX - start.x;
+      const dy = touch.clientY - start.y;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+      const elapsed = now - start.timestamp;
+
+      const isHorizontalSwipe =
+        absDx >= swipeMinDistance && absDx >= absDy * swipeHorizontalRatio;
+      if (isHorizontalSwipe) {
+        const rawSeekSeconds = Math.min(
+          maxSeekSeconds,
+          Math.max(5, absDx * seekSecondsPerPx),
+        );
+        const roundedSeekSeconds = Math.round(rawSeekSeconds / 5) * 5;
+        seekPlayerBy(dx > 0 ? roundedSeekSeconds : -roundedSeekSeconds);
+        lastTapRef.current = null;
+        return;
+      }
+
+      const isTap =
+        absDx <= tapMaxDistance && absDy <= tapMaxDistance && elapsed <= 280;
+      if (!isTap) return;
+
+      const lastTap = lastTapRef.current;
+      if (lastTap && now - lastTap.timestamp <= doubleTapIntervalMs) {
+        const tapDistance = Math.hypot(
+          touch.clientX - lastTap.x,
+          touch.clientY - lastTap.y,
+        );
+
+        if (tapDistance <= doubleTapMaxDistance && plyrRef.current) {
+          plyrRef.current.togglePlay();
+          showToast(plyrRef.current.paused ? '已暂停' : '继续播放', 'info');
+          lastTapRef.current = null;
+          return;
+        }
+      }
+
+      lastTapRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        timestamp: now,
+      };
+    };
+
+    const handleTouchCancel = () => {
+      gestureTouchStartRef.current = null;
+    };
+
+    container.addEventListener('touchstart', handleTouchStart, {
+      passive: true,
+    });
+    container.addEventListener('touchend', handleTouchEnd, { passive: true });
+    container.addEventListener('touchcancel', handleTouchCancel, {
+      passive: true,
+    });
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchend', handleTouchEnd);
+      container.removeEventListener('touchcancel', handleTouchCancel);
+    };
+  }, [loading]);
+
+  // ---------------------------------------------------------------------------
   // 集数切换
   // ---------------------------------------------------------------------------
   // 处理集数切换
@@ -879,13 +1022,44 @@ function PlayPageClient() {
     const controlsEl = container.querySelector<HTMLElement>('.plyr__controls');
     if (!controlsEl) return;
 
+    const markControlsItem = (selector: string, className: string) => {
+      const node = controlsEl.querySelector<HTMLElement>(selector);
+      const item = node?.closest<HTMLElement>('.plyr__controls__item');
+      if (item) {
+        item.classList.add(className);
+      }
+    };
+
+    let prevBtn = controlsEl.querySelector<HTMLButtonElement>(
+      '.plyr__control--prev-episode',
+    );
+    if (!prevBtn) {
+      prevBtn = document.createElement('button');
+      prevBtn.type = 'button';
+      prevBtn.className =
+        'plyr__controls__item plyr__control plyr__control--prev-episode';
+      prevBtn.setAttribute('aria-label', '播放上一集');
+      prevBtn.innerHTML =
+        '<svg width="18" height="18" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 18L7.5 12L16 6V18ZM6 6V18H4V6H6Z" fill="currentColor"/></svg>';
+
+      const playBtn = controlsEl.querySelector<HTMLButtonElement>(
+        '.plyr__control[data-plyr="play"]',
+      );
+      if (playBtn?.parentElement) {
+        playBtn.parentElement.insertBefore(prevBtn, playBtn);
+      } else {
+        controlsEl.prepend(prevBtn);
+      }
+    }
+
     let nextBtn = controlsEl.querySelector<HTMLButtonElement>(
       '.plyr__control--next-episode',
     );
     if (!nextBtn) {
       nextBtn = document.createElement('button');
       nextBtn.type = 'button';
-      nextBtn.className = 'plyr__control plyr__control--next-episode';
+      nextBtn.className =
+        'plyr__controls__item plyr__control plyr__control--next-episode';
       nextBtn.setAttribute('aria-label', '播放下一集');
       nextBtn.innerHTML =
         '<svg width="18" height="18" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" fill="currentColor"/></svg>';
@@ -899,6 +1073,13 @@ function PlayPageClient() {
         controlsEl.prepend(nextBtn);
       }
     }
+
+    prevBtn.onclick = () => {
+      handlePreviousEpisode();
+    };
+    const hasPrev = currentEpisodeIndexRef.current > 0;
+    prevBtn.disabled = !hasPrev;
+    prevBtn.title = hasPrev ? '播放上一集' : '已是第一集';
 
     nextBtn.onclick = () => {
       handleNextEpisode();
@@ -914,6 +1095,33 @@ function PlayPageClient() {
       '.plyr__control[data-plyr="settings"]',
     );
     if (!settingsBtn) return;
+
+    markControlsItem(
+      '.plyr__control[data-plyr="play"]',
+      'quantum-plyr-item-play',
+    );
+    markControlsItem('.plyr__control--prev-episode', 'quantum-plyr-item-prev');
+    markControlsItem('.plyr__control--next-episode', 'quantum-plyr-item-next');
+    markControlsItem('.plyr__time--current', 'quantum-plyr-item-time-current');
+    markControlsItem(
+      '.plyr__time--duration',
+      'quantum-plyr-item-time-duration',
+    );
+    markControlsItem('.plyr__control[data-plyr="mute"]', 'quantum-plyr-item-mute');
+    markControlsItem('.plyr__volume', 'quantum-plyr-item-volume');
+    markControlsItem(
+      '.plyr__control[data-plyr="settings"]',
+      'quantum-plyr-item-settings',
+    );
+    markControlsItem('.plyr__control[data-plyr="pip"]', 'quantum-plyr-item-pip');
+    markControlsItem(
+      '.plyr__control[data-plyr="airplay"]',
+      'quantum-plyr-item-airplay',
+    );
+    markControlsItem(
+      '.plyr__control[data-plyr="fullscreen"]',
+      'quantum-plyr-item-fullscreen',
+    );
 
     if (!settingsBtn.dataset.quantumHooked) {
       settingsBtn.dataset.quantumHooked = 'true';
@@ -1627,7 +1835,7 @@ function PlayPageClient() {
         }
 
         if (cancelled) return;
-        player.poster = videoCover;
+        player.poster = videoCover || '/logo.png';
         setIsVideoLoading(true);
         loadSource(video, videoUrl);
         setTimeout(() => {
