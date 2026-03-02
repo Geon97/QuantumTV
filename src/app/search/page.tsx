@@ -50,6 +50,9 @@ function SearchPageClient() {
   const [totalSources, setTotalSources] = useState(0);
   const [completedSources, setCompletedSources] = useState(0);
   const [useFluidSearch, setUseFluidSearch] = useState(true);
+  const focusScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   // 聚合卡片 refs
   const groupRefs = useRef<
     Map<string, React.RefObject<VideoCardHandle | null>>
@@ -197,6 +200,10 @@ function SearchPageClient() {
     return () => {
       unsubscribe();
       isRunning = false; // 停止 requestAnimationFrame 循环
+      if (focusScrollTimerRef.current) {
+        clearTimeout(focusScrollTimerRef.current);
+        focusScrollTimerRef.current = null;
+      }
 
       // 移除 body 滚动事件监听器
       document.body.removeEventListener('scroll', handleScroll);
@@ -312,6 +319,36 @@ function SearchPageClient() {
   }, [qParam, useFluidSearch]);
   // 组件卸载时，关闭可能存在的连接
   
+  const scrollPageToTop = (behavior: ScrollBehavior = 'auto') => {
+    const options: ScrollToOptions = { top: 0, left: 0, behavior };
+    try {
+      window.scrollTo(options);
+    } catch {}
+    try {
+      document.documentElement.scrollTo(options);
+    } catch {}
+    try {
+      document.body.scrollTo(options);
+    } catch {}
+    if (document.scrollingElement) {
+      document.scrollingElement.scrollTop = 0;
+    }
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  };
+
+  const ensureSearchInputAtTop = () => {
+    scrollPageToTop('auto');
+    if (focusScrollTimerRef.current) {
+      clearTimeout(focusScrollTimerRef.current);
+    }
+    // 软键盘弹起后部分机型会发生二次位移，延迟再矫正一次
+    focusScrollTimerRef.current = setTimeout(() => {
+      scrollPageToTop('auto');
+      focusScrollTimerRef.current = null;
+    }, 120);
+  };
+
   // 输入框内容变化时触发，显示搜索建议
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -326,6 +363,7 @@ function SearchPageClient() {
 
   // 搜索框聚焦时触发，显示搜索建议
   const handleInputFocus = () => {
+    ensureSearchInputAtTop();
     if (searchQuery.trim()) {
       setShowSuggestions(true);
     }
@@ -368,16 +406,7 @@ function SearchPageClient() {
 
   // 返回顶部功能
   const scrollToTop = () => {
-    try {
-      // 根据调试结果，真正的滚动容器是 document.body
-      document.body.scrollTo({
-        top: 0,
-        behavior: 'smooth',
-      });
-    } catch {
-      // 如果平滑滚动完全失败，使用立即滚动
-      document.body.scrollTop = 0;
-    }
+    scrollPageToTop('smooth');
   };
 
   return (
@@ -399,6 +428,7 @@ function SearchPageClient() {
                 value={searchQuery}
                 onChange={handleInputChange}
                 onFocus={handleInputFocus}
+                onClick={ensureSearchInputAtTop}
                 placeholder='搜索电影、电视剧...'
                 autoComplete='off'
                 className='w-full h-12 max-[375px]:h-11 min-[834px]:h-13 min-[1440px]:h-14 rounded-xl bg-gray-50/80 py-3 pl-10 pr-12 text-sm max-[375px]:text-[0.82rem] min-[834px]:text-base text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-400 focus:bg-white border border-gray-200/50 shadow-sm dark:bg-gray-800 dark:text-gray-300 dark:placeholder-gray-500 dark:focus:bg-gray-700 dark:border-gray-700'

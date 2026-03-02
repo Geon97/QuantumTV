@@ -3,7 +3,7 @@
 'use client';
 import { invoke } from '@tauri-apps/api/core';
 import Hls from 'hls.js';
-import { Heart } from 'lucide-react';
+import { FastForward, Heart, Rewind } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import * as Plyr from 'plyr';
 import { Suspense, useEffect, useRef, useState } from 'react';
@@ -93,7 +93,7 @@ function PlayPageClient() {
   const [videoTitle, setVideoTitle] = useState(searchParams.get('title') || '');
   const [videoYear, setVideoYear] = useState(searchParams.get('year') || '');
   const [videoCover, setVideoCover] = useState('');
-  const [videoDoubanId, setVideoDoubanId] = useState(0);
+  const [, setVideoDoubanId] = useState(0);
 
   // 使用 Tauri proxy_image 命令加载封面图片
   const { url: proxiedCoverUrl } = useProxyImage(videoCover);
@@ -201,10 +201,16 @@ function PlayPageClient() {
   const [videoLoadingStage, setVideoLoadingStage] = useState<
     'initing' | 'sourceChanging'
   >('initing');
+  const [swipeSeekOverlay, setSwipeSeekOverlay] = useState<{
+    direction: 'forward' | 'backward';
+    seconds: number;
+    targetTime: number;
+  } | null>(null);
 
   // 播放进度保存相关
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastSaveTimeRef = useRef<number>(0);
+  const swipeSeekOverlayTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const plyrRef = useRef<Plyr | null>(null);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
@@ -215,6 +221,7 @@ function PlayPageClient() {
     y: number;
     timestamp: number;
   } | null>(null);
+  const gestureStartPlayerTimeRef = useRef<number | null>(null);
   const lastTapRef = useRef<{
     x: number;
     y: number;
@@ -401,6 +408,37 @@ function PlayPageClient() {
         .toString()
         .padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
     }
+  };
+
+  const showSwipeSeekOverlay = (
+    direction: 'forward' | 'backward',
+    seconds: number,
+    targetTime: number,
+  ) => {
+    if (swipeSeekOverlayTimerRef.current) {
+      clearTimeout(swipeSeekOverlayTimerRef.current);
+      swipeSeekOverlayTimerRef.current = null;
+    }
+    setSwipeSeekOverlay({
+      direction,
+      seconds: Math.max(1, Math.round(seconds)),
+      targetTime: Math.max(0, targetTime),
+    });
+  };
+
+  const hideSwipeSeekOverlay = (delayMs = 0) => {
+    if (swipeSeekOverlayTimerRef.current) {
+      clearTimeout(swipeSeekOverlayTimerRef.current);
+      swipeSeekOverlayTimerRef.current = null;
+    }
+    if (delayMs <= 0) {
+      setSwipeSeekOverlay(null);
+      return;
+    }
+    swipeSeekOverlayTimerRef.current = setTimeout(() => {
+      setSwipeSeekOverlay(null);
+      swipeSeekOverlayTimerRef.current = null;
+    }, delayMs);
   };
 
   // 使用 Tauri fetch_binary 的 HLS.js Loader（带缓存和预取）
@@ -809,16 +847,26 @@ function PlayPageClient() {
     const doubleTapMaxDistance = 40;
     const doubleTapIntervalMs = 320;
     const swipeMinDistance = 45;
+    const swipePreviewMinDistance = 18;
     const swipeHorizontalRatio = 1.3;
     const seekSecondsPerPx = 0.12;
     const maxSeekSeconds = 120;
+    const seekStepSeconds = 5;
+
+    const calculateSeekSeconds = (distancePx: number) => {
+      const rawSeekSeconds = Math.min(
+        maxSeekSeconds,
+        Math.max(seekStepSeconds, distancePx * seekSecondsPerPx),
+      );
+      return Math.round(rawSeekSeconds / seekStepSeconds) * seekStepSeconds;
+    };
 
     const seekPlayerBy = (seconds: number) => {
       const player = plyrRef.current;
-      if (!player) return;
+      if (!player) return 0;
 
       const duration = Number(player.duration) || 0;
-      if (duration <= 0) return;
+      if (duration <= 0) return 0;
 
       const currentTime = Number(player.currentTime) || 0;
       const targetTime = Math.max(
@@ -826,20 +874,24 @@ function PlayPageClient() {
         Math.min(duration - 0.1, currentTime + seconds),
       );
 
-      if (Math.abs(targetTime - currentTime) < 0.5) return;
+      const actualSeek = targetTime - currentTime;
+      if (Math.abs(actualSeek) < 0.5) return 0;
 
       player.currentTime = targetTime;
       showToast(
-        seconds > 0
-          ? `快进 ${Math.round(Math.abs(seconds))} 秒`
-          : `后退 ${Math.round(Math.abs(seconds))} 秒`,
+        actualSeek > 0
+          ? `快进 ${Math.round(Math.abs(actualSeek))} 秒`
+          : `后退 ${Math.round(Math.abs(actualSeek))} 秒`,
         'info',
       );
+      return actualSeek;
     };
 
     const handleTouchStart = (event: TouchEvent) => {
       if (event.touches.length !== 1) {
         gestureTouchStartRef.current = null;
+        gestureStartPlayerTimeRef.current = null;
+        hideSwipeSeekOverlay();
         return;
       }
 
@@ -849,6 +901,53 @@ function PlayPageClient() {
         y: touch.clientY,
         timestamp: Date.now(),
       };
+      gestureStartPlayerTimeRef.current =
+        Number(plyrRef.current?.currentTime) || 0;
+      hideSwipeSeekOverlay();
+    };
+
+    const handleTouchMove = (event: TouchEvent) => {
+      const start = gestureTouchStartRef.current;
+      if (!start || event.touches.length !== 1) return;
+
+      const touch = event.touches[0];
+      const dx = touch.clientX - start.x;
+      const dy = touch.clientY - start.y;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+
+      const isHorizontalIntent =
+        absDx >= swipePreviewMinDistance && absDx >= absDy * 1.05;
+
+      if (!isHorizontalIntent) {
+        if (absDy > absDx) {
+          hideSwipeSeekOverlay();
+        }
+        return;
+      }
+
+      const player = plyrRef.current;
+      const duration = Number(player?.duration) || 0;
+      const baseTime = gestureStartPlayerTimeRef.current;
+      if (!player || duration <= 0 || baseTime === null) return;
+
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+
+      const signedSeconds = (dx > 0 ? 1 : -1) * calculateSeekSeconds(absDx);
+      const targetTime = Math.max(
+        0,
+        Math.min(duration - 0.1, baseTime + signedSeconds),
+      );
+      const previewSeconds = Math.abs(targetTime - baseTime);
+      if (previewSeconds < 1) return;
+
+      showSwipeSeekOverlay(
+        dx > 0 ? 'forward' : 'backward',
+        previewSeconds,
+        targetTime,
+      );
     };
 
     const handleTouchEnd = (event: TouchEvent) => {
@@ -867,19 +966,60 @@ function PlayPageClient() {
       const isHorizontalSwipe =
         absDx >= swipeMinDistance && absDx >= absDy * swipeHorizontalRatio;
       if (isHorizontalSwipe) {
-        const rawSeekSeconds = Math.min(
-          maxSeekSeconds,
-          Math.max(5, absDx * seekSecondsPerPx),
-        );
-        const roundedSeekSeconds = Math.round(rawSeekSeconds / 5) * 5;
-        seekPlayerBy(dx > 0 ? roundedSeekSeconds : -roundedSeekSeconds);
+        const roundedSeekSeconds = calculateSeekSeconds(absDx);
+        const baseTime = gestureStartPlayerTimeRef.current;
+        const player = plyrRef.current;
+        const duration = Number(player?.duration) || 0;
+        if (player && duration > 0 && baseTime !== null) {
+          const signedSeconds = (dx > 0 ? 1 : -1) * roundedSeekSeconds;
+          const targetTime = Math.max(
+            0,
+            Math.min(duration - 0.1, baseTime + signedSeconds),
+          );
+          const actualSeek = targetTime - (Number(player.currentTime) || 0);
+          if (Math.abs(actualSeek) >= 0.5) {
+            player.currentTime = targetTime;
+            showToast(
+              actualSeek > 0
+                ? `快进 ${Math.round(Math.abs(actualSeek))} 秒`
+                : `后退 ${Math.round(Math.abs(actualSeek))} 秒`,
+              'info',
+            );
+          }
+          showSwipeSeekOverlay(
+            dx > 0 ? 'forward' : 'backward',
+            Math.abs(targetTime - baseTime),
+            targetTime,
+          );
+          hideSwipeSeekOverlay(520);
+        } else {
+          const actualSeek = seekPlayerBy(
+            dx > 0 ? roundedSeekSeconds : -roundedSeekSeconds,
+          );
+          if (Math.abs(actualSeek) >= 0.5) {
+            const currentTime = Number(plyrRef.current?.currentTime) || 0;
+            showSwipeSeekOverlay(
+              dx > 0 ? 'forward' : 'backward',
+              Math.abs(actualSeek),
+              currentTime,
+            );
+            hideSwipeSeekOverlay(520);
+          } else {
+            hideSwipeSeekOverlay();
+          }
+        }
+        gestureStartPlayerTimeRef.current = null;
         lastTapRef.current = null;
         return;
       }
 
       const isTap =
         absDx <= tapMaxDistance && absDy <= tapMaxDistance && elapsed <= 280;
-      if (!isTap) return;
+      if (!isTap) {
+        gestureStartPlayerTimeRef.current = null;
+        hideSwipeSeekOverlay();
+        return;
+      }
 
       const lastTap = lastTapRef.current;
       if (lastTap && now - lastTap.timestamp <= doubleTapIntervalMs) {
@@ -892,6 +1032,8 @@ function PlayPageClient() {
           plyrRef.current.togglePlay();
           showToast(plyrRef.current.paused ? '已暂停' : '继续播放', 'info');
           lastTapRef.current = null;
+          gestureStartPlayerTimeRef.current = null;
+          hideSwipeSeekOverlay();
           return;
         }
       }
@@ -901,14 +1043,21 @@ function PlayPageClient() {
         y: touch.clientY,
         timestamp: now,
       };
+      gestureStartPlayerTimeRef.current = null;
+      hideSwipeSeekOverlay();
     };
 
     const handleTouchCancel = () => {
       gestureTouchStartRef.current = null;
+      gestureStartPlayerTimeRef.current = null;
+      hideSwipeSeekOverlay();
     };
 
     container.addEventListener('touchstart', handleTouchStart, {
       passive: true,
+    });
+    container.addEventListener('touchmove', handleTouchMove, {
+      passive: false,
     });
     container.addEventListener('touchend', handleTouchEnd, { passive: true });
     container.addEventListener('touchcancel', handleTouchCancel, {
@@ -917,8 +1066,11 @@ function PlayPageClient() {
 
     return () => {
       container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
       container.removeEventListener('touchend', handleTouchEnd);
       container.removeEventListener('touchcancel', handleTouchCancel);
+      gestureStartPlayerTimeRef.current = null;
+      hideSwipeSeekOverlay();
     };
   }, [loading]);
 
@@ -1883,6 +2035,10 @@ function PlayPageClient() {
       if (saveIntervalRef.current) {
         clearInterval(saveIntervalRef.current);
       }
+      if (swipeSeekOverlayTimerRef.current) {
+        clearTimeout(swipeSeekOverlayTimerRef.current);
+        swipeSeekOverlayTimerRef.current = null;
+      }
 
       // 释放 Wake Lock
       releaseWakeLock();
@@ -2199,6 +2355,29 @@ function PlayPageClient() {
                           ? '切换播放源...'
                           : '正在加载视频...'}
                       </span>
+                    </div>
+                  </div>
+                )}
+
+                {swipeSeekOverlay && (
+                  <div className='absolute inset-0 z-40 pointer-events-none flex items-center justify-center'>
+                    <div className='flex min-w-[10rem] max-w-[85%] flex-col items-center gap-1.5 rounded-2xl border border-white/20 bg-black/65 px-4 py-3 text-white shadow-xl backdrop-blur-md'>
+                      <div className='flex items-center gap-2'>
+                        {swipeSeekOverlay.direction === 'forward' ? (
+                          <FastForward className='h-5 w-5 text-green-300' />
+                        ) : (
+                          <Rewind className='h-5 w-5 text-orange-300' />
+                        )}
+                        <span className='text-sm font-semibold sm:text-base'>
+                          {swipeSeekOverlay.direction === 'forward'
+                            ? '快进'
+                            : '快退'}{' '}
+                          {Math.round(swipeSeekOverlay.seconds)} 秒
+                        </span>
+                      </div>
+                      <div className='text-[11px] text-white/80 sm:text-xs'>
+                        目标时间 {formatTime(swipeSeekOverlay.targetTime)}
+                      </div>
                     </div>
                   </div>
                 )}
