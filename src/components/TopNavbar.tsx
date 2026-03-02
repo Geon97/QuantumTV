@@ -2,7 +2,14 @@
 
 import { Cat, Clover, Film, Home, Search, Sparkles, Tv } from 'lucide-react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { memo, Suspense, useCallback, useMemo } from 'react';
+import {
+  memo,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 import FastLink from './FastLink';
 import { useSite } from './SiteProvider';
@@ -55,14 +62,38 @@ const NAV_ITEMS = [
 function NavItems() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [hydrated, setHydrated] = useState(false);
 
-  const currentType = useMemo(() => searchParams.get('type'), [searchParams]);
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
-  const isActive = useCallback((href: string) => pathname === href, [pathname]);
+  const normalizePath = useCallback((input: string | null | undefined) => {
+    if (!input) return '/';
+    const pathOnly = input.split('?')[0] || '/';
+    if (pathOnly === '/') return '/';
+    return pathOnly.endsWith('/') ? pathOnly.slice(0, -1) || '/' : pathOnly;
+  }, []);
+
+  const normalizedPathname = useMemo(
+    () => normalizePath(pathname),
+    [pathname, normalizePath],
+  );
+
+  const currentType = useMemo(
+    () => (searchParams.get('type') || '').toLowerCase(),
+    [searchParams],
+  );
+
+  const isActive = useCallback(
+    (href: string) => normalizedPathname === normalizePath(href),
+    [normalizedPathname, normalizePath],
+  );
 
   const isDoubanActive = useCallback(
-    (type: string) => pathname.startsWith('/douban') && currentType === type,
-    [pathname, currentType],
+    (type: string) =>
+      normalizedPathname === '/douban' && currentType === type.toLowerCase(),
+    [normalizedPathname, currentType],
   );
 
   return (
@@ -70,9 +101,10 @@ function NavItems() {
       {NAV_ITEMS.map((item) => {
         const Icon = item.icon;
         const active =
-          item.type === 'douban' && item.doubanType
+          hydrated &&
+          (item.type === 'douban' && item.doubanType
             ? isDoubanActive(item.doubanType)
-            : isActive(item.href);
+            : isActive(item.href));
 
         return (
           <FastLink
