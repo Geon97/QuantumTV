@@ -49,14 +49,14 @@ pub struct ContinueWatchingItem {
     pub title: String,
     pub source_name: String,
     pub year: String,
-    pub cover: String,
+    pub poster: String,
     pub progress: f64,
-    pub episode_index: i32,
-    pub total_episodes: i32,
-    pub play_time: i32,
-    pub total_time: i32,
-    pub save_time: i32,
-    pub search_title: String,
+    pub episodes: i32,
+    #[serde(rename = "currentEpisode")]
+    pub current_episode: i32,
+    pub query: String,
+    #[serde(rename = "type")]
+    pub video_type: String,
 }
 
 #[derive(Debug, Clone)]
@@ -75,6 +75,21 @@ struct FavoriteRecord {
 struct PlayRecordMeta {
     key: String,
     episode_index: i32,
+}
+
+#[derive(Debug, Clone)]
+struct ContinueWatchingRecord {
+    key: String,
+    title: String,
+    source_name: String,
+    year: String,
+    cover: String,
+    episode_index: i32,
+    total_episodes: i32,
+    play_time: i32,
+    total_time: i32,
+    save_time: i32,
+    search_title: String,
 }
 
 fn split_storage_key(key: &str) -> (String, String) {
@@ -115,9 +130,39 @@ fn build_favorite_cards(
         .collect()
 }
 
-fn sort_continue_watching(mut records: Vec<ContinueWatchingItem>) -> Vec<ContinueWatchingItem> {
+fn sort_continue_watching(
+    mut records: Vec<ContinueWatchingRecord>,
+) -> Vec<ContinueWatchingRecord> {
     records.sort_by(|a, b| b.save_time.cmp(&a.save_time));
     records
+}
+
+fn to_continue_watching_item(record: ContinueWatchingRecord) -> ContinueWatchingItem {
+    let (source, id) = split_storage_key(&record.key);
+    let progress = if record.total_time > 0 {
+        (record.play_time as f64 / record.total_time as f64 * 100.0).clamp(0.0, 100.0)
+    } else {
+        0.0
+    };
+
+    ContinueWatchingItem {
+        key: record.key,
+        source,
+        id,
+        title: record.title,
+        source_name: record.source_name,
+        year: record.year,
+        poster: record.cover,
+        progress,
+        episodes: record.total_episodes,
+        current_episode: record.episode_index,
+        query: record.search_title,
+        video_type: if record.total_episodes > 1 {
+            "tv".to_string()
+        } else {
+            String::new()
+        },
+    }
 }
 
 fn select_bangumi_for_weekday(calendar: &[BangumiCalendarData], weekday_en: &str) -> Vec<Items> {
@@ -297,37 +342,27 @@ pub fn get_continue_watching(db: State<'_, Db>) -> Result<Vec<ContinueWatchingIt
             "SELECT key, title, source_name, year, cover, episode_index, total_episodes, play_time, total_time, save_time, search_title FROM play_records",
         )?;
         let rows = stmt.query_map([], |row| {
-            let key: String = row.get(0)?;
-            let (source, id) = split_storage_key(&key);
-            let play_time: i32 = row.get(7)?;
-            let total_time: i32 = row.get(8)?;
-            let progress = if total_time > 0 {
-                (play_time as f64 / total_time as f64 * 100.0).clamp(0.0, 100.0)
-            } else {
-                0.0
-            };
-
-            Ok(ContinueWatchingItem {
-                key,
-                source,
-                id,
+            Ok(ContinueWatchingRecord {
+                key: row.get(0)?,
                 title: row.get(1)?,
                 source_name: row.get(2)?,
                 year: row.get(3)?,
                 cover: row.get(4)?,
-                progress,
                 episode_index: row.get(5)?,
                 total_episodes: row.get(6)?,
-                play_time,
-                total_time,
+                play_time: row.get(7)?,
+                total_time: row.get(8)?,
                 save_time: row.get(9)?,
                 search_title: row.get(10)?,
             })
         })?;
-        rows.collect::<Result<Vec<ContinueWatchingItem>, _>>()
+        rows.collect::<Result<Vec<ContinueWatchingRecord>, _>>()
     })?;
 
-    Ok(sort_continue_watching(records))
+    Ok(sort_continue_watching(records)
+        .into_iter()
+        .map(to_continue_watching_item)
+        .collect())
 }
 
 #[cfg(test)]
@@ -383,15 +418,12 @@ mod tests {
     #[test]
     fn sort_continue_watching_orders_desc() {
         let records = vec![
-            ContinueWatchingItem {
+            ContinueWatchingRecord {
                 key: "k1".to_string(),
-                source: "s1".to_string(),
-                id: "id1".to_string(),
                 title: "A".to_string(),
                 source_name: "S".to_string(),
                 year: "2020".to_string(),
                 cover: "c1".to_string(),
-                progress: 10.0,
                 episode_index: 1,
                 total_episodes: 10,
                 play_time: 10,
@@ -399,15 +431,12 @@ mod tests {
                 save_time: 1,
                 search_title: "A".to_string(),
             },
-            ContinueWatchingItem {
+            ContinueWatchingRecord {
                 key: "k2".to_string(),
-                source: "s2".to_string(),
-                id: "id2".to_string(),
                 title: "B".to_string(),
                 source_name: "S".to_string(),
                 year: "2021".to_string(),
                 cover: "c2".to_string(),
-                progress: 20.0,
                 episode_index: 2,
                 total_episodes: 2,
                 play_time: 20,
@@ -420,6 +449,33 @@ mod tests {
         let sorted = sort_continue_watching(records);
         assert_eq!(sorted[0].key, "k2");
         assert_eq!(sorted[1].key, "k1");
+    }
+
+    #[test]
+    fn to_continue_watching_item_maps_display_fields() {
+        let record = ContinueWatchingRecord {
+            key: "src+abc".to_string(),
+            title: "Demo".to_string(),
+            source_name: "Source".to_string(),
+            year: "2024".to_string(),
+            cover: "poster.png".to_string(),
+            episode_index: 3,
+            total_episodes: 12,
+            play_time: 50,
+            total_time: 100,
+            save_time: 9,
+            search_title: "demo".to_string(),
+        };
+
+        let item = to_continue_watching_item(record);
+        assert_eq!(item.source, "src");
+        assert_eq!(item.id, "abc");
+        assert_eq!(item.poster, "poster.png");
+        assert_eq!(item.episodes, 12);
+        assert_eq!(item.current_episode, 3);
+        assert_eq!(item.query, "demo");
+        assert_eq!(item.video_type, "tv");
+        assert!((item.progress - 50.0).abs() < f64::EPSILON);
     }
 
     #[test]

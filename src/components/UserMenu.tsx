@@ -33,29 +33,20 @@ interface VersionCheckResult {
   error?: string;
 }
 
-// 获取当前版本
-async function getCurrentVersion(): Promise<string> {
-  // 调用 Rust 后端的 get_current_version 函数
-  try {
-    return await invoke('get_current_version');
-  } catch (error) {
-    console.warn('获取当前版本失败:', error);
-    return '0.0.0'; // 默认版本
-  }
-}
-
-// 检查更新
-async function checkForUpdates(): Promise<VersionCheckResult> {
-  try {
-    // 调用 Rust 后端的 check_for_updates 函数
-    return await invoke('check_for_updates');
-  } catch (error) {
-    console.warn('版本检查失败:', error);
-    return {
-      status: UpdateStatus.FETCH_FAILED,
-      error: error instanceof Error ? error.message : '未知错误',
-    };
-  }
+interface SettingsBootstrapResponse {
+  userPreferences: {
+    disable_yellow_filter: boolean;
+    douban_data_source: string;
+    douban_proxy_url: string;
+    douban_image_proxy_type: string;
+    douban_image_proxy_url: string;
+    enable_optimization: boolean;
+    fluid_search: boolean;
+    player_buffer_mode: string;
+  };
+  currentVersion: string;
+  versionCheck: VersionCheckResult;
+  pageCacheStats: CacheStats;
 }
 
 export const UserMenu: React.FC = () => {
@@ -150,21 +141,14 @@ export const UserMenu: React.FC = () => {
     setMounted(true);
   }, []);
 
-  // 从 Rust 读取用户偏好配置
   useEffect(() => {
-    const loadUserPreferences = async () => {
+    const loadSettingsBootstrap = async () => {
       try {
-        const prefs = await invoke<{
-          disable_yellow_filter: boolean;
-          douban_data_source: string;
-          douban_proxy_url: string;
-          douban_image_proxy_type: string;
-          douban_image_proxy_url: string;
-          enable_optimization: boolean;
-          fluid_search: boolean;
-          player_buffer_mode: string;
-        }>('get_user_preferences');
+        const bootstrap = await invoke<SettingsBootstrapResponse>(
+          'get_settings_bootstrap',
+        );
 
+        const prefs = bootstrap.userPreferences;
         setDoubanDataSource(prefs.douban_data_source);
         setDoubanProxyUrl(prefs.douban_proxy_url);
         setDoubanImageProxyType(prefs.douban_image_proxy_type);
@@ -182,49 +166,26 @@ export const UserMenu: React.FC = () => {
           ? (prefs.player_buffer_mode as 'standard' | 'enhanced' | 'max')
           : 'standard';
         setPlayerBufferMode(bufferMode);
-      } catch (error) {
-        console.error('读取用户偏好配置失败:', error);
-        // 使用默认值
-      }
-    };
 
-    if (typeof window !== 'undefined') {
-      loadUserPreferences();
-    }
-  }, []);
-
-  // 获取当前版本
-  useEffect(() => {
-    const getVersion = async () => {
-      try {
-        const version = await getCurrentVersion();
-        setCurrentVersion(version);
-      } catch (error) {
-        console.warn('获取当前版本失败:', error);
-      }
-    };
-
-    getVersion();
-  }, []);
-
-  // 版本检查
-  useEffect(() => {
-    const checkUpdate = async () => {
-      try {
-        const result = await checkForUpdates();
+        setCurrentVersion(bootstrap.currentVersion);
         setUpdateStatus({
-          status: result.status,
-          localTimestamp: result.local_timestamp,
-          remoteTimestamp: result.remote_timestamp,
+          status: bootstrap.versionCheck.status,
+          localTimestamp: bootstrap.versionCheck.local_timestamp,
+          remoteTimestamp: bootstrap.versionCheck.remote_timestamp,
         });
+        setCacheStats(bootstrap.pageCacheStats);
       } catch (error) {
-        console.warn('版本检查失败:', error);
+        console.error('读取设置引导数据失败:', error);
       } finally {
         setIsChecking(false);
       }
     };
 
-    checkUpdate();
+    if (typeof window !== 'undefined') {
+      loadSettingsBootstrap();
+    } else {
+      setIsChecking(false);
+    }
   }, []);
 
   // 点击外部区域关闭下拉框

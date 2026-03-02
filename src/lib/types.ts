@@ -257,21 +257,19 @@ export interface RustFavorite {
   search_title: string;
 }
 
-export interface RustPlayRecord {
+export interface ContinueWatchingCard {
   key: string;
   source: string;
   id: string;
   title: string;
   source_name: string;
   year: string;
-  cover: string;
+  poster: string;
   progress: number;
-  episode_index: number;
-  total_episodes: number;
-  play_time: number;
-  total_time: number;
-  save_time: number;
-  search_title: string;
+  episodes: number;
+  currentEpisode: number;
+  query: string;
+  type: string;
 }
 
 export interface BangumiItem {

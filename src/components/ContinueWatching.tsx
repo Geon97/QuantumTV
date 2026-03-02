@@ -4,7 +4,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useEffect, useState } from 'react';
 
-import { RustPlayRecord } from '@/lib/types';
+import { ContinueWatchingCard } from '@/lib/types';
 import { getRailItemClass } from '@/lib/ui-layout';
 import { subscribeToDataUpdates } from '@/lib/utils';
 
@@ -16,7 +16,7 @@ interface ContinueWatchingProps {
 }
 
 export default function ContinueWatching({ className }: ContinueWatchingProps) {
-  const [playRecords, setPlayRecords] = useState<RustPlayRecord[]>([]);
+  const [playRecords, setPlayRecords] = useState<ContinueWatchingCard[]>([]);
   const [loading, setLoading] = useState(true);
 
   // 处理播放记录数据更新的函数
@@ -27,7 +27,7 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
         setLoading(true);
 
         // 从 Rust 获取所有播放记录
-        const allRecords = await invoke<RustPlayRecord[]>(
+        const allRecords = await invoke<ContinueWatchingCard[]>(
           'get_continue_watching',
         );
         setPlayRecords(allRecords);
@@ -46,7 +46,7 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
       'playRecordsUpdated',
       async () => {
         try {
-          const allRecords = await invoke<RustPlayRecord[]>(
+          const allRecords = await invoke<ContinueWatchingCard[]>(
             'get_continue_watching',
           );
           setPlayRecords(allRecords);
@@ -98,26 +98,17 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
             ))
           : // 显示真实数据
             playRecords.map((record) => {
+              const { key: recordKey, ...cardProps } = record;
               return (
-                <div key={record.key} className={getRailItemClass('default')}>
+                <div key={recordKey} className={getRailItemClass('default')}>
                   <VideoCard
-                    id={record.id}
-                    title={record.title}
-                    poster={record.cover}
-                    year={record.year}
-                    source={record.source}
-                    source_name={record.source_name}
-                    progress={record.progress}
-                    episodes={record.total_episodes}
-                    currentEpisode={record.episode_index}
-                    query={record.search_title}
+                    {...cardProps}
                     from='playrecord'
                     onDelete={() =>
                       setPlayRecords((prev) =>
-                        prev.filter((r) => r.key !== record.key),
+                        prev.filter((r) => r.key !== recordKey),
                       )
                     }
-                    type={record.total_episodes > 1 ? 'tv' : ''}
                   />
                 </div>
               );
