@@ -190,6 +190,14 @@ export interface SearchPageBootstrap {
 /** 跳过动作*/
 export type SkipAction = 'None' | { SkipIntro: number } | 'SkipOutro';
 
+export interface PlayerTickDecision {
+  shouldSaveProgress: boolean;
+  nextLastSaveAtMs: number;
+  nextLastSkipCheckAtMs: number;
+  skipAction: SkipAction | null;
+  didPreload: boolean;
+}
+
 // 豆瓣数据结构
 export interface DoubanItem {
   id: string;
@@ -285,6 +293,13 @@ export interface HomePageData {
   hotTvShows: DoubanItem[];
   hotVarietyShows: DoubanItem[];
   todayBangumi: BangumiItem[];
+}
+
+export interface HomeBootstrapResponse {
+  resolvedWeekday: string;
+  homeData: HomePageData;
+  hasSeenAnnouncement: string;
+  shouldShowAnnouncement: boolean;
 }
 
 export interface FavoriteCard {

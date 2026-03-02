@@ -1,9 +1,12 @@
-use crate::commands::bangumi::get_bangumi_calendar_data;
+﻿use crate::commands::bangumi::get_bangumi_calendar_data;
 use crate::db::page_cache::PageCacheManager;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::{collections::{BTreeMap, HashMap}, error::Error};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    collections::{BTreeMap, HashMap},
+    error::Error,
+};
 use url::form_urlencoded;
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "lowercase")] // 不区分大小写
@@ -164,6 +167,33 @@ enum DoubanPageMode {
     Recommends,
     Custom,
     AnimeDaily,
+}
+
+const ANIME_DAILY_SELECTION: &str = "每日放送";
+const ANIME_SERIES_SELECTION: &str = "番剧";
+const ANIME_THEATRICAL_SELECTION: &str = "剧场版";
+const ANIME_LEGACY_SERIES_SELECTION: &str = "热门";
+const ALL_SELECTION: &str = "全部";
+
+fn is_anime_daily_selection(value: &str) -> bool {
+    value.trim() == ANIME_DAILY_SELECTION
+}
+
+fn anime_selection_prefers_tv(value: &str) -> bool {
+    let normalized = value.trim();
+    normalized == ANIME_SERIES_SELECTION
+        || normalized == ANIME_LEGACY_SERIES_SELECTION
+        || normalized == ALL_SELECTION
+        || normalized.eq_ignore_ascii_case("tv")
+}
+
+fn is_anime_theatrical_selection(value: &str) -> bool {
+    let normalized = value.trim();
+    normalized == ANIME_THEATRICAL_SELECTION || normalized.eq_ignore_ascii_case("movie")
+}
+
+fn should_prefer_list_api_for_recommends(request: &DoubanPageRequest) -> bool {
+    request.request_type == "anime" && is_anime_theatrical_selection(&request.primary_selection)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -443,10 +473,7 @@ async fn fetch_douban_categories(
         params.type_
     );
     let client_builder = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30)) // 30秒超时
-        .connect_timeout(std::time::Duration::from_secs(10)) // 10秒连接超时
-        .pool_max_idle_per_host(10) // 连接池优化
-        .pool_idle_timeout(std::time::Duration::from_secs(90))
+        .timeout(std::time::Duration::from_secs(30)) // 30秒超时        .connect_timeout(std::time::Duration::from_secs(10)) // 10绉掕繛鎺ヨ秴鏃?        .pool_max_idle_per_host(10) // 杩炴帴姹犱紭鍖?        .pool_idle_timeout(std::time::Duration::from_secs(90))
         .tcp_keepalive(std::time::Duration::from_secs(60))
         .http1_only()
         .no_gzip()
@@ -591,9 +618,10 @@ async fn fetch_douban_recommends(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("unknown")
         .to_string();
-    let douban_data: DoubanRecommendApiResponse = response.json().await.map_err(|e| {
-        format!("JSON parse error (ce={content_encoding}, ct={content_type}): {e}")
-    })?;
+    let douban_data: DoubanRecommendApiResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("JSON parse error (ce={content_encoding}, ct={content_type}): {e}"))?;
     let list = douban_data
         .items
         .unwrap_or_default()
@@ -803,9 +831,10 @@ pub async fn fetch_douban_list(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("unknown")
         .to_string();
-    let douban_data: DoubanListApiResponse = response.json().await.map_err(|e| {
-        format!("JSON parse error (ce={content_encoding}, ct={content_type}): {e}")
-    })?;
+    let douban_data: DoubanListApiResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("JSON parse error (ce={content_encoding}, ct={content_type}): {e}"))?;
 
     // 正则提取年份
     let year_re = Regex::new(r"(\d{4})").unwrap();
@@ -918,7 +947,7 @@ fn resolve_douban_page_mode(request: &DoubanPageRequest) -> DoubanPageMode {
     }
 
     if request.request_type == "anime" {
-        if request.primary_selection == "每日发送" {
+        if is_anime_daily_selection(&request.primary_selection) {
             return DoubanPageMode::AnimeDaily;
         }
         return DoubanPageMode::Recommends;
@@ -1014,7 +1043,7 @@ fn resolve_douban_defaults(
             require_secondary: true,
         },
         "anime" => DoubanDefaultsResponse {
-            primary_selection: "每日发送".to_string(),
+            primary_selection: ANIME_DAILY_SELECTION.to_string(),
             secondary_selection: "全部".to_string(),
             multi_level_selection,
             cache_enabled: true,
@@ -1053,10 +1082,7 @@ fn resolve_selected_weekday(selected: Option<&str>) -> String {
         .unwrap_or_else(|| current_weekday_en().to_string())
 }
 
-fn extract_multi_value(
-    selection: Option<&HashMap<String, String>>,
-    key: &str,
-) -> String {
+fn extract_multi_value(selection: Option<&HashMap<String, String>>, key: &str) -> String {
     selection
         .and_then(|map| map.get(key))
         .cloned()
@@ -1077,6 +1103,14 @@ fn is_body_decode_error(message: &str) -> bool {
         .contains("decoding response body")
 }
 
+fn is_retryable_douban_error(message: &str) -> bool {
+    let msg = message.to_ascii_lowercase();
+    msg.contains("decoding response body")
+        || msg.contains("json parse error")
+        || msg.contains("request failed")
+        || msg.contains("network request failed")
+}
+
 fn build_recommends_fallback_list_params(
     request: &DoubanPageRequest,
     page_limit: i32,
@@ -1085,6 +1119,12 @@ fn build_recommends_fallback_list_params(
     let request_type = request.request_type.as_str();
     let content_type = if request_type == "movie" {
         "movie"
+    } else if request_type == "anime" {
+        if anime_selection_prefers_tv(&request.primary_selection) {
+            "tv"
+        } else {
+            "movie"
+        }
     } else {
         "tv"
     };
@@ -1172,8 +1212,14 @@ fn is_all_secondary_selection(request_type: &str, value: &str) -> bool {
 }
 
 fn should_cache_douban_request(request: &DoubanPageRequest) -> bool {
-    if request.request_type == "custom" || request.request_type == "anime" {
+    if request.request_type == "custom" {
         return false;
+    }
+
+    if request.request_type == "anime" {
+        // 每日放送来自 Bangumi 日历，实时性更强，不缓存；
+        // 番剧/剧场版走豆瓣接口，开启缓存提升重复进入速度。
+        return !is_anime_daily_selection(&request.primary_selection);
     }
 
     let defaults = resolve_douban_defaults(&request.request_type, None, None);
@@ -1279,8 +1325,10 @@ fn build_recommends_params(
     };
 
     let (kind, format) = if request.request_type == "anime" {
-        if request.primary_selection == "热门" {
+        if anime_selection_prefers_tv(&request.primary_selection) {
             (Kind::Tv, "电视剧".to_string())
+        } else if is_anime_theatrical_selection(&request.primary_selection) {
+            (Kind::Movie, String::new())
         } else {
             (Kind::Movie, String::new())
         }
@@ -1367,44 +1415,91 @@ async fn get_douban_page_data_cached(
     }
 
     let mode = resolve_douban_page_mode(&request);
-    let list = match mode {
-        DoubanPageMode::Custom => {
-            let params = DoubanListParams {
-                tag: request.secondary_selection.clone(),
-                type_: request.primary_selection.clone(),
-                page_limit: Some(page_limit),
-                page_start: Some(page_start),
-            };
-            ensure_success(get_douban_list(params).await?)?
-        }
-        DoubanPageMode::AnimeDaily => {
-            if page > 0 {
-                Vec::new()
-            } else {
-                let weekday = resolve_selected_weekday(request.selected_weekday.as_deref());
-                let data = get_bangumi_calendar_data().await?;
-                build_bangumi_daily_list(data, &weekday)?
+    let mut attempts = 0;
+    let max_attempts = if should_prefer_list_api_for_recommends(&request) {
+        1
+    } else if request.request_type == "anime" {
+        2
+    } else {
+        3
+    };
+    let list = loop {
+        attempts += 1;
+        let result: Result<Vec<DoubanItem>, String> = match mode {
+            DoubanPageMode::Custom => {
+                let params = DoubanListParams {
+                    tag: request.secondary_selection.clone(),
+                    type_: request.primary_selection.clone(),
+                    page_limit: Some(page_limit),
+                    page_start: Some(page_start),
+                };
+                ensure_success(get_douban_list(params).await?)
             }
-        }
-        DoubanPageMode::Recommends => {
-            let params = build_recommends_params(&request, page_limit, page_start);
-            match get_douban_recommends(params).await {
-                Ok(result) => ensure_success(result)?,
-                Err(err) => {
-                    if !is_body_decode_error(&err) {
-                        return Err(err);
-                    }
-
-                    let fallback_params =
-                        build_recommends_fallback_list_params(&request, page_limit, page_start);
-                    ensure_success(get_douban_list(fallback_params).await?)
-                        .map_err(|fallback_err| format!("{err}; fallback failed: {fallback_err}"))?
+            DoubanPageMode::AnimeDaily => {
+                if page > 0 {
+                    Ok(Vec::new())
+                } else {
+                    let weekday = resolve_selected_weekday(request.selected_weekday.as_deref());
+                    let data = get_bangumi_calendar_data().await?;
+                    build_bangumi_daily_list(data, &weekday)
                 }
             }
-        }
-        DoubanPageMode::Categories => {
-            let params = build_categories_params(&request, page_limit, page_start);
-            ensure_success(get_douban_categories(params).await?)?
+            DoubanPageMode::Recommends => {
+                if should_prefer_list_api_for_recommends(&request) {
+                    let primary_params =
+                        build_recommends_fallback_list_params(&request, page_limit, page_start);
+                    match get_douban_list(primary_params).await {
+                        Ok(result) => ensure_success(result),
+                        Err(err) => {
+                            if !is_body_decode_error(&err) {
+                                Err(err)
+                            } else {
+                                let fallback_params =
+                                    build_recommends_params(&request, page_limit, page_start);
+                                ensure_success(get_douban_recommends(fallback_params).await?)
+                                    .map_err(|fallback_err| {
+                                        format!("{err}; fallback failed: {fallback_err}")
+                                    })
+                            }
+                        }
+                    }
+                } else {
+                    let params = build_recommends_params(&request, page_limit, page_start);
+                    match get_douban_recommends(params).await {
+                        Ok(result) => ensure_success(result),
+                        Err(err) => {
+                            if !is_body_decode_error(&err) {
+                                Err(err)
+                            } else {
+                                let fallback_params = build_recommends_fallback_list_params(
+                                    &request, page_limit, page_start,
+                                );
+                                ensure_success(get_douban_list(fallback_params).await?)
+                                    .map_err(|fallback_err| {
+                                        format!("{err}; fallback failed: {fallback_err}")
+                                    })
+                            }
+                        }
+                    }
+                }
+            }
+            DoubanPageMode::Categories => {
+                let params = build_categories_params(&request, page_limit, page_start);
+                ensure_success(get_douban_categories(params).await?)
+            }
+        };
+
+        match result {
+            Ok(items) => break items,
+            Err(err) => {
+                if attempts >= max_attempts || !is_retryable_douban_error(&err) {
+                    return Err(err);
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    120 * attempts as u64,
+                ))
+                .await;
+            }
         }
     };
 
@@ -1460,7 +1555,7 @@ mod tests {
     fn resolve_douban_page_mode_anime_daily() {
         let request = DoubanPageRequest {
             request_type: "anime".to_string(),
-            primary_selection: "每日发送".to_string(),
+            primary_selection: ANIME_DAILY_SELECTION.to_string(),
             secondary_selection: "全部".to_string(),
             multi_level_selection: None,
             selected_weekday: None,
@@ -1504,7 +1599,10 @@ mod tests {
             page_limit: Some(25),
         };
 
-        assert_eq!(resolve_douban_page_mode(&request), DoubanPageMode::Categories);
+        assert_eq!(
+            resolve_douban_page_mode(&request),
+            DoubanPageMode::Categories
+        );
     }
 
     #[test]
@@ -1525,6 +1623,105 @@ mod tests {
     }
 
     #[test]
+    fn resolve_douban_page_mode_anime_non_daily_is_recommends() {
+        let request = DoubanPageRequest {
+            request_type: "anime".to_string(),
+            primary_selection: ANIME_SERIES_SELECTION.to_string(),
+            secondary_selection: "全部".to_string(),
+            multi_level_selection: None,
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+
+        assert_eq!(
+            resolve_douban_page_mode(&request),
+            DoubanPageMode::Recommends
+        );
+    }
+
+    #[test]
+    fn build_recommends_params_for_anime_series_uses_tv_format() {
+        let request = DoubanPageRequest {
+            request_type: "anime".to_string(),
+            primary_selection: ANIME_SERIES_SELECTION.to_string(),
+            secondary_selection: "全部".to_string(),
+            multi_level_selection: None,
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+        let params = build_recommends_params(&request, 25, 0);
+
+        assert_eq!(params.kind, Kind::Tv);
+        assert_eq!(params.format, "电视剧");
+        assert_eq!(params.category, "动画");
+    }
+
+    #[test]
+    fn build_recommends_params_for_anime_theatrical_uses_movie_format() {
+        let request = DoubanPageRequest {
+            request_type: "anime".to_string(),
+            primary_selection: ANIME_THEATRICAL_SELECTION.to_string(),
+            secondary_selection: "全部".to_string(),
+            multi_level_selection: None,
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+        let params = build_recommends_params(&request, 25, 0);
+
+        assert_eq!(params.kind, Kind::Movie);
+        assert_eq!(params.format, "");
+        assert_eq!(params.category, "动画");
+    }
+
+    #[test]
+    fn build_recommends_fallback_list_params_anime_theatrical_uses_movie_type() {
+        let request = DoubanPageRequest {
+            request_type: "anime".to_string(),
+            primary_selection: ANIME_THEATRICAL_SELECTION.to_string(),
+            secondary_selection: "全部".to_string(),
+            multi_level_selection: None,
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+
+        let params = build_recommends_fallback_list_params(&request, 25, 0);
+        assert_eq!(params.type_, "movie");
+        assert_eq!(params.tag, "动画");
+    }
+
+    #[test]
+    fn should_prefer_list_api_for_recommends_anime_theatrical() {
+        let request = DoubanPageRequest {
+            request_type: "anime".to_string(),
+            primary_selection: ANIME_THEATRICAL_SELECTION.to_string(),
+            secondary_selection: "全部".to_string(),
+            multi_level_selection: None,
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+        assert!(should_prefer_list_api_for_recommends(&request));
+    }
+
+    #[test]
+    fn should_not_prefer_list_api_for_recommends_anime_series() {
+        let request = DoubanPageRequest {
+            request_type: "anime".to_string(),
+            primary_selection: ANIME_SERIES_SELECTION.to_string(),
+            secondary_selection: "全部".to_string(),
+            multi_level_selection: None,
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+        assert!(!should_prefer_list_api_for_recommends(&request));
+    }
+
+    #[test]
     fn resolve_douban_defaults_movie() {
         let defaults = resolve_douban_defaults("movie", None, None);
         assert_eq!(defaults.primary_selection, "热门");
@@ -1536,7 +1733,7 @@ mod tests {
     #[test]
     fn resolve_douban_defaults_anime() {
         let defaults = resolve_douban_defaults("anime", None, None);
-        assert_eq!(defaults.primary_selection, "每日发送");
+        assert_eq!(defaults.primary_selection, "每日放送");
         assert_eq!(defaults.secondary_selection, "全部");
         assert!(defaults.cache_enabled);
         assert!(!defaults.require_secondary);
@@ -1614,8 +1811,20 @@ mod tests {
 
     #[test]
     fn is_body_decode_error_matches_reqwest_text() {
-        assert!(is_body_decode_error("JSON parse error: error decoding response body"));
+        assert!(is_body_decode_error(
+            "JSON parse error: error decoding response body"
+        ));
         assert!(!is_body_decode_error("network timeout"));
+    }
+
+    #[test]
+    fn is_retryable_douban_error_covers_decode_and_json_parse() {
+        assert!(is_retryable_douban_error(
+            "JSON parse error (ce=none, ct=application/json; charset=utf-8): error decoding response body"
+        ));
+        assert!(is_retryable_douban_error("JSON parse error: invalid type"));
+        assert!(is_retryable_douban_error("Network request failed: timeout"));
+        assert!(!is_retryable_douban_error("HTTP error! Status: 403"));
     }
 
     #[test]
@@ -1656,6 +1865,36 @@ mod tests {
             secondary_selection: "韩国".to_string(),
             multi_level_selection: None,
             selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+
+        assert!(!should_cache_douban_request(&request));
+    }
+
+    #[test]
+    fn should_cache_anime_non_daily_selection() {
+        let request = DoubanPageRequest {
+            request_type: "anime".to_string(),
+            primary_selection: "番剧".to_string(),
+            secondary_selection: "全部".to_string(),
+            multi_level_selection: Some(default_multi_level_selection()),
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+
+        assert!(should_cache_douban_request(&request));
+    }
+
+    #[test]
+    fn should_not_cache_anime_daily_selection() {
+        let request = DoubanPageRequest {
+            request_type: "anime".to_string(),
+            primary_selection: ANIME_DAILY_SELECTION.to_string(),
+            secondary_selection: "全部".to_string(),
+            multi_level_selection: Some(default_multi_level_selection()),
+            selected_weekday: Some("Mon".to_string()),
             page: Some(0),
             page_limit: Some(25),
         };

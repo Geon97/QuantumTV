@@ -48,13 +48,10 @@ impl PageCacheManager {
         let conn = self.conn.lock().unwrap();
         let now = Self::current_timestamp();
 
-        let mut stmt = conn.prepare(
-            "SELECT data FROM page_cache WHERE page_key = ? AND expires_at > ?",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT data FROM page_cache WHERE page_key = ? AND expires_at > ?")?;
 
-        let result = stmt.query_row(params![page_key, now], |row| {
-            Ok(row.get::<_, String>(0)?)
-        });
+        let result = stmt.query_row(params![page_key, now], |row| Ok(row.get::<_, String>(0)?));
 
         match result {
             Ok(data) => Ok(Some(data)),
@@ -80,7 +77,10 @@ impl PageCacheManager {
     /// 删除指定页面的缓存
     pub fn delete(&self, page_key: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM page_cache WHERE page_key = ?", params![page_key])?;
+        conn.execute(
+            "DELETE FROM page_cache WHERE page_key = ?",
+            params![page_key],
+        )?;
         Ok(())
     }
 
@@ -104,9 +104,7 @@ impl PageCacheManager {
         let conn = self.conn.lock().unwrap();
         let now = Self::current_timestamp();
 
-        let total: i32 = conn.query_row("SELECT COUNT(*) FROM page_cache", [], |row| {
-            row.get(0)
-        })?;
+        let total: i32 = conn.query_row("SELECT COUNT(*) FROM page_cache", [], |row| row.get(0))?;
 
         let valid: i32 = conn.query_row(
             "SELECT COUNT(*) FROM page_cache WHERE expires_at > ?",
@@ -165,9 +163,7 @@ pub async fn cleanup_expired_page_cache(
 }
 
 #[tauri::command]
-pub async fn clear_all_page_cache(
-    cache: tauri::State<'_, PageCacheManager>,
-) -> Result<(), String> {
+pub async fn clear_all_page_cache(cache: tauri::State<'_, PageCacheManager>) -> Result<(), String> {
     cache.clear_all().map_err(|e| e.to_string())
 }
 

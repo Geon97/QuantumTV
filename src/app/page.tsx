@@ -11,6 +11,7 @@ import {
   BangumiItem,
   DoubanItem,
   FavoriteCard,
+  HomeBootstrapResponse,
   HomePageData,
 } from '@/lib/types';
 import {
@@ -39,30 +40,6 @@ function HomeClient() {
 
   const [showAnnouncement, setShowAnnouncement] = useState(false);
 
-  // 妫€鏌ュ叕鍛婂脊绐楃姸鎬?
-  useEffect(() => {
-    const checkAnnouncement = async () => {
-      if (typeof window !== 'undefined' && announcement) {
-        try {
-          const prefs = await invoke<{ has_seen_announcement: string }>(
-            'get_user_preferences',
-          );
-          const hasSeenAnnouncement = prefs.has_seen_announcement;
-          if (hasSeenAnnouncement !== announcement) {
-            setShowAnnouncement(true);
-          } else {
-            setShowAnnouncement(Boolean(!hasSeenAnnouncement && announcement));
-          }
-        } catch (error) {
-          console.error('读取公告状态失败:', error);
-          // 出错时默认显示公告
-          setShowAnnouncement(true);
-        }
-      }
-    };
-    checkAnnouncement();
-  }, [announcement]);
-
   // 收藏夹数据
 
   const [favoriteItems, setFavoriteItems] = useState<FavoriteCard[]>([]);
@@ -79,31 +56,32 @@ function HomeClient() {
   // 自动预加载（延迟 500ms，避免阻塞首屏渲染）
   useImagePreload(allImageUrls, !loading);
 
-  // 数据获取函数
-  const fetchHomeData = async (): Promise<HomePageData> => {
-    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const weekday = weekdays[new Date().getDay()];
-    return await invoke<HomePageData>('get_home_data', { weekday });
-  };
-
   useEffect(() => {
-    const loadHomeData = async () => {
+    const loadHomeBootstrap = async () => {
       try {
         setLoading(true);
-        const data = await fetchHomeData();
-        setHotMovies(data.hotMovies);
-        setHotTvShows(data.hotTvShows);
-        setHotVarietyShows(data.hotVarietyShows);
-        setTodayBangumi(data.todayBangumi);
+        const data = await invoke<HomeBootstrapResponse>('get_home_bootstrap', {
+          weekday: null,
+          announcement: announcement || null,
+        });
+        const homeData: HomePageData = data.homeData;
+        setHotMovies(homeData.hotMovies);
+        setHotTvShows(homeData.hotTvShows);
+        setHotVarietyShows(homeData.hotVarietyShows);
+        setTodayBangumi(homeData.todayBangumi);
+        setShowAnnouncement(data.shouldShowAnnouncement);
       } catch (error) {
         console.error('获取推荐数据失败:', error);
+        if (announcement) {
+          setShowAnnouncement(true);
+        }
       } finally {
         setLoading(false);
       }
     };
 
-    loadHomeData();
-  }, []);
+    loadHomeBootstrap();
+  }, [announcement]);
 
   // 处理收藏数据更新的函数
   const updateFavoriteItems = async () => {

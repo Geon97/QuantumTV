@@ -21,7 +21,6 @@ import React, {
   useState,
 } from 'react';
 
-import { RustFavorite } from '@/lib/types';
 import { generateStorageKey, subscribeToDataUpdates } from '@/lib/utils';
 import { useLongPress } from '@/hooks/useLongPress';
 import { useProxyImage } from '@/hooks/useProxyImage';
@@ -132,6 +131,18 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         : 'tv'
       : type;
 
+    const getFavoriteStatus = useCallback(
+      async (sourceKey: string, videoId: string) => {
+        const key = generateStorageKey(sourceKey, videoId);
+        const statuses = await invoke<Record<string, boolean>>(
+          'get_play_favorite_statuses',
+          { keys: [key] },
+        );
+        return Boolean(statuses[key]);
+      },
+      [],
+    );
+
     // 获取收藏状态（搜索结果页面不检查）
     useEffect(() => {
       if (from === 'douban' || from === 'search' || !actualSource || !actualId)
@@ -139,10 +150,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
 
       const fetchFavoriteStatus = async () => {
         try {
-          const allFavorites =
-            await invoke<RustFavorite[]>('get_play_favorites');
-          const key = generateStorageKey(actualSource, actualId);
-          const fav = allFavorites.some((f) => f.key === key);
+          const fav = await getFavoriteStatus(actualSource, actualId);
           setFavorited(fav);
         } catch (_err) {
           throw new Error('检查收藏状态失败');
@@ -158,11 +166,11 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         async () => {
           // 重新检查收藏状态
           try {
-            const allFavorites =
-              await invoke<RustFavorite[]>('get_play_favorites');
-            const isNowFavorited = allFavorites.some(
-              (f) => f.key === storageKey,
-            );
+            const [sourceKey, videoId] = storageKey.split('+');
+            const isNowFavorited =
+              sourceKey && videoId
+                ? await getFavoriteStatus(sourceKey, videoId)
+                : false;
             setFavorited(isNowFavorited);
           } catch (_err) {
             // ignore
@@ -171,7 +179,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       );
 
       return unsubscribe;
-    }, [from, actualSource, actualId]);
+    }, [from, actualSource, actualId, getFavoriteStatus]);
 
     const handleToggleFavorite = useCallback(
       async (e: React.MouseEvent) => {
@@ -300,16 +308,20 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         searchFavorited === null
       ) {
         try {
-          const allFavorites =
-            await invoke<RustFavorite[]>('get_play_favorites');
-          const key = generateStorageKey(actualSource, actualId);
-          const fav = allFavorites.some((f) => f.key === key);
+          const fav = await getFavoriteStatus(actualSource, actualId);
           setSearchFavorited(fav);
         } catch (_err) {
           setSearchFavorited(false);
         }
       }
-    }, [from, isAggregate, actualSource, actualId, searchFavorited]);
+    }, [
+      from,
+      isAggregate,
+      actualSource,
+      actualId,
+      searchFavorited,
+      getFavoriteStatus,
+    ]);
 
     // 长按操作
     const handleLongPress = useCallback(() => {

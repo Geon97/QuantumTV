@@ -20,9 +20,12 @@ import DoubanSelector, { SourceCategory } from '@/components/DoubanSelector';
 import PageLayout from '@/components/PageLayout';
 import VideoCard from '@/components/VideoCard';
 
-interface FetchUrlResult {
-  status: number;
-  body: string;
+interface SourceVideoItem {
+  vod_id: string | number;
+  vod_name: string;
+  vod_pic: string;
+  vod_remarks?: string;
+  vod_year?: string;
 }
 
 function DoubanPageClient() {
@@ -246,9 +249,19 @@ function DoubanPageClient() {
     [],
   );
 
+  const isRetryableDoubanErrorMessage = useCallback((message: string) => {
+    const lower = message.toLowerCase();
+    return (
+      lower.includes('error decoding response body') ||
+      lower.includes('json parse error') ||
+      lower.includes('network request failed') ||
+      lower.includes('request failed')
+    );
+  }, []);
+
   // 防抖的数据加载函数
   const fetchDoubanPageData = useCallback(
-    async (page: number, retryCount = 1): Promise<DoubanPageResponse> => {
+    async (page: number, retryCount = 2): Promise<DoubanPageResponse> => {
       try {
         return await invoke<DoubanPageResponse>('get_douban_page_data', {
           request: buildDoubanRequest(page),
@@ -257,8 +270,7 @@ function DoubanPageClient() {
         const message =
           error instanceof Error ? error.message : String(error ?? '');
         const shouldRetry =
-          retryCount > 0 &&
-          message.toLowerCase().includes('error decoding response body');
+          retryCount > 0 && isRetryableDoubanErrorMessage(message);
 
         if (!shouldRetry) {
           throw error;
@@ -268,7 +280,7 @@ function DoubanPageClient() {
         return fetchDoubanPageData(page, retryCount - 1);
       }
     },
-    [buildDoubanRequest],
+    [buildDoubanRequest, isRetryableDoubanErrorMessage],
   );
 
   const loadInitialData = useCallback(async () => {
@@ -307,7 +319,14 @@ function DoubanPageClient() {
         console.log('参数不一致，不执行任何操作，避免设置过期数据');
       }
     } catch (err) {
-      console.error(err);
+      const message = err instanceof Error ? err.message : String(err ?? '');
+      const isLatestRequest = requestId === initialLoadRequestIdRef.current;
+      if (!isLatestRequest) {
+        return;
+      }
+      if (!isRetryableDoubanErrorMessage(message)) {
+        console.error(err);
+      }
     } finally {
       if (requestId === initialLoadRequestIdRef.current) {
         setLoading(false);
@@ -320,6 +339,7 @@ function DoubanPageClient() {
     multiLevelValues,
     selectedWeekday,
     fetchDoubanPageData,
+    isRetryableDoubanErrorMessage,
   ]);
 
   // 只在选择器准备好后才加载数据
@@ -397,7 +417,14 @@ function DoubanPageClient() {
             console.log('参数不一致，不执行任何操作，避免设置过期数据');
           }
         } catch (err) {
-          console.error(err);
+          const currentSnapshot = { ...currentParamsRef.current };
+          if (!isSnapshotEqual(requestSnapshot, currentSnapshot)) {
+            return;
+          }
+          const message = err instanceof Error ? err.message : String(err ?? '');
+          if (!isRetryableDoubanErrorMessage(message)) {
+            console.error(err);
+          }
         } finally {
           setIsLoadingMore(false);
         }
@@ -413,6 +440,8 @@ function DoubanPageClient() {
     multiLevelValues,
     selectedWeekday,
     fetchDoubanPageData,
+    isRetryableDoubanErrorMessage,
+    isSnapshotEqual,
   ]);
 
   // 设置滚动监听
@@ -562,32 +591,22 @@ function DoubanPageClient() {
 
       setIsLoadingSourceData(true);
       try {
-        // 构建视频列表 API URL
-        const originalApiUrl = source.api.endsWith('/')
-          ? `${source.api}?ac=videolist&t=${category.type_id}&pg=1`
-          : `${source.api}/?ac=videolist&t=${category.type_id}&pg=1`;
-
-        let data: any;
-
-        // Tauri 环境：使用 fetch_url 命令绕过 CORS
-        const result = await invoke<FetchUrlResult>('fetch_url', {
-          url: originalApiUrl,
-          method: 'GET',
-        });
-        if (result.status !== 200) {
-          throw new Error('获取分类数据失败');
-        }
-        data = JSON.parse(result.body);
-        const items = data.list || [];
+        const items = await invoke<SourceVideoItem[]>(
+          'get_source_videos_by_type',
+          {
+            sourceKey: currentSource,
+            typeId: String(category.type_id),
+            page: 1,
+          },
+        );
 
         // 转换为 DoubanItem 格式
-        const convertedItems: DoubanItem[] = items.map((item: any) => ({
+        const convertedItems: DoubanItem[] = items.map((item) => ({
           id: item.vod_id?.toString() || '',
           title: item.vod_name || '',
           poster: item.vod_pic || '',
-          rating: 0,
+          rate: item.vod_remarks || '',
           year: item.vod_year || '',
-          subtitle: item.vod_remarks || '',
         }));
 
         setSourceData(convertedItems);
@@ -660,24 +679,10 @@ function DoubanPageClient() {
         }
 
         try {
-          // 构建分类 API URL
-          const originalApiUrl = source.api.endsWith('/')
-            ? `${source.api}?ac=class`
-            : `${source.api}/?ac=class`;
-
-          let data: any;
-
-          // Tauri 环境：使用 fetch_url 命令绕过 CORS
-          const result = await invoke<FetchUrlResult>('fetch_url', {
-            url: originalApiUrl,
-            method: 'GET',
-          });
-          if (result.status !== 200) {
-            throw new Error(`获取分类列表失败: ${result.status}`);
-          }
-          data = JSON.parse(result.body);
-
-          const allCategories: SourceCategory[] = data.class || [];
+          const allCategories = await invoke<SourceCategory[]>(
+            'get_source_categories',
+            { sourceKey },
+          );
 
           // ========================================
           // 🚀 绝对直通模式 - 移除所有过滤逻辑

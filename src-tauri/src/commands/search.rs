@@ -1,16 +1,16 @@
+use crate::commands::config::{get_user_preferences, UserPreferences};
+use crate::commands::video::{search_with_cache_hit, SearchCacheManager};
 use crate::db::db_client::Db;
 use crate::db::search_history::get_search_history;
 use crate::storage::StorageManager;
 use quantumtv_core::search_aggregation::{
-    aggregate_search_results_with_filter, apply_filter, compute_group_stats,
-    sort_by_year, AggregatedGroup, SearchFilter,
+    aggregate_search_results_with_filter, apply_filter, compute_group_stats, sort_by_year,
+    AggregatedGroup, SearchFilter,
 };
 use quantumtv_core::types::SearchResult;
 use rusqlite::params;
 use serde::Serialize;
 use tauri::State;
-use crate::commands::config::{get_user_preferences, UserPreferences};
-use crate::commands::video::{search_with_cache_hit, SearchCacheManager};
 
 #[tauri::command]
 pub fn get_search_suggestions(db: State<'_, Db>, query: String) -> Result<Vec<String>, String> {
@@ -26,7 +26,6 @@ pub fn get_search_suggestions(db: State<'_, Db>, query: String) -> Result<Vec<St
         Ok(suggestions)
     })
 }
-
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -83,7 +82,12 @@ fn build_filter_categories(results: &[SearchResult]) -> Vec<SearchFilterCategory
             titles_set.insert(item.title.clone());
         }
 
-        if let Some(year) = item.year.as_ref().map(|v| v.trim()).filter(|v| !v.is_empty()) {
+        if let Some(year) = item
+            .year
+            .as_ref()
+            .map(|v| v.trim())
+            .filter(|v| !v.is_empty())
+        {
             years_set.insert(year.to_string());
         }
     }
@@ -95,10 +99,11 @@ fn build_filter_categories(results: &[SearchResult]) -> Vec<SearchFilterCategory
         label: "全部来源".to_string(),
         value: "all".to_string(),
     }];
-    source_options.extend(source_entries.into_iter().map(|(value, label)| SearchFilterOption {
-        label,
-        value,
-    }));
+    source_options.extend(
+        source_entries
+            .into_iter()
+            .map(|(value, label)| SearchFilterOption { label, value }),
+    );
 
     let mut title_options = vec![SearchFilterOption {
         label: "全部标题".to_string(),
@@ -112,7 +117,11 @@ fn build_filter_categories(results: &[SearchResult]) -> Vec<SearchFilterCategory
     let mut years: Vec<String> = years_set.into_iter().collect();
     let has_unknown = years.iter().any(|y| y == "unknown");
     years.retain(|y| y != "unknown");
-    years.sort_by(|a, b| b.parse::<i32>().unwrap_or(0).cmp(&a.parse::<i32>().unwrap_or(0)));
+    years.sort_by(|a, b| {
+        b.parse::<i32>()
+            .unwrap_or(0)
+            .cmp(&a.parse::<i32>().unwrap_or(0))
+    });
 
     let mut year_options = vec![SearchFilterOption {
         label: "全部年份".to_string(),
@@ -207,8 +216,7 @@ pub async fn search_page_query(
     storage: State<'_, StorageManager>,
     cache: State<'_, SearchCacheManager>,
 ) -> Result<SearchPageQueryResponse, String> {
-    let (results, cache_hit) =
-        search_with_cache_hit(query, app_handle, storage, cache).await?;
+    let (results, cache_hit) = search_with_cache_hit(query, app_handle, storage, cache).await?;
     let filter_categories = build_filter_categories(&results);
 
     Ok(SearchPageQueryResponse {
@@ -277,4 +285,3 @@ mod tests {
         assert!(!bootstrap.fluid_search);
     }
 }
-

@@ -70,11 +70,7 @@ pub fn save_play_record(db: State<'_, Db>, record: PlayRecord) -> Result<(), Str
 }
 
 #[tauri::command]
-pub fn delete_play_record(
-    app: AppHandle,
-    db: State<'_, Db>,
-    key: String,
-) -> Result<(), String> {
+pub fn delete_play_record(app: AppHandle, db: State<'_, Db>, key: String) -> Result<(), String> {
     db.with_conn(|conn| {
         conn.execute("DELETE FROM play_records WHERE key = ?1", params![key])?;
         Ok(())

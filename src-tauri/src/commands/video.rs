@@ -1,6 +1,9 @@
 use crate::storage::StorageManager;
 use image::{GenericImageView, ImageOutputFormat};
 use moka::future::Cache;
+use quantumtv_core::playback::{SkipAction, SkipDetection};
+use quantumtv_core::types::SearchResult;
+use quantumtv_core::{prefer_best_source, test_video_source, SourceTestResult};
 use regex::Regex;
 use reqwest::header::{
     HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, RANGE, REFERER, USER_AGENT,
@@ -16,8 +19,6 @@ use tauri::{Emitter, Manager, State};
 use tokio::sync::Semaphore;
 use tokio::time::{timeout, Duration};
 use uuid::Uuid;
-use quantumtv_core::types::SearchResult;
-use quantumtv_core::{prefer_best_source, test_video_source, SourceTestResult};
 
 /// 缓存统计信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,7 +110,6 @@ impl SearchCacheManager {
         }
     }
 }
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GetVideoDetailOptimizedResponse {
@@ -246,9 +246,7 @@ fn normalize_episode_index(record_episode_index: i32, total_episodes: usize) -> 
     zero_based.clamp(0, max_index)
 }
 
-fn resolve_initial_playback_state(
-    play_record: Option<&PlayRecordInfo>,
-) -> (i32, Option<i32>) {
+fn resolve_initial_playback_state(play_record: Option<&PlayRecordInfo>) -> (i32, Option<i32>) {
     match play_record {
         Some(record) => (record.episode_index, Some(record.play_time)),
         None => (0, None),
@@ -324,15 +322,14 @@ fn parse_search_type_filter(search_type: Option<&str>) -> Option<SearchTypeFilte
     }
 }
 
-fn reorder_results_with_best(
-    best: &SearchResult,
-    results: Vec<SearchResult>,
-) -> Vec<SearchResult> {
+fn reorder_results_with_best(best: &SearchResult, results: Vec<SearchResult>) -> Vec<SearchResult> {
     let mut ordered = Vec::with_capacity(results.len());
     ordered.push(best.clone());
-    ordered.extend(results.into_iter().filter(|item| {
-        !(item.source == best.source && item.id == best.id)
-    }));
+    ordered.extend(
+        results
+            .into_iter()
+            .filter(|item| !(item.source == best.source && item.id == best.id)),
+    );
     ordered
 }
 
@@ -406,8 +403,7 @@ fn resolve_source_change(
     }
 
     let max_index = total_episodes - 1;
-    let out_of_range =
-        current_episode_index < 0 || current_episode_index > max_index;
+    let out_of_range = current_episode_index < 0 || current_episode_index > max_index;
     let target_episode_index = if out_of_range {
         0
     } else {
@@ -550,6 +546,123 @@ pub struct ApiSearchResponse {
     pub pagecount: Option<i32>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SourceCategoryItem {
+    pub type_id: Value,
+    pub type_name: String,
+    pub type_pid: Option<Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SourceCategoryResponse {
+    pub class: Option<Vec<SourceCategoryItem>>,
+    pub code: Option<i32>,
+    pub msg: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerTickRequest {
+    pub current_time: f64,
+    pub total_duration: f64,
+    pub now_ms: i64,
+    pub last_save_at_ms: i64,
+    pub save_interval_ms: i64,
+    pub last_skip_check_at_ms: i64,
+    pub skip_enabled: bool,
+    pub intro_time: f64,
+    pub outro_time: f64,
+    pub source: Option<String>,
+    pub id: Option<String>,
+    pub current_episode: Option<u32>,
+    pub total_episodes: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerTickDecision {
+    pub should_save_progress: bool,
+    pub next_last_save_at_ms: i64,
+    pub next_last_skip_check_at_ms: i64,
+    pub skip_action: Option<SkipAction>,
+    pub did_preload: bool,
+}
+
+const PLAYER_SKIP_CHECK_INTERVAL_MS: i64 = 1500;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TickTimingDecision {
+    should_save_progress: bool,
+    should_check_skip: bool,
+    next_last_save_at_ms: i64,
+    next_last_skip_check_at_ms: i64,
+}
+
+fn resolve_enabled_source(config: &Value, source_key: &str) -> Option<ApiSite> {
+    config
+        .get("SourceConfig")
+        .and_then(|v| v.as_array())
+        .and_then(|sources| {
+            sources.iter().find_map(|s| {
+                let key = s.get("key")?.as_str()?;
+                let disabled = s.get("disabled").and_then(|d| d.as_bool()).unwrap_or(false);
+                if key != source_key || disabled {
+                    return None;
+                }
+                Some(ApiSite {
+                    key: key.to_string(),
+                    api: s.get("api")?.as_str()?.to_string(),
+                    name: s.get("name")?.as_str()?.to_string(),
+                    detail: s
+                        .get("detail")
+                        .and_then(|v| v.as_str())
+                        .map(|v| v.to_string()),
+                    is_adult: s.get("is_adult").and_then(|v| v.as_bool()),
+                })
+            })
+        })
+}
+
+fn source_url(base_api: &str, query: &str) -> String {
+    if base_api.ends_with('/') {
+        format!("{base_api}{query}")
+    } else {
+        format!("{base_api}/{query}")
+    }
+}
+
+fn parse_source_categories(body: &str) -> Result<Vec<SourceCategoryItem>, String> {
+    let parsed = serde_json::from_str::<SourceCategoryResponse>(body).map_err(|e| e.to_string())?;
+    Ok(parsed.class.unwrap_or_default())
+}
+
+fn parse_source_videos(body: &str) -> Result<Vec<ApiSearchItem>, String> {
+    let parsed = serde_json::from_str::<ApiSearchResponse>(body).map_err(|e| e.to_string())?;
+    Ok(parsed.list)
+}
+
+fn decide_tick_timing(request: &PlayerTickRequest) -> TickTimingDecision {
+    let should_save_progress =
+        request.now_ms - request.last_save_at_ms >= request.save_interval_ms.max(500);
+    let should_check_skip =
+        request.now_ms - request.last_skip_check_at_ms >= PLAYER_SKIP_CHECK_INTERVAL_MS;
+
+    TickTimingDecision {
+        should_save_progress,
+        should_check_skip,
+        next_last_save_at_ms: if should_save_progress {
+            request.now_ms
+        } else {
+            request.last_save_at_ms
+        },
+        next_last_skip_check_at_ms: if should_check_skip {
+            request.now_ms
+        } else {
+            request.last_skip_check_at_ms
+        },
+    }
+}
+
 // Douban Related Structs
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DoubanCelebrity {
@@ -678,7 +791,10 @@ fn clean_html_tags(html: &str) -> String {
 
 const YELLOW_WORDS: &[&str] = &[
     "伦理片",
+    "成人",
+    "情色",
     "福利",
+    "三上",
     "里番动漫",
     "门事件",
     "萝莉少女",
@@ -689,7 +805,11 @@ const YELLOW_WORDS: &[&str] = &[
     "无码",
     "日本无码",
     "有码",
-    "日本有码",
+    "cosplay",
+    "swag",
+    "av",
+    "三级片",
+        "日本有码",
     "SWAG",
     "网红主播",
     "色情片",
@@ -703,7 +823,8 @@ const YELLOW_WORDS: &[&str] = &[
     "港台三级",
     "电影解说",
     "伦理",
-    "日本伦理",
+    "写真",
+    "诱惑",
 ];
 
 fn parse_episodes(play_url: &str) -> (Vec<String>, Vec<String>) {
@@ -757,28 +878,29 @@ pub(crate) async fn search_with_cache_hit(
     // 仅在启用 FluidSearch 时才使用流式输出
     let use_streaming = fluid_search;
 
-    let mut sites = if let Some(source_config) = config.get("SourceConfig").and_then(|v| v.as_array()) {
-        source_config
-            .iter()
-            .filter_map(|s| {
-                if s.get("disabled").and_then(|d| d.as_bool()).unwrap_or(false) {
-                    return None;
-                }
-                Some(ApiSite {
-                    key: s.get("key")?.as_str()?.to_string(),
-                    api: s.get("api")?.as_str()?.to_string(),
-                    name: s.get("name")?.as_str()?.to_string(),
-                    detail: s
-                        .get("detail")
-                        .and_then(|v| v.as_str())
-                        .map(|v| v.to_string()),
-                    is_adult: s.get("is_adult").and_then(|v| v.as_bool()),
+    let mut sites =
+        if let Some(source_config) = config.get("SourceConfig").and_then(|v| v.as_array()) {
+            source_config
+                .iter()
+                .filter_map(|s| {
+                    if s.get("disabled").and_then(|d| d.as_bool()).unwrap_or(false) {
+                        return None;
+                    }
+                    Some(ApiSite {
+                        key: s.get("key")?.as_str()?.to_string(),
+                        api: s.get("api")?.as_str()?.to_string(),
+                        name: s.get("name")?.as_str()?.to_string(),
+                        detail: s
+                            .get("detail")
+                            .and_then(|v| v.as_str())
+                            .map(|v| v.to_string()),
+                        is_adult: s.get("is_adult").and_then(|v| v.as_bool()),
+                    })
                 })
-            })
-            .collect::<Vec<ApiSite>>()
-    } else {
-        vec![]
-    };
+                .collect::<Vec<ApiSite>>()
+        } else {
+            vec![]
+        };
 
     if sites.is_empty() {
         return Ok((vec![], false));
@@ -839,7 +961,8 @@ pub(crate) async fn search_with_cache_hit(
                     // 如果启用了流式搜索，即使失败也要发送事件
                     if let Some(app_handle) = &app_handle_opt {
                         // 尝试获取窗口 - 兼容桌面端和移动端
-                        let window = app_handle.get_webview_window("main")
+                        let window = app_handle
+                            .get_webview_window("main")
                             .or_else(|| app_handle.webview_windows().values().next().cloned());
 
                         if let Some(window) = window {
@@ -866,7 +989,8 @@ pub(crate) async fn search_with_cache_hit(
                 _ => {
                     if let Some(app_handle) = &app_handle_opt {
                         // 尝试获取窗口 - 兼容桌面端和移动端
-                        let window = app_handle.get_webview_window("main")
+                        let window = app_handle
+                            .get_webview_window("main")
                             .or_else(|| app_handle.webview_windows().values().next().cloned());
 
                         if let Some(window) = window {
@@ -933,7 +1057,8 @@ pub(crate) async fn search_with_cache_hit(
             // 如果启用了流式搜索，立即发送该源的搜索结果给前端
             if let Some(app_handle) = &app_handle_opt {
                 // 尝试获取窗口 - 兼容桌面端和移动端
-                let window = app_handle.get_webview_window("main")
+                let window = app_handle
+                    .get_webview_window("main")
                     .or_else(|| app_handle.webview_windows().values().next().cloned());
 
                 if let Some(window) = window {
@@ -999,7 +1124,8 @@ pub(crate) async fn search_with_cache_hit(
     // 如果启用了流式搜索，发送搜索完成事件
     if use_streaming {
         // 尝试获取窗口 - 兼容桌面端和移动端
-        let window = app_handle.get_webview_window("main")
+        let window = app_handle
+            .get_webview_window("main")
             .or_else(|| app_handle.webview_windows().values().next().cloned());
 
         if let Some(window) = window {
@@ -1220,6 +1346,59 @@ pub async fn get_video_detail_optimized(
 }
 
 #[tauri::command]
+pub async fn get_source_categories(
+    source_key: String,
+    storage: State<'_, StorageManager>,
+) -> Result<Vec<SourceCategoryItem>, String> {
+    let data = storage.get_data()?;
+    let source = resolve_enabled_source(&data.config, &source_key)
+        .ok_or_else(|| format!("Source not found or disabled: {}", source_key))?;
+
+    let url = source_url(&source.api, "?ac=class");
+    let body = get_video_client()
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .text()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    parse_source_categories(&body)
+}
+
+#[tauri::command]
+pub async fn get_source_videos_by_type(
+    source_key: String,
+    type_id: String,
+    page: Option<u32>,
+    storage: State<'_, StorageManager>,
+) -> Result<Vec<ApiSearchItem>, String> {
+    let data = storage.get_data()?;
+    let source = resolve_enabled_source(&data.config, &source_key)
+        .ok_or_else(|| format!("Source not found or disabled: {}", source_key))?;
+    let page = page.unwrap_or(1).max(1);
+    let encoded_type = urlencoding::encode(type_id.trim());
+    let query = format!("?ac=videolist&t={}&pg={}", encoded_type, page);
+    let url = source_url(&source.api, &query);
+
+    let body = get_video_client()
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .text()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    parse_source_videos(&body)
+}
+
+#[tauri::command]
 pub async fn proxy_image(
     url: String,
     cache_manager: State<'_, crate::db::image_cache::ImageCacheManager>,
@@ -1273,7 +1452,8 @@ pub async fn proxy_image(
 
     // 3. 压缩图片
     let compressed_bytes = tokio::task::spawn_blocking(move || {
-        let img = image::load_from_memory(&bytes).map_err(|e| format!("图片解码失败: {}", e))?;
+        let img =
+            image::load_from_memory(&bytes).map_err(|e| format!("鍥剧墖瑙ｇ爜澶辫触: {}", e))?;
         let (width, height) = img.dimensions();
         let processed_img = if width > 800 {
             img.resize(
@@ -1609,15 +1789,22 @@ async fn prefetch_next_segments(
                     client_clone
                         .get(&next_url_clone)
                         .headers(request_headers.clone())
-                        .send()
-                ).await;
+                        .send(),
+                )
+                .await;
 
                 match resp {
                     Ok(Ok(r)) if r.status().is_success() => {
                         if let Ok(data) = r.bytes().await {
                             // moka 会自动处理 LRU 淘汰和 TTL 过期
-                            cache_clone.insert(next_url_clone.clone(), data.to_vec()).await;
-                            log::debug!("✅ 预取成功: {} ({} bytes)", next_url_clone, data.len());
+                            cache_clone
+                                .insert(next_url_clone.clone(), data.to_vec())
+                                .await;
+                            log::debug!(
+                                "✅ 预取成功: {} ({} bytes)",
+                                next_url_clone,
+                                data.len()
+                            );
                         }
                         break;
                     }
@@ -1812,7 +1999,7 @@ pub async fn get_douban_data(
             .next()
             .map(|s| s.text().collect::<String>())
             .unwrap_or_default();
-        let re = Regex::new(r"全部\s*(\d+)\s*条").unwrap();
+        let re = Regex::new(r"(\d+)").unwrap();
         let total = re
             .captures(&total_text)
             .and_then(|cap| cap.get(1))
@@ -2013,9 +2200,7 @@ pub async fn prefer_best_source_command(
 
 /// 测试单个视频源质量
 #[tauri::command]
-pub async fn test_video_source_command(
-    m3u8_url: String,
-) -> Result<SourceTestResult, String> {
+pub async fn test_video_source_command(m3u8_url: String) -> Result<SourceTestResult, String> {
     let client = get_video_client();
     test_video_source(client, &m3u8_url).await
 }
@@ -2072,7 +2257,10 @@ pub fn change_play_source(
         .find(|source| source.source == request.new_source && source.id == request.new_id)
         .ok_or_else(|| "未找到匹配结果".to_string())?;
 
-    let old_key = match (request.current_source.as_deref(), request.current_id.as_deref()) {
+    let old_key = match (
+        request.current_source.as_deref(),
+        request.current_id.as_deref(),
+    ) {
         (Some(source), Some(id)) if !source.is_empty() && !id.is_empty() => {
             Some(format!("{}+{}", source, id))
         }
@@ -2114,6 +2302,53 @@ pub fn save_play_progress(
     Ok(saved)
 }
 
+#[tauri::command]
+pub async fn player_tick(
+    request: PlayerTickRequest,
+    storage: State<'_, StorageManager>,
+    cache: State<'_, SearchCacheManager>,
+) -> Result<PlayerTickDecision, String> {
+    let timing = decide_tick_timing(&request);
+
+    let skip_action =
+        if request.skip_enabled && request.total_duration > 0.0 && timing.should_check_skip {
+            let detector = SkipDetection::new(request.intro_time, request.outro_time.abs());
+            Some(detector.check_skip_action(request.current_time, request.total_duration))
+        } else {
+            None
+        };
+
+    let mut did_preload = false;
+    if let (Some(source), Some(id), Some(current_episode), Some(total_episodes)) = (
+        request.source.clone(),
+        request.id.clone(),
+        request.current_episode,
+        request.total_episodes,
+    ) {
+        if !source.trim().is_empty() && !id.trim().is_empty() {
+            did_preload = crate::commands::preload::preload_next_episode_if_needed(
+                source,
+                id,
+                current_episode,
+                total_episodes,
+                request.current_time,
+                request.total_duration,
+                storage,
+                cache,
+            )
+            .await?
+            .did_preload;
+        }
+    }
+
+    Ok(PlayerTickDecision {
+        should_save_progress: timing.should_save_progress,
+        next_last_save_at_ms: timing.next_last_save_at_ms,
+        next_last_skip_check_at_ms: timing.next_last_skip_check_at_ms,
+        skip_action,
+        did_preload,
+    })
+}
 /// 初始化播放器视图 - 聚合所有初始化数据
 ///
 /// 一次性返回播放器启动所需的所有数据，减少 IPC 通信次数
@@ -2182,11 +2417,9 @@ pub async fn initialize_player_view(
         // 3. 检查收藏状态
         async {
             db.with_conn(|conn| {
-                let mut stmt = conn
-                    .prepare("SELECT COUNT(*) FROM favorites WHERE key = ?1")?;
+                let mut stmt = conn.prepare("SELECT COUNT(*) FROM favorites WHERE key = ?1")?;
 
-                let count: i32 = stmt
-                    .query_row(params![&key], |row| row.get(0))?;
+                let count: i32 = stmt.query_row(params![&key], |row| row.get(0))?;
 
                 Ok(count > 0)
             })
@@ -2194,8 +2427,9 @@ pub async fn initialize_player_view(
         // 4. 读取跳过配置
         async {
             db.with_conn(|conn| {
-                let mut stmt = conn
-                    .prepare("SELECT enable, intro_time, outro_time FROM skip_configs WHERE key = ?1")?;
+                let mut stmt = conn.prepare(
+                    "SELECT enable, intro_time, outro_time FROM skip_configs WHERE key = ?1",
+                )?;
 
                 let result = stmt.query_row(params![&key], |row| {
                     Ok(SkipConfigInfo {
@@ -2218,8 +2452,13 @@ pub async fn initialize_player_view(
 
             // 尝试从配置中获取播放器配置
             if let Some(player_config) = data.config.get("PlayerConfig") {
-                if let Ok(config) = serde_json::from_value::<crate::commands::config::PlayerConfig>(player_config.clone()) {
-                    return Ok::<(bool, bool), String>((config.block_ad_enabled, config.optimization_enabled));
+                if let Ok(config) = serde_json::from_value::<crate::commands::config::PlayerConfig>(
+                    player_config.clone(),
+                ) {
+                    return Ok::<(bool, bool), String>((
+                        config.block_ad_enabled,
+                        config.optimization_enabled,
+                    ));
                 }
             }
 
@@ -2324,8 +2563,7 @@ pub async fn initialize_player_view(
         ),
         play_time: record.play_time,
     });
-    let (initial_episode_index, resume_time) =
-        resolve_initial_playback_state(play_record.as_ref());
+    let (initial_episode_index, resume_time) = resolve_initial_playback_state(play_record.as_ref());
 
     Ok(PlayerInitialState {
         detail: detail_response.detail,
@@ -2362,10 +2600,16 @@ pub fn get_cache_stats(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusqlite::Connection;
     use rusqlite::params;
+    use rusqlite::Connection;
 
-    fn make_result(title: &str, year: &str, episodes_len: usize, source: &str, id: &str) -> SearchResult {
+    fn make_result(
+        title: &str,
+        year: &str,
+        episodes_len: usize,
+        source: &str,
+        id: &str,
+    ) -> SearchResult {
         SearchResult {
             id: id.to_string(),
             title: title.to_string(),
@@ -2409,8 +2653,14 @@ mod tests {
 
     #[test]
     fn derive_search_type_filter_detects_tv_and_movie() {
-        assert_eq!(derive_search_type_filter(Some(10)), Some(SearchTypeFilter::Tv));
-        assert_eq!(derive_search_type_filter(Some(1)), Some(SearchTypeFilter::Movie));
+        assert_eq!(
+            derive_search_type_filter(Some(10)),
+            Some(SearchTypeFilter::Tv)
+        );
+        assert_eq!(
+            derive_search_type_filter(Some(1)),
+            Some(SearchTypeFilter::Movie)
+        );
         assert_eq!(derive_search_type_filter(Some(0)), None);
         assert_eq!(derive_search_type_filter(None), None);
     }
@@ -2436,12 +2686,8 @@ mod tests {
         assert!(sources.contains(&"s1".to_string()));
         assert!(sources.contains(&"s4".to_string()));
 
-        let filtered_no_year = filter_sources_for_fallback(
-            &results,
-            "Test Show",
-            None,
-            Some(SearchTypeFilter::Tv),
-        );
+        let filtered_no_year =
+            filter_sources_for_fallback(&results, "Test Show", None, Some(SearchTypeFilter::Tv));
         assert_eq!(filtered_no_year.len(), 3);
     }
 
@@ -2579,12 +2825,24 @@ mod tests {
         migrate_play_source_state(&db, Some("old+1"), "new+2", Some(&skip)).unwrap();
 
         let old_count: i32 = db
-            .with_conn(|conn| conn.query_row("SELECT COUNT(*) FROM play_records WHERE key = ?1", params!["old+1"], |row| row.get(0)))
+            .with_conn(|conn| {
+                conn.query_row(
+                    "SELECT COUNT(*) FROM play_records WHERE key = ?1",
+                    params!["old+1"],
+                    |row| row.get(0),
+                )
+            })
             .unwrap();
         assert_eq!(old_count, 0);
 
         let old_skip_count: i32 = db
-            .with_conn(|conn| conn.query_row("SELECT COUNT(*) FROM skip_configs WHERE key = ?1", params!["old+1"], |row| row.get(0)))
+            .with_conn(|conn| {
+                conn.query_row(
+                    "SELECT COUNT(*) FROM skip_configs WHERE key = ?1",
+                    params!["old+1"],
+                    |row| row.get(0),
+                )
+            })
             .unwrap();
         assert_eq!(old_skip_count, 0);
 
@@ -2655,8 +2913,91 @@ mod tests {
         assert!(!saved);
 
         let count: i32 = db
-            .with_conn(|conn| conn.query_row("SELECT COUNT(*) FROM play_records", [], |row| row.get(0)))
+            .with_conn(|conn| {
+                conn.query_row("SELECT COUNT(*) FROM play_records", [], |row| row.get(0))
+            })
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn resolve_enabled_source_returns_only_enabled_match() {
+        let config = serde_json::json!({
+            "SourceConfig": [
+                { "key": "a", "api": "https://a.example.com", "name": "A", "disabled": true },
+                { "key": "b", "api": "https://b.example.com", "name": "B", "disabled": false }
+            ]
+        });
+
+        let source = resolve_enabled_source(&config, "b").expect("source b");
+        assert_eq!(source.key, "b");
+        assert_eq!(source.api, "https://b.example.com");
+        assert!(resolve_enabled_source(&config, "a").is_none());
+        assert!(resolve_enabled_source(&config, "missing").is_none());
+    }
+
+    #[test]
+    fn parse_source_categories_handles_number_and_string_type_id() {
+        let body = r#"{
+            "class": [
+                { "type_id": 1, "type_name": "电影" },
+                { "type_id": "2", "type_name": "电视剧", "type_pid": 0 }
+            ]
+        }"#;
+
+        let categories = parse_source_categories(body).expect("parse categories");
+        assert_eq!(categories.len(), 2);
+        assert_eq!(categories[0].type_name, "电影");
+        assert_eq!(categories[1].type_name, "电视剧");
+    }
+
+    #[test]
+    fn decide_tick_timing_updates_timestamps_when_threshold_met() {
+        let request = PlayerTickRequest {
+            current_time: 10.0,
+            total_duration: 100.0,
+            now_ms: 20_000,
+            last_save_at_ms: 14_000,
+            save_interval_ms: 5_000,
+            last_skip_check_at_ms: 18_000,
+            skip_enabled: true,
+            intro_time: 60.0,
+            outro_time: 60.0,
+            source: Some("s1".to_string()),
+            id: Some("id1".to_string()),
+            current_episode: Some(0),
+            total_episodes: Some(10),
+        };
+
+        let decision = decide_tick_timing(&request);
+        assert!(decision.should_save_progress);
+        assert!(decision.should_check_skip);
+        assert_eq!(decision.next_last_save_at_ms, 20_000);
+        assert_eq!(decision.next_last_skip_check_at_ms, 20_000);
+    }
+
+    #[test]
+    fn decide_tick_timing_keeps_timestamps_when_not_due() {
+        let request = PlayerTickRequest {
+            current_time: 10.0,
+            total_duration: 100.0,
+            now_ms: 20_000,
+            last_save_at_ms: 19_000,
+            save_interval_ms: 5_000,
+            last_skip_check_at_ms: 19_200,
+            skip_enabled: true,
+            intro_time: 60.0,
+            outro_time: 60.0,
+            source: None,
+            id: None,
+            current_episode: None,
+            total_episodes: None,
+        };
+
+        let decision = decide_tick_timing(&request);
+        assert!(!decision.should_save_progress);
+        assert!(!decision.should_check_skip);
+        assert_eq!(decision.next_last_save_at_ms, 19_000);
+        assert_eq!(decision.next_last_skip_check_at_ms, 19_200);
     }
 }

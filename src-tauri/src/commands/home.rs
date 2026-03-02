@@ -1,9 +1,11 @@
 use crate::commands::bangumi::{get_bangumi_calendar_data, BangumiCalendarData, Items};
+use crate::commands::config::get_user_preferences;
 use crate::commands::douban_client::{
     get_douban_categories, DoubanCategoriesParams, DoubanItem, DoubanResult, Kind,
 };
 use crate::db::db_client::Db;
 use crate::db::page_cache::PageCacheManager;
+use crate::storage::StorageManager;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -14,6 +16,15 @@ pub struct HomePageData {
     pub hot_tv_shows: Vec<DoubanItem>,
     pub hot_variety_shows: Vec<DoubanItem>,
     pub today_bangumi: Vec<Items>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeBootstrapResponse {
+    pub resolved_weekday: String,
+    pub home_data: HomePageData,
+    pub has_seen_announcement: String,
+    pub should_show_announcement: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -106,10 +117,7 @@ fn sort_continue_watching(mut records: Vec<ContinueWatchingItem>) -> Vec<Continu
     records
 }
 
-fn select_bangumi_for_weekday(
-    calendar: &[BangumiCalendarData],
-    weekday_en: &str,
-) -> Vec<Items> {
+fn select_bangumi_for_weekday(calendar: &[BangumiCalendarData], weekday_en: &str) -> Vec<Items> {
     calendar
         .iter()
         .find(|item| {
@@ -156,6 +164,14 @@ fn extract_list_or_empty(result: DoubanResult) -> Vec<DoubanItem> {
     } else {
         Vec::new()
     }
+}
+
+fn should_show_announcement(announcement: Option<&str>, has_seen_announcement: &str) -> bool {
+    let announcement = announcement.unwrap_or("").trim();
+    if announcement.is_empty() {
+        return false;
+    }
+    has_seen_announcement.trim() != announcement
 }
 
 fn home_cache_key(weekday: &str) -> String {
@@ -214,6 +230,29 @@ pub async fn get_home_data(
 }
 
 #[tauri::command]
+pub async fn get_home_bootstrap(
+    weekday: Option<String>,
+    announcement: Option<String>,
+    cache: State<'_, PageCacheManager>,
+    storage: State<'_, StorageManager>,
+) -> Result<HomeBootstrapResponse, String> {
+    let resolved_weekday = resolve_weekday_input(weekday.as_deref(), current_weekday_en());
+    let home_data = get_home_data_cached(Some(resolved_weekday.clone()), &cache).await?;
+    let user_prefs = get_user_preferences(storage).await?;
+    let has_seen_announcement = user_prefs.has_seen_announcement;
+
+    Ok(HomeBootstrapResponse {
+        resolved_weekday,
+        home_data,
+        should_show_announcement: should_show_announcement(
+            announcement.as_deref(),
+            &has_seen_announcement,
+        ),
+        has_seen_announcement,
+    })
+}
+
+#[tauri::command]
 pub fn get_favorite_cards(db: State<'_, Db>) -> Result<Vec<FavoriteCard>, String> {
     let favorites = db.with_conn(|conn| {
         let mut stmt = conn.prepare(
@@ -235,8 +274,7 @@ pub fn get_favorite_cards(db: State<'_, Db>) -> Result<Vec<FavoriteCard>, String
     })?;
 
     let play_records = db.with_conn(|conn| {
-        let mut stmt =
-            conn.prepare("SELECT key, episode_index FROM play_records")?;
+        let mut stmt = conn.prepare("SELECT key, episode_index FROM play_records")?;
         let rows = stmt.query_map([], |row| {
             Ok(PlayRecordMeta {
                 key: row.get(0)?,
@@ -418,6 +456,15 @@ mod tests {
     fn resolve_weekday_input_uses_fallback_for_empty() {
         let resolved = resolve_weekday_input(Some("   "), "Thu");
         assert_eq!(resolved, "Thu");
+    }
+
+    #[test]
+    fn should_show_announcement_when_not_seen() {
+        assert!(should_show_announcement(Some("new"), ""));
+        assert!(should_show_announcement(Some("new"), "old"));
+        assert!(!should_show_announcement(Some("new"), "new"));
+        assert!(!should_show_announcement(Some(""), "new"));
+        assert!(!should_show_announcement(None, "new"));
     }
 
     #[tokio::test]

@@ -126,14 +126,18 @@ pub fn run() {
             commands::video::fetch_binary,
             commands::video::fetch_m3u8,
             commands::video::get_douban_data,
+            commands::video::get_source_categories,
+            commands::video::get_source_videos_by_type,
             commands::video::prefer_best_source_command,
             commands::video::test_video_source_command,
+            commands::video::player_tick,
             // 版本
             commands::version::get_current_version,
             commands::version::version_for_updates,
             commands::version_check::check_for_updates,
             // 收藏
             db::play_favorite::get_play_favorites,
+            db::play_favorite::get_play_favorite_statuses,
             db::play_favorite::save_play_favorite,
             db::play_favorite::delete_play_favorite,
             db::play_favorite::toggle_play_favorite,
@@ -179,6 +183,7 @@ pub fn run() {
             commands::douban_client::get_douban_page_data,
             commands::douban_client::get_douban_defaults,
             commands::home::get_home_data,
+            commands::home::get_home_bootstrap,
             commands::home::get_favorite_cards,
             commands::home::get_continue_watching,
         ])

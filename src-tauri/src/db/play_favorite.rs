@@ -2,6 +2,7 @@
 use crate::db::db_client::Db;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tauri::{AppHandle, Emitter, State};
 
 #[derive(Debug, Serialize)]
@@ -53,6 +54,45 @@ pub fn get_play_favorites(db: State<'_, Db>) -> Result<Vec<Favorite>, String> {
 
         Ok(favorites)
     })
+}
+
+/// 批量获取收藏状态，避免前端反复拉取整表
+fn get_play_favorite_statuses_inner(
+    db: &Db,
+    keys: Vec<String>,
+) -> Result<HashMap<String, bool>, String> {
+    if keys.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let placeholders = vec!["?"; keys.len()].join(", ");
+    let sql = format!("SELECT key FROM favorites WHERE key IN ({})", placeholders);
+
+    let existing_keys = db.with_conn(|conn| {
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(keys.iter()), |row| {
+            row.get::<_, String>(0)
+        })?;
+        rows.collect::<Result<Vec<String>, _>>()
+    })?;
+
+    let mut statuses = HashMap::new();
+    for key in keys {
+        statuses.insert(key, false);
+    }
+    for key in existing_keys {
+        statuses.insert(key, true);
+    }
+
+    Ok(statuses)
+}
+
+#[tauri::command]
+pub fn get_play_favorite_statuses(
+    db: State<'_, Db>,
+    keys: Vec<String>,
+) -> Result<HashMap<String, bool>, String> {
+    get_play_favorite_statuses_inner(&db, keys)
 }
 // 获取某个是否已经收藏
 #[tauri::command]
@@ -209,7 +249,9 @@ mod tests {
         assert!(added);
 
         let count: i32 = db
-            .with_conn(|conn| conn.query_row("SELECT COUNT(*) FROM favorites", [], |row| row.get(0)))
+            .with_conn(|conn| {
+                conn.query_row("SELECT COUNT(*) FROM favorites", [], |row| row.get(0))
+            })
             .expect("count");
         assert_eq!(count, 1);
 
@@ -217,8 +259,25 @@ mod tests {
         assert!(!removed);
 
         let count: i32 = db
-            .with_conn(|conn| conn.query_row("SELECT COUNT(*) FROM favorites", [], |row| row.get(0)))
+            .with_conn(|conn| {
+                conn.query_row("SELECT COUNT(*) FROM favorites", [], |row| row.get(0))
+            })
             .expect("count");
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn get_play_favorite_statuses_marks_existing_keys() {
+        let db = setup_test_db();
+        let record = make_favorite();
+
+        toggle_favorite_in_db(&db, &record).expect("add");
+
+        let statuses =
+            get_play_favorite_statuses_inner(&db, vec!["s1+id1".to_string(), "s2+id2".to_string()])
+                .expect("statuses");
+
+        assert_eq!(statuses.get("s1+id1"), Some(&true));
+        assert_eq!(statuses.get("s2+id2"), Some(&false));
     }
 }

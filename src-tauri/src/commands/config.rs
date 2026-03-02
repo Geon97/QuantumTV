@@ -1,14 +1,14 @@
 use crate::storage::StorageManager;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::sync::OnceLock;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::State;
 use quantumtv_core::adult;
 use quantumtv_core::default_admin_config_value;
 use quantumtv_core::merge_admin_config_with_defaults;
 use quantumtv_core::normalize_source_config as normalize_source_config_core;
 use quantumtv_core::parse_admin_config as parse_admin_config_core;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::sync::OnceLock;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tauri::State;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ConfigSubscribtion {
     pub url: String,
@@ -261,8 +261,8 @@ pub async fn parse_subscription_config(
     subscription_url: Option<String>,
     raw_json: Option<String>,
 ) -> Result<SubscriptionParseResponse, String> {
-    let raw_json = resolve_subscription_json(subscription_url.as_deref(), raw_json.as_deref())
-        .await?;
+    let raw_json =
+        resolve_subscription_json(subscription_url.as_deref(), raw_json.as_deref()).await?;
 
     let parsed_config = parse_admin_config_core(&raw_json)?;
     Ok(SubscriptionParseResponse {
@@ -435,10 +435,7 @@ pub async fn update_subscription_settings(
         if let Some(url) = subscription_url {
             sub_obj.insert("URL".to_string(), Value::String(url));
         }
-        sub_obj.insert(
-            "AutoUpdate".to_string(),
-            Value::Bool(auto_update),
-        );
+        sub_obj.insert("AutoUpdate".to_string(), Value::Bool(auto_update));
     }
 
     state.update_config(config.clone())?;
@@ -457,11 +454,22 @@ pub async fn get_config_with_defaults(state: State<'_, StorageManager>) -> Resul
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", rename_all = "camelCase")]
 pub enum SourceConfigAction {
-    Reorder { active_key: String, over_key: String },
-    Toggle { key: String },
-    Delete { key: String },
-    Add { source: Value },
-    Edit { source: Value },
+    Reorder {
+        active_key: String,
+        over_key: String,
+    },
+    Toggle {
+        key: String,
+    },
+    Delete {
+        key: String,
+    },
+    Add {
+        source: Value,
+    },
+    Edit {
+        source: Value,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -490,7 +498,10 @@ fn apply_source_config_action(config: &Value, action: SourceConfigAction) -> Res
         .unwrap_or_default();
 
     match action {
-        SourceConfigAction::Reorder { active_key, over_key } => {
+        SourceConfigAction::Reorder {
+            active_key,
+            over_key,
+        } => {
             let from_index = sources.iter().position(|item| {
                 item.get("key")
                     .and_then(|v| v.as_str())
@@ -563,8 +574,8 @@ fn apply_source_config_action(config: &Value, action: SourceConfigAction) -> Res
             sources.push(normalized);
         }
         SourceConfigAction::Edit { source } => {
-            let key = extract_non_empty_string(&source, "key")
-                .ok_or_else(|| "缺少源标识".to_string())?;
+            let key =
+                extract_non_empty_string(&source, "key").ok_or_else(|| "缺少源标识".to_string())?;
             let default_from = source
                 .get("from")
                 .and_then(|v| v.as_str())
@@ -945,13 +956,22 @@ fn user_preferences_from_config(config: &Value) -> UserPreferences {
         if let Some(announcement) = site_config.get("Announcement").and_then(|v| v.as_str()) {
             prefs.announcement = announcement.to_string();
         }
-        if let Some(max_page) = site_config.get("SearchDownstreamMaxPage").and_then(|v| v.as_u64()) {
+        if let Some(max_page) = site_config
+            .get("SearchDownstreamMaxPage")
+            .and_then(|v| v.as_u64())
+        {
             prefs.search_downstream_max_page = max_page as u32;
         }
-        if let Some(cache_time) = site_config.get("SiteInterfaceCacheTime").and_then(|v| v.as_u64()) {
+        if let Some(cache_time) = site_config
+            .get("SiteInterfaceCacheTime")
+            .and_then(|v| v.as_u64())
+        {
             prefs.site_interface_cache_time = cache_time as u32;
         }
-        if let Some(disable_filter) = site_config.get("DisableYellowFilter").and_then(|v| v.as_bool()) {
+        if let Some(disable_filter) = site_config
+            .get("DisableYellowFilter")
+            .and_then(|v| v.as_bool())
+        {
             prefs.disable_yellow_filter = disable_filter;
         }
         if let Some(douban_type) = site_config.get("DoubanProxyType").and_then(|v| v.as_str()) {
@@ -960,7 +980,10 @@ fn user_preferences_from_config(config: &Value) -> UserPreferences {
         if let Some(douban_proxy) = site_config.get("DoubanProxy").and_then(|v| v.as_str()) {
             prefs.douban_proxy_url = douban_proxy.to_string();
         }
-        if let Some(image_type) = site_config.get("DoubanImageProxyType").and_then(|v| v.as_str()) {
+        if let Some(image_type) = site_config
+            .get("DoubanImageProxyType")
+            .and_then(|v| v.as_str())
+        {
             prefs.douban_image_proxy_type = image_type.to_string();
         }
         if let Some(image_proxy) = site_config.get("DoubanImageProxy").and_then(|v| v.as_str()) {
@@ -974,11 +997,11 @@ fn user_preferences_from_config(config: &Value) -> UserPreferences {
     prefs
 }
 
-
-
 /// 获取用户偏好配置（统一配置，自动从 SiteConfig 迁移）
 #[tauri::command]
-pub async fn get_user_preferences(state: State<'_, StorageManager>) -> Result<UserPreferences, String> {
+pub async fn get_user_preferences(
+    state: State<'_, StorageManager>,
+) -> Result<UserPreferences, String> {
     let data = state.get_data()?;
     Ok(user_preferences_from_config(&data.config))
 }
@@ -1040,25 +1063,13 @@ pub async fn is_adult_source(names: Vec<String>) -> Vec<bool> {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_custom_category_action,
-        apply_source_config_action,
-        apply_player_config_patch,
-        apply_user_preferences_patch,
-        format_rfc3339_utc_from_secs,
-        player_config_from_config,
-        resolve_subscription_json,
-        CustomCategoryAction,
-        SourceConfigAction,
-        user_preferences_from_config,
-        validate_subscription_json,
-        PlayerConfig,
-        PlayerConfigPatch,
-        UserPreferences,
+        apply_custom_category_action, apply_player_config_patch, apply_source_config_action,
+        apply_user_preferences_patch, format_rfc3339_utc_from_secs, player_config_from_config,
+        resolve_subscription_json, user_preferences_from_config, validate_subscription_json,
+        CustomCategoryAction, PlayerConfig, PlayerConfigPatch, SourceConfigAction, UserPreferences,
         UserPreferencesPatch,
     };
     use serde_json::json;
-
-
 
     #[test]
     fn validate_subscription_json_accepts_valid_json() {
@@ -1080,10 +1091,9 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_subscription_json_prefers_raw_json() {
-        let result =
-            resolve_subscription_json(Some("http://example.com"), Some("{\"ok\":true}"))
-                .await
-                .unwrap();
+        let result = resolve_subscription_json(Some("http://example.com"), Some("{\"ok\":true}"))
+            .await
+            .unwrap();
         assert_eq!(result, "{\"ok\":true}");
     }
 
@@ -1181,11 +1191,18 @@ mod tests {
             ]
         });
 
-        let updated =
-            apply_source_config_action(&config, SourceConfigAction::Toggle { key: "s1".to_string() })
-                .unwrap();
+        let updated = apply_source_config_action(
+            &config,
+            SourceConfigAction::Toggle {
+                key: "s1".to_string(),
+            },
+        )
+        .unwrap();
         let sources = updated.get("SourceConfig").unwrap().as_array().unwrap();
-        let disabled = sources[0].get("disabled").and_then(|v| v.as_bool()).unwrap();
+        let disabled = sources[0]
+            .get("disabled")
+            .and_then(|v| v.as_bool())
+            .unwrap();
         assert!(disabled);
     }
 
@@ -1216,7 +1233,9 @@ mod tests {
         let config = json!({ "SourceConfig": [] });
         let err = apply_source_config_action(
             &config,
-            SourceConfigAction::Add { source: json!({ "name": "A", "api": "http://a" }) },
+            SourceConfigAction::Add {
+                source: json!({ "name": "A", "api": "http://a" }),
+            },
         )
         .unwrap_err();
         assert_eq!(err, "请填写完整信息");
@@ -1262,13 +1281,14 @@ mod tests {
                 { "name": "Marvel", "query": "漫威", "type": "movie", "disabled": false }
             ]
         });
-        let updated = apply_custom_category_action(
-            &config,
-            CustomCategoryAction::Toggle { index: 0 },
-        )
-        .unwrap();
+        let updated =
+            apply_custom_category_action(&config, CustomCategoryAction::Toggle { index: 0 })
+                .unwrap();
         let categories = updated.get("CustomCategories").unwrap().as_array().unwrap();
-        let disabled = categories[0].get("disabled").and_then(|v| v.as_bool()).unwrap();
+        let disabled = categories[0]
+            .get("disabled")
+            .and_then(|v| v.as_bool())
+            .unwrap();
         assert!(disabled);
     }
 }

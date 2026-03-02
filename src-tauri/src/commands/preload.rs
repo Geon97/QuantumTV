@@ -145,15 +145,8 @@ pub async fn preload_next_episode_if_needed(
         }
     }
 
-    let _ = preload_next_episode(
-        source,
-        id,
-        current_episode,
-        total_episodes,
-        storage,
-        cache,
-    )
-    .await?;
+    let _ =
+        preload_next_episode(source, id, current_episode, total_episodes, storage, cache).await?;
 
     Ok(PreloadDecision { did_preload: true })
 }

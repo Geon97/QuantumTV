@@ -13,9 +13,8 @@ import {
   ChangePlaySourceResponse,
   InitializePlayerByQueryResponse,
   PlayerInitialState,
-  RustFavorite,
+  PlayerTickDecision,
   SearchResult,
-  SkipAction,
 } from '@/lib/types';
 import { appLayoutClasses } from '@/lib/ui-layout';
 import { generateStorageKey, subscribeToDataUpdates } from '@/lib/utils';
@@ -1578,19 +1577,28 @@ function PlayPageClient() {
   // ---------------------------------------------------------------------------
   // 收藏相关
   // ---------------------------------------------------------------------------
+  const refreshCurrentFavoriteStatus = async (
+    source: string,
+    id: string,
+  ): Promise<void> => {
+    try {
+      const key = generateStorageKey(source, id);
+      const statuses = await invoke<Record<string, boolean>>(
+        'get_play_favorite_statuses',
+        {
+          keys: [key],
+        },
+      );
+      setFavorited(Boolean(statuses[key]));
+    } catch (err) {
+      console.error('检查收藏状态失败:', err);
+    }
+  };
+
   // 每当 source 或 id 变化时检查收藏状态
   useEffect(() => {
     if (!currentSource || !currentId) return;
-    (async () => {
-      try {
-        const allFavorites = await invoke<RustFavorite[]>('get_play_favorites');
-        const key = generateStorageKey(currentSource, currentId);
-        const fav = allFavorites.some((f) => f.key === key);
-        setFavorited(fav);
-      } catch (err) {
-        console.error('检查收藏状态失败:', err);
-      }
-    })();
+    refreshCurrentFavoriteStatus(currentSource, currentId);
   }, [currentSource, currentId]);
 
   // 监听收藏数据更新事件
@@ -1598,14 +1606,7 @@ function PlayPageClient() {
     if (!currentSource || !currentId) return;
 
     const unsubscribe = subscribeToDataUpdates('favoritesUpdated', async () => {
-      try {
-        const allFavorites = await invoke<RustFavorite[]>('get_play_favorites');
-        const key = generateStorageKey(currentSource, currentId);
-        const isFav = allFavorites.some((f) => f.key === key);
-        setFavorited(isFav);
-      } catch (err) {
-        console.error('检查收藏状态失败:', err);
-      }
+      await refreshCurrentFavoriteStatus(currentSource, currentId);
     });
 
     return unsubscribe;
@@ -1894,94 +1895,81 @@ function PlayPageClient() {
             if (process.env.NEXT_PUBLIC_STORAGE_TYPE === 'upstash') {
               interval = 20000;
             }
-            if (now - lastSaveTimeRef.current > interval) {
-              saveCurrentPlayProgress();
-              lastSaveTimeRef.current = now;
-            }
-
-            if (now - lastSkipCheckRef.current < 1500) return;
-            lastSkipCheckRef.current = now;
-
-            if (skipConfigRef.current.enable && duration > 0) {
-              try {
-                const skipAction = await invoke<SkipAction>(
-                  'check_skip_action',
-                  {
-                    introTime: skipConfigRef.current.intro_time,
-                    outroTime: Math.abs(skipConfigRef.current.outro_time),
-                    currentTime,
-                    totalDuration: duration,
-                  },
-                );
-
-                if (
-                  typeof skipAction === 'object' &&
-                  'SkipIntro' in skipAction &&
-                  currentTime > 0.5
-                ) {
-                  const targetTime = skipAction.SkipIntro;
-                  player!.currentTime = targetTime;
-                  showToast(
-                    `跳过片头，跳转到 ${formatTime(targetTime)}`,
-                    'success',
-                  );
-                } else if (
-                  skipAction === 'SkipOutro' &&
-                  currentTime < duration - 1
-                ) {
-                  if (
-                    currentEpisodeIndexRef.current <
-                    (detailRef.current?.episodes?.length || 1) - 1
-                  ) {
-                    showToast('跳过片尾，跳转到下一集', 'info');
-                    setTimeout(() => {
-                      handleNextEpisode();
-                    }, 500);
-                  } else {
-                    showToast('跳过片尾，但当前已是最后一集', 'info');
-                    player!.pause();
-                  }
-                }
-              } catch (err) {
-                console.error('跳过检测失败', err);
-              }
-            }
-
             const detail = detailRef.current;
             const currentIdx = currentEpisodeIndexRef.current;
-            if (detail && detail.episodes) {
-              try {
-                const decision = await invoke<{ did_preload: boolean }>(
-                  'preload_next_episode_if_needed',
-                  {
-                    source: detail.source,
-                    id: detail.id,
-                    currentEpisode: currentIdx,
-                    totalEpisodes: detail.episodes.length,
+            try {
+              const tickDecision = await invoke<PlayerTickDecision>(
+                'player_tick',
+                {
+                  request: {
                     currentTime,
                     totalDuration: duration,
+                    nowMs: now,
+                    lastSaveAtMs: lastSaveTimeRef.current,
+                    saveIntervalMs: interval,
+                    lastSkipCheckAtMs: lastSkipCheckRef.current,
+                    skipEnabled: skipConfigRef.current.enable,
+                    introTime: skipConfigRef.current.intro_time,
+                    outroTime: Math.abs(skipConfigRef.current.outro_time),
+                    source: detail?.source || null,
+                    id: detail?.id || null,
+                    currentEpisode:
+                      detail && detail.episodes ? currentIdx : null,
+                    totalEpisodes: detail?.episodes?.length || null,
                   },
-                );
+                },
+              );
 
-                if (decision.did_preload) {
-                  const stats =
-                    await invoke<
-                      Record<
-                        string,
-                        { entry_count: number; weighted_size: number }
-                      >
-                    >('get_cache_stats');
-                  console.log(
-                    '📊 预载后缓存统计 | 视频缓存:',
-                    stats.video.entry_count,
-                    '条 | 搜索缓存:',
-                    stats.search.entry_count,
-                    '条',
-                  );
-                }
-              } catch (err) {
-                console.error('预载失败:', err);
+              lastSaveTimeRef.current = tickDecision.nextLastSaveAtMs;
+              lastSkipCheckRef.current = tickDecision.nextLastSkipCheckAtMs;
+
+              if (tickDecision.shouldSaveProgress) {
+                saveCurrentPlayProgress();
               }
+
+              const skipAction = tickDecision.skipAction;
+              if (
+                skipAction &&
+                typeof skipAction === 'object' &&
+                'SkipIntro' in skipAction &&
+                currentTime > 0.5
+              ) {
+                const targetTime = skipAction.SkipIntro;
+                player!.currentTime = targetTime;
+                showToast(`跳过片头，跳转到 ${formatTime(targetTime)}`, 'success');
+              } else if (
+                skipAction === 'SkipOutro' &&
+                currentTime < duration - 1
+              ) {
+                if (
+                  currentEpisodeIndexRef.current <
+                  (detailRef.current?.episodes?.length || 1) - 1
+                ) {
+                  showToast('跳过片尾，跳转到下一集', 'info');
+                  setTimeout(() => {
+                    handleNextEpisode();
+                  }, 500);
+                } else {
+                  showToast('跳过片尾，但当前已是最后一集', 'info');
+                  player!.pause();
+                }
+              }
+
+              if (tickDecision.didPreload) {
+                const stats =
+                  await invoke<
+                    Record<string, { entry_count: number; weighted_size: number }>
+                  >('get_cache_stats');
+                console.log(
+                  '📊 预载后缓存统计 | 视频缓存:',
+                  stats.video.entry_count,
+                  '条 | 搜索缓存:',
+                  stats.search.entry_count,
+                  '条',
+                );
+              }
+            } catch (err) {
+              console.error('player_tick 执行失败:', err);
             }
           });
 
