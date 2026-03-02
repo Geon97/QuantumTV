@@ -1107,13 +1107,19 @@ function PlayPageClient() {
       '.plyr__time--duration',
       'quantum-plyr-item-time-duration',
     );
-    markControlsItem('.plyr__control[data-plyr="mute"]', 'quantum-plyr-item-mute');
+    markControlsItem(
+      '.plyr__control[data-plyr="mute"]',
+      'quantum-plyr-item-mute',
+    );
     markControlsItem('.plyr__volume', 'quantum-plyr-item-volume');
     markControlsItem(
       '.plyr__control[data-plyr="settings"]',
       'quantum-plyr-item-settings',
     );
-    markControlsItem('.plyr__control[data-plyr="pip"]', 'quantum-plyr-item-pip');
+    markControlsItem(
+      '.plyr__control[data-plyr="pip"]',
+      'quantum-plyr-item-pip',
+    );
     markControlsItem(
       '.plyr__control[data-plyr="airplay"]',
       'quantum-plyr-item-airplay',
@@ -1601,7 +1607,10 @@ function PlayPageClient() {
         if (!video) {
           if (typeof document === 'undefined') return;
           video = document.createElement('video');
+          const posterUrl = videoCover || '/logo.png';
           video.className = 'quantum-plyr-video';
+          video.poster = posterUrl;
+          video.setAttribute('poster', posterUrl);
           video.playsInline = true;
           video.controls = true;
           video.crossOrigin = 'anonymous';
@@ -1835,7 +1844,10 @@ function PlayPageClient() {
         }
 
         if (cancelled) return;
-        player.poster = videoCover || '/logo.png';
+        const posterUrl = videoCover || '/logo.png';
+        video.poster = posterUrl;
+        video.setAttribute('poster', posterUrl);
+        player.poster = posterUrl;
         setIsVideoLoading(true);
         loadSource(video, videoUrl);
         setTimeout(() => {
