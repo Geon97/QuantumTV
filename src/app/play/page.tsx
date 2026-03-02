@@ -1611,9 +1611,11 @@ function PlayPageClient() {
           video.className = 'quantum-plyr-video';
           video.poster = posterUrl;
           video.setAttribute('poster', posterUrl);
+          // Do not force CORS mode for poster/media requests. Many third-party
+          // image hosts do not return ACAO and would be blocked in WebView/browser.
+          video.removeAttribute('crossorigin');
           video.playsInline = true;
           video.controls = true;
-          video.crossOrigin = 'anonymous';
           video.disableRemotePlayback = false;
           playerContainerRef.current.innerHTML = '';
           playerContainerRef.current.appendChild(video);
@@ -1845,6 +1847,7 @@ function PlayPageClient() {
 
         if (cancelled) return;
         const posterUrl = videoCover || '/logo.png';
+        video.removeAttribute('crossorigin');
         video.poster = posterUrl;
         video.setAttribute('poster', posterUrl);
         player.poster = posterUrl;
