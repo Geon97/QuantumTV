@@ -918,7 +918,7 @@ fn resolve_douban_page_mode(request: &DoubanPageRequest) -> DoubanPageMode {
     }
 
     if request.request_type == "anime" {
-        if request.primary_selection == "\u{6bcf}\u{65e5}\u{653e}\u{9001}" {
+        if request.primary_selection == "每日发送" {
             return DoubanPageMode::AnimeDaily;
         }
         return DoubanPageMode::Recommends;
@@ -993,28 +993,28 @@ fn resolve_douban_defaults(
 
     match request_type {
         "movie" => DoubanDefaultsResponse {
-            primary_selection: "\u{70ed}\u{95e8}".to_string(),
+            primary_selection: "热门".to_string(),
             secondary_selection: "全部".to_string(),
             multi_level_selection,
             cache_enabled: true,
             require_secondary: true,
         },
         "tv" => DoubanDefaultsResponse {
-            primary_selection: "\u{6700}\u{8fd1}\u{70ed}\u{95e8}".to_string(),
+            primary_selection: "最近热门".to_string(),
             secondary_selection: "tv".to_string(),
             multi_level_selection,
             cache_enabled: true,
             require_secondary: true,
         },
         "show" => DoubanDefaultsResponse {
-            primary_selection: "\u{6700}\u{8fd1}\u{70ed}\u{95e8}".to_string(),
+            primary_selection: "最近热门".to_string(),
             secondary_selection: "show".to_string(),
             multi_level_selection,
             cache_enabled: true,
             require_secondary: true,
         },
         "anime" => DoubanDefaultsResponse {
-            primary_selection: "\u{6bcf}\u{65e5}\u{653e}\u{9001}".to_string(),
+            primary_selection: "每日发送".to_string(),
             secondary_selection: "全部".to_string(),
             multi_level_selection,
             cache_enabled: true,
@@ -1091,15 +1091,15 @@ fn build_recommends_fallback_list_params(
 
     let secondary = request.secondary_selection.trim();
     let is_generic_secondary = secondary.is_empty()
-        || secondary == "\u{5168}\u{90e8}"
+        || secondary == "全部"
         || secondary.eq_ignore_ascii_case("tv")
         || secondary.eq_ignore_ascii_case("show");
 
     let tag = if is_generic_secondary {
         if request_type == "anime" {
-            "\u{52a8}\u{753b}".to_string()
+            "动画".to_string()
         } else {
-            "\u{70ed}\u{95e8}".to_string()
+            "热门".to_string()
         }
     } else {
         secondary.to_string()
@@ -1147,7 +1147,7 @@ fn douban_cache_key(request: &DoubanPageRequest, page_limit: i32, page: i32) -> 
 }
 
 fn is_all_primary_selection(value: &str) -> bool {
-    value.trim() == "\u{5168}\u{90e8}"
+    value.trim() == "全部"
 }
 
 fn is_all_secondary_selection(request_type: &str, value: &str) -> bool {
@@ -1156,7 +1156,7 @@ fn is_all_secondary_selection(request_type: &str, value: &str) -> bool {
         return false;
     }
 
-    if normalized == "\u{5168}\u{90e8}" || normalized.eq_ignore_ascii_case("all") {
+    if normalized == "全部" || normalized.eq_ignore_ascii_case("all") {
         return true;
     }
 
@@ -1210,7 +1210,7 @@ fn build_bangumi_daily_list(
 
     let items = match day {
         Some(day) => day.items.unwrap_or_default(),
-        None => return Err("\u{6ca1}\u{6709}\u{627e}\u{5230}\u{5bf9}\u{5e94}\u{7684}\u{65e5}\u{671f}".to_string()),
+        None => return Err("没有找到对应的日期".to_string()),
     };
 
     let list = items
@@ -1279,15 +1279,15 @@ fn build_recommends_params(
     };
 
     let (kind, format) = if request.request_type == "anime" {
-        if request.primary_selection == "\u{70ed}\u{95e8}" {
-            (Kind::Tv, "\u{7535}\u{89c6}\u{5267}".to_string())
+        if request.primary_selection == "热门" {
+            (Kind::Tv, "电视剧".to_string())
         } else {
             (Kind::Movie, String::new())
         }
     } else if request.request_type == "show" {
         (Kind::Tv, "综艺".to_string())
     } else if request.request_type == "tv" {
-        (Kind::Tv, "\u{7535}\u{89c6}\u{5267}".to_string())
+        (Kind::Tv, "电视剧".to_string())
     } else {
         (Kind::Movie, String::new())
     };
@@ -1460,7 +1460,7 @@ mod tests {
     fn resolve_douban_page_mode_anime_daily() {
         let request = DoubanPageRequest {
             request_type: "anime".to_string(),
-            primary_selection: "\u{6bcf}\u{65e5}\u{653e}\u{9001}".to_string(),
+            primary_selection: "每日发送".to_string(),
             secondary_selection: "全部".to_string(),
             multi_level_selection: None,
             selected_weekday: None,
@@ -1527,7 +1527,7 @@ mod tests {
     #[test]
     fn resolve_douban_defaults_movie() {
         let defaults = resolve_douban_defaults("movie", None, None);
-        assert_eq!(defaults.primary_selection, "\u{70ed}\u{95e8}");
+        assert_eq!(defaults.primary_selection, "热门");
         assert_eq!(defaults.secondary_selection, "全部");
         assert!(defaults.cache_enabled);
         assert!(defaults.require_secondary);
@@ -1536,7 +1536,7 @@ mod tests {
     #[test]
     fn resolve_douban_defaults_anime() {
         let defaults = resolve_douban_defaults("anime", None, None);
-        assert_eq!(defaults.primary_selection, "\u{6bcf}\u{65e5}\u{653e}\u{9001}");
+        assert_eq!(defaults.primary_selection, "每日发送");
         assert_eq!(defaults.secondary_selection, "全部");
         assert!(defaults.cache_enabled);
         assert!(!defaults.require_secondary);
@@ -1582,8 +1582,8 @@ mod tests {
     fn build_recommends_fallback_list_params_movie_all() {
         let request = DoubanPageRequest {
             request_type: "movie".to_string(),
-            primary_selection: "\u{5168}\u{90e8}".to_string(),
-            secondary_selection: "\u{5168}\u{90e8}".to_string(),
+            primary_selection: "全部".to_string(),
+            secondary_selection: "全部".to_string(),
             multi_level_selection: None,
             selected_weekday: None,
             page: Some(0),
@@ -1592,14 +1592,14 @@ mod tests {
 
         let params = build_recommends_fallback_list_params(&request, 25, 0);
         assert_eq!(params.type_, "movie");
-        assert_eq!(params.tag, "\u{70ed}\u{95e8}");
+        assert_eq!(params.tag, "热门");
     }
 
     #[test]
     fn build_recommends_fallback_list_params_anime_defaults_to_animation_tag() {
         let request = DoubanPageRequest {
             request_type: "anime".to_string(),
-            primary_selection: "\u{5168}\u{90e8}".to_string(),
+            primary_selection: "全部".to_string(),
             secondary_selection: "tv".to_string(),
             multi_level_selection: None,
             selected_weekday: None,
@@ -1609,7 +1609,7 @@ mod tests {
 
         let params = build_recommends_fallback_list_params(&request, 25, 0);
         assert_eq!(params.type_, "tv");
-        assert_eq!(params.tag, "\u{52a8}\u{753b}");
+        assert_eq!(params.tag, "动画");
     }
 
     #[test]
@@ -1622,7 +1622,7 @@ mod tests {
     fn should_cache_tv_when_primary_is_all() {
         let request = DoubanPageRequest {
             request_type: "tv".to_string(),
-            primary_selection: "\u{5168}\u{90e8}".to_string(),
+            primary_selection: "全部".to_string(),
             secondary_selection: "tv".to_string(),
             multi_level_selection: Some(default_multi_level_selection()),
             selected_weekday: None,
@@ -1637,8 +1637,8 @@ mod tests {
     fn should_cache_movie_when_secondary_is_all() {
         let request = DoubanPageRequest {
             request_type: "movie".to_string(),
-            primary_selection: "\u{6700}\u{65b0}".to_string(),
-            secondary_selection: "\u{5168}\u{90e8}".to_string(),
+            primary_selection: "最新".to_string(),
+            secondary_selection: "全部".to_string(),
             multi_level_selection: None,
             selected_weekday: None,
             page: Some(0),
@@ -1652,8 +1652,8 @@ mod tests {
     fn should_not_cache_movie_when_secondary_is_not_all_and_not_default() {
         let request = DoubanPageRequest {
             request_type: "movie".to_string(),
-            primary_selection: "\u{70ed}\u{95e8}".to_string(),
-            secondary_selection: "\u{97e9}\u{56fd}".to_string(),
+            primary_selection: "热门".to_string(),
+            secondary_selection: "韩国".to_string(),
             multi_level_selection: None,
             selected_weekday: None,
             page: Some(0),

@@ -228,7 +228,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
           await invoke('delete_play_record', { key });
           onDelete?.();
         } catch (_err) {
-          throw new Error('\u5220\u9664\u64ad\u653e\u8bb0\u5f55\u5931\u8d25');
+          throw new Error('删除播放记录失败');
         }
       },
       [from, actualSource, actualId, onDelete],
