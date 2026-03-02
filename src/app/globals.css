@@ -2669,6 +2669,7 @@ html.dark .tooltip {
   .plyr__controls__item.quantum-plyr-item-next {
   order: 15;
   width: var(--qt-control-size);
+  margin-right: 0.12rem;
 }
 
 .quantum-plyr-shell
@@ -2746,8 +2747,8 @@ html.dark .tooltip {
   .quantum-plyr-shell
     .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback) {
     --qt-control-size: 1.85rem;
-    --qt-time-current-width: 2rem;
-    --qt-time-duration-width: 3.25rem;
+    --qt-time-current-width: 2.25rem;
+    --qt-time-duration-width: 3.3rem;
     --qt-col-gap: 0.08rem;
     --qt-row-gap: 0.08rem;
   }
@@ -2780,6 +2781,13 @@ html.dark .tooltip {
     .plyr__controls__item.plyr__time
     + .plyr__time:before {
     margin-right: 0.12rem;
+  }
+
+  .quantum-plyr-shell
+    .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+    .plyr__controls
+    .plyr__controls__item.quantum-plyr-item-next {
+    margin-right: 0.08rem;
   }
 
   .quantum-plyr-shell
@@ -2855,6 +2863,237 @@ html.dark .tooltip {
     min-height: 2.55rem;
   }
 
+}
+
+/* 全屏：固定进度条第一行 + 紧凑第二行，避免移动端换行 */
+.quantum-plyr-shell .plyr.plyr--fullscreen-active,
+.quantum-plyr-shell .plyr.plyr--fullscreen-fallback {
+  --qt-fs-control-size: 2.1rem;
+  --qt-fs-time-current-width: 2.8rem;
+  --qt-fs-time-duration-width: 3.9rem;
+  --qt-fs-col-gap: 0.16rem;
+  --qt-fs-row-gap: 0.1rem;
+}
+
+.quantum-plyr-shell .plyr.plyr--fullscreen-active .plyr__controls,
+.quantum-plyr-shell .plyr.plyr--fullscreen-fallback .plyr__controls {
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: var(--qt-fs-row-gap);
+  column-gap: var(--qt-fs-col-gap);
+}
+
+.quantum-plyr-shell .plyr.plyr--fullscreen-active .plyr__controls .plyr__controls__item,
+.quantum-plyr-shell .plyr.plyr--fullscreen-fallback .plyr__controls .plyr__controls__item {
+  min-width: var(--qt-fs-control-size);
+  min-height: var(--qt-fs-control-size);
+}
+
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-active
+  .plyr__controls
+  .plyr__controls__item:not(.plyr__progress__container),
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-fallback
+  .plyr__controls
+  .plyr__controls__item:not(.plyr__progress__container) {
+  order: 200;
+}
+
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-active
+  .plyr__controls
+  .plyr__controls__item.plyr__progress__container,
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-fallback
+  .plyr__controls
+  .plyr__controls__item.plyr__progress__container {
+  order: -1;
+  display: block;
+  flex: 0 0 100%;
+  width: 100%;
+  min-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 0;
+}
+
+.quantum-plyr-shell .plyr.plyr--fullscreen-active .plyr__progress,
+.quantum-plyr-shell .plyr.plyr--fullscreen-fallback .plyr__progress {
+  width: 100%;
+  max-width: none;
+  left: 0;
+  margin-right: 0;
+}
+
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-active
+  .plyr__progress
+  input[type='range'],
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-active
+  .plyr__progress__buffer,
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-fallback
+  .plyr__progress
+  input[type='range'],
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-fallback
+  .plyr__progress__buffer {
+  width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-active
+  .plyr__controls
+  .plyr__controls__item.plyr__time,
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-fallback
+  .plyr__controls
+  .plyr__controls__item.plyr__time {
+  font-size: 0.76rem;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-active
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-prev,
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-fallback
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-prev {
+  order: 5;
+  width: var(--qt-fs-control-size);
+}
+
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-active
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-play,
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-fallback
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-play {
+  order: 10;
+  width: var(--qt-fs-control-size);
+}
+
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-active
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-next,
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-fallback
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-next {
+  order: 15;
+  width: var(--qt-fs-control-size);
+  margin-right: 0.08rem;
+}
+
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-active
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-time-current,
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-fallback
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-time-current {
+  order: 30;
+  flex: 0 0 var(--qt-fs-time-current-width);
+  width: var(--qt-fs-time-current-width);
+  justify-content: flex-end;
+}
+
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-active
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-time-duration,
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-fallback
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-time-duration {
+  order: 40;
+  flex: 0 0 var(--qt-fs-time-duration-width);
+  width: var(--qt-fs-time-duration-width);
+  justify-content: flex-start;
+}
+
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-active
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-mute,
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-fallback
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-mute {
+  order: 50;
+  width: var(--qt-fs-control-size);
+}
+
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-active
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-settings,
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-fallback
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-settings {
+  order: 90;
+  margin-left: auto;
+  width: var(--qt-fs-control-size);
+}
+
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-active
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-fullscreen,
+.quantum-plyr-shell
+  .plyr.plyr--fullscreen-fallback
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-fullscreen {
+  order: 120;
+  width: var(--qt-fs-control-size);
+}
+
+@media (max-width: 900px) {
+  .quantum-plyr-shell .plyr.plyr--fullscreen-active .plyr__volume,
+  .quantum-plyr-shell .plyr.plyr--fullscreen-fallback .plyr__volume,
+  .quantum-plyr-shell
+    .plyr.plyr--fullscreen-active
+    .plyr__controls
+    .plyr__controls__item.quantum-plyr-item-pip,
+  .quantum-plyr-shell
+    .plyr.plyr--fullscreen-fallback
+    .plyr__controls
+    .plyr__controls__item.quantum-plyr-item-pip,
+  .quantum-plyr-shell
+    .plyr.plyr--fullscreen-active
+    .plyr__controls
+    .plyr__controls__item.quantum-plyr-item-airplay,
+  .quantum-plyr-shell
+    .plyr.plyr--fullscreen-fallback
+    .plyr__controls
+    .plyr__controls__item.quantum-plyr-item-airplay {
+    display: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .quantum-plyr-shell .plyr.plyr--fullscreen-active,
+  .quantum-plyr-shell .plyr.plyr--fullscreen-fallback {
+    --qt-fs-control-size: 1.9rem;
+    --qt-fs-time-current-width: 2.25rem;
+    --qt-fs-time-duration-width: 3.25rem;
+    --qt-fs-col-gap: 0.08rem;
+    --qt-fs-row-gap: 0.08rem;
+  }
 }
 
 @supports (padding-top: env(safe-area-inset-top)) {
