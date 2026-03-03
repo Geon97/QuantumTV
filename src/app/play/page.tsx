@@ -7,6 +7,7 @@ import { FastForward, Heart, Rewind } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import * as Plyr from 'plyr';
 import { Suspense, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import {
   ApplySkipConfigResponse,
@@ -205,6 +206,8 @@ function PlayPageClient() {
     seconds: number;
     targetTime: number;
   } | null>(null);
+  const [swipeSeekOverlayPortalHost, setSwipeSeekOverlayPortalHost] =
+    useState<HTMLElement | null>(null);
 
   // 播放进度保存相关
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -438,6 +441,30 @@ function PlayPageClient() {
       setSwipeSeekOverlay(null);
       swipeSeekOverlayTimerRef.current = null;
     }, delayMs);
+  };
+
+  const resolvePlayerFullscreenElement = (): HTMLElement | null => {
+    if (typeof document === 'undefined') return null;
+
+    const container = playerContainerRef.current;
+    if (!container) return null;
+
+    // eslint-disable-next-line no-undef
+    const docWithWebkitFullscreen = document as Document & {
+      webkitFullscreenElement?: Element | null;
+    };
+    const candidates = [
+      document.fullscreenElement,
+      docWithWebkitFullscreen.webkitFullscreenElement ?? null,
+    ];
+
+    for (const candidate of candidates) {
+      if (candidate instanceof HTMLElement && container.contains(candidate)) {
+        return candidate;
+      }
+    }
+
+    return null;
   };
 
   // 使用 Tauri fetch_binary 的 HLS.js Loader（带缓存和预取）
@@ -1052,22 +1079,82 @@ function PlayPageClient() {
       hideSwipeSeekOverlay();
     };
 
-    container.addEventListener('touchstart', handleTouchStart, {
-      passive: true,
+    const syncSwipeSeekOverlayHost = () => {
+      const fullscreenElement = resolvePlayerFullscreenElement();
+      setSwipeSeekOverlayPortalHost((prev) => {
+        if (prev === fullscreenElement) return prev;
+        return fullscreenElement;
+      });
+    };
+
+    let activeGestureTarget: HTMLElement | null = null;
+    const addGestureListeners = (target: HTMLElement) => {
+      target.addEventListener('touchstart', handleTouchStart, {
+        passive: true,
+      });
+      target.addEventListener('touchmove', handleTouchMove, {
+        passive: false,
+      });
+      target.addEventListener('touchend', handleTouchEnd, { passive: true });
+      target.addEventListener('touchcancel', handleTouchCancel, {
+        passive: true,
+      });
+    };
+
+    const removeGestureListeners = (target: HTMLElement) => {
+      target.removeEventListener('touchstart', handleTouchStart);
+      target.removeEventListener('touchmove', handleTouchMove);
+      target.removeEventListener('touchend', handleTouchEnd);
+      target.removeEventListener('touchcancel', handleTouchCancel);
+    };
+
+    const resolveGestureTarget = () => {
+      const fullscreenElement = resolvePlayerFullscreenElement();
+      if (fullscreenElement) return fullscreenElement;
+
+      const plyrRoot = container.querySelector<HTMLElement>('.plyr');
+      return plyrRoot || container;
+    };
+
+    const syncGestureTarget = () => {
+      const nextTarget = resolveGestureTarget();
+      if (nextTarget === activeGestureTarget) return;
+
+      if (activeGestureTarget) {
+        removeGestureListeners(activeGestureTarget);
+      }
+
+      activeGestureTarget = nextTarget;
+      if (activeGestureTarget) {
+        addGestureListeners(activeGestureTarget);
+      }
+    };
+
+    syncSwipeSeekOverlayHost();
+    syncGestureTarget();
+
+    const mutationObserver = new MutationObserver(() => {
+      syncGestureTarget();
+      syncSwipeSeekOverlayHost();
     });
-    container.addEventListener('touchmove', handleTouchMove, {
-      passive: false,
-    });
-    container.addEventListener('touchend', handleTouchEnd, { passive: true });
-    container.addEventListener('touchcancel', handleTouchCancel, {
-      passive: true,
+    mutationObserver.observe(container, {
+      childList: true,
+      subtree: true,
     });
 
+    const handleFullscreenChange = () => {
+      syncGestureTarget();
+      syncSwipeSeekOverlayHost();
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+
     return () => {
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
-      container.removeEventListener('touchend', handleTouchEnd);
-      container.removeEventListener('touchcancel', handleTouchCancel);
+      mutationObserver.disconnect();
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      if (activeGestureTarget) {
+        removeGestureListeners(activeGestureTarget);
+      }
+      setSwipeSeekOverlayPortalHost(null);
       gestureStartPlayerTimeRef.current = null;
       hideSwipeSeekOverlay();
     };
@@ -1936,7 +2023,10 @@ function PlayPageClient() {
               ) {
                 const targetTime = skipAction.SkipIntro;
                 player!.currentTime = targetTime;
-                showToast(`跳过片头，跳转到 ${formatTime(targetTime)}`, 'success');
+                showToast(
+                  `跳过片头，跳转到 ${formatTime(targetTime)}`,
+                  'success',
+                );
               } else if (
                 skipAction === 'SkipOutro' &&
                 currentTime < duration - 1
@@ -1958,7 +2048,10 @@ function PlayPageClient() {
               if (tickDecision.didPreload) {
                 const stats =
                   await invoke<
-                    Record<string, { entry_count: number; weighted_size: number }>
+                    Record<
+                      string,
+                      { entry_count: number; weighted_size: number }
+                    >
                   >('get_cache_stats');
                 console.log(
                   '📊 预载后缓存统计 | 视频缓存:',
@@ -2196,6 +2289,38 @@ function PlayPageClient() {
     );
   }
 
+  const swipeSeekOverlayNode = swipeSeekOverlay ? (
+    <div className='absolute inset-0 z-40 pointer-events-none overflow-hidden'>
+      <div
+        className={`absolute inset-y-0 w-1/2 ${
+          swipeSeekOverlay.direction === 'forward'
+            ? 'right-0 bg-gradient-to-l from-emerald-500/35 via-emerald-500/15 to-transparent'
+            : 'left-0 bg-gradient-to-r from-orange-500/35 via-orange-500/15 to-transparent'
+        }`}
+      />
+      <div
+        className={`absolute top-1/2 -translate-y-1/2 ${
+          swipeSeekOverlay.direction === 'forward' ? 'right-[8%]' : 'left-[8%]'
+        }`}
+      >
+        <div className='flex min-w-[8.5rem] max-w-[85vw] flex-col items-center gap-1.5 rounded-2xl border border-white/25 bg-black/70 px-4 py-3 text-white shadow-2xl backdrop-blur-md'>
+          <div className='flex items-center gap-1.5 text-sm font-semibold sm:text-base'>
+            {swipeSeekOverlay.direction === 'forward' ? (
+              <FastForward className='h-5 w-5 text-emerald-300' />
+            ) : (
+              <Rewind className='h-5 w-5 text-orange-300' />
+            )}
+            <span>{Math.round(swipeSeekOverlay.seconds)} 秒</span>
+          </div>
+          <div className='text-[11px] text-white/85 sm:text-xs'>
+            {swipeSeekOverlay.direction === 'forward' ? '快进到' : '快退到'}{' '}
+            {formatTime(swipeSeekOverlay.targetTime)}
+          </div>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <PageLayout activePath='/play'>
       <div
@@ -2347,28 +2472,7 @@ function PlayPageClient() {
                   </div>
                 )}
 
-                {swipeSeekOverlay && (
-                  <div className='absolute inset-0 z-40 pointer-events-none flex items-center justify-center'>
-                    <div className='flex min-w-[10rem] max-w-[85%] flex-col items-center gap-1.5 rounded-2xl border border-white/20 bg-black/65 px-4 py-3 text-white shadow-xl backdrop-blur-md'>
-                      <div className='flex items-center gap-2'>
-                        {swipeSeekOverlay.direction === 'forward' ? (
-                          <FastForward className='h-5 w-5 text-green-300' />
-                        ) : (
-                          <Rewind className='h-5 w-5 text-orange-300' />
-                        )}
-                        <span className='text-sm font-semibold sm:text-base'>
-                          {swipeSeekOverlay.direction === 'forward'
-                            ? '快进'
-                            : '快退'}{' '}
-                          {Math.round(swipeSeekOverlay.seconds)} 秒
-                        </span>
-                      </div>
-                      <div className='text-[11px] text-white/80 sm:text-xs'>
-                        目标时间 {formatTime(swipeSeekOverlay.targetTime)}
-                      </div>
-                    </div>
-                  </div>
-                )}
+                {!swipeSeekOverlayPortalHost && swipeSeekOverlayNode}
               </div>
             </div>
 
@@ -2475,6 +2579,10 @@ function PlayPageClient() {
           </div>
         </div>
       </div>
+
+      {swipeSeekOverlayPortalHost &&
+        swipeSeekOverlayNode &&
+        createPortal(swipeSeekOverlayNode, swipeSeekOverlayPortalHost)}
 
       {/* 跳过片头片尾设置面板 */}
       <SkipConfigPanel
