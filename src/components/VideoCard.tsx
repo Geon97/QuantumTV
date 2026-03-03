@@ -1,14 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-unused-vars, unused-imports/no-unused-vars */
 
 import { invoke } from '@tauri-apps/api/core';
-import {
-  ExternalLink,
-  Heart,
-  Link,
-  PlayCircleIcon,
-  Radio,
-  Trash2,
-} from 'lucide-react';
+import { Heart, Link, PlayCircleIcon, Radio, Trash2 } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import React, {
@@ -198,7 +191,8 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                 source_name: source_name || '',
                 year: actualYear || '',
                 cover: actualPoster,
-                episode_index: 1,
+                episode_index: currentEpisode || 1,
+                total_episodes: actualEpisodes || 1,
                 save_time: Math.floor(Date.now() / 1000),
                 search_title: actualQuery || '',
               },
@@ -221,6 +215,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         source_name,
         actualYear,
         actualPoster,
+        currentEpisode,
         actualEpisodes,
         actualQuery,
       ],
@@ -271,33 +266,6 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       actualSearchType,
     ]);
 
-    // 新标签页播放处理函数
-    const handlePlayInNewTab = useCallback(() => {
-      if (from === 'douban' || (isAggregate && !actualSource && !actualId)) {
-        const url = `/play?title=${encodeURIComponent(actualTitle.trim())}${actualYear ? `&year=${actualYear}` : ''}${actualSearchType ? `&stype=${actualSearchType}` : ''}${isAggregate ? '&prefer=true' : ''}${actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''}`;
-        window.open(url, '_blank');
-      } else if (actualSource && actualId) {
-        const url = `/play?source=${actualSource}&id=${actualId}&title=${encodeURIComponent(
-          actualTitle,
-        )}${actualYear ? `&year=${actualYear}` : ''}${
-          isAggregate ? '&prefer=true' : ''
-        }${
-          actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''
-        }${actualSearchType ? `&stype=${actualSearchType}` : ''}`;
-        window.open(url, '_blank');
-      }
-    }, [
-      origin,
-      from,
-      actualSource,
-      actualId,
-      actualTitle,
-      actualYear,
-      isAggregate,
-      actualQuery,
-      actualSearchType,
-    ]);
-
     // 检查搜索结果的收藏状态
     const checkSearchFavoriteStatus = useCallback(async () => {
       if (
@@ -310,7 +278,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         try {
           const fav = await getFavoriteStatus(actualSource, actualId);
           setSearchFavorited(fav);
-        } catch (_err) {
+        } catch (err) {
           setSearchFavorited(false);
         }
       }
@@ -417,18 +385,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
           onClick: handleClick,
           color: 'primary' as const,
         });
-
-        // 新标签页播放
-        actions.push({
-          id: 'play-new-tab',
-          label: origin === 'live' ? '新标签页观看' : '新标签页播放',
-          icon: <ExternalLink size={20} />,
-          onClick: handlePlayInNewTab,
-          color: 'default' as const,
-        });
       }
-
-      // 聚合源信息 - 直接在菜单中展示，不需要单独的操作项
 
       // 收藏/取消收藏操作
       if (config.showHeart && from !== 'douban' && actualSource && actualId) {

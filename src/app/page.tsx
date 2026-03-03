@@ -169,7 +169,10 @@ function HomeClient() {
               </div>
               <div className={getGridColumnsClass('dense')}>
                 {favoriteItems.map((item) => (
-                  <div key={item.id + item.source} className='w-full'>
+                  <div
+                    key={item.id + item.source}
+                    className='mx-auto w-full max-w-[10.75rem] max-[375px]:max-w-[9.5rem] min-[834px]:max-w-[11.25rem] lg:max-w-[11.75rem] min-[1440px]:max-w-[12.5rem]'
+                  >
                     <VideoCard
                       query={item.search_title}
                       {...item}
