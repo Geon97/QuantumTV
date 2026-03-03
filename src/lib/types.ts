@@ -48,6 +48,26 @@ export interface UserPreferences {
   has_seen_announcement: string;
 }
 
+export interface RuntimeCustomCategory {
+  name: string;
+  type: 'movie' | 'tv';
+  query: string;
+}
+
+export interface RuntimeConfigResponse {
+  storage_type: string;
+  use_local_source_config: boolean;
+  site_name: string;
+  announcement: string;
+  douban_proxy_type: string;
+  douban_proxy: string;
+  douban_image_proxy_type: string;
+  douban_image_proxy: string;
+  disable_yellow_filter: boolean;
+  fluid_search: boolean;
+  custom_categories: RuntimeCustomCategory[];
+}
+
 // 播放器初始化状态类型
 export interface PlayerInitialState {
   detail: SearchResult;

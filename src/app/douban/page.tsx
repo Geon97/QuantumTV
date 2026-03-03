@@ -9,6 +9,7 @@ import type {
   DoubanDefaultsResponse,
   DoubanItem,
   DoubanPageResponse,
+  RuntimeConfigResponse,
 } from '@/lib/types';
 import { appLayoutClasses, getGridColumnsClass } from '@/lib/ui-layout';
 import { useImagePreload } from '@/hooks/useImagePreload';
@@ -138,10 +139,26 @@ function DoubanPageClient() {
 
   // 获取自定义分类数据
   useEffect(() => {
-    const runtimeConfig = (window as any).RUNTIME_CONFIG;
-    if (runtimeConfig?.CUSTOM_CATEGORIES?.length > 0) {
-      setCustomCategories(runtimeConfig.CUSTOM_CATEGORIES);
-    }
+    const loadCustomCategories = async () => {
+      try {
+        const runtimeConfig = await invoke<RuntimeConfigResponse>(
+          'get_runtime_config',
+        );
+        if (runtimeConfig.custom_categories.length > 0) {
+          setCustomCategories(runtimeConfig.custom_categories);
+          return;
+        }
+      } catch {
+        // Fallback to injected runtime config.
+      }
+
+      const runtimeConfig = (window as any).RUNTIME_CONFIG;
+      if (runtimeConfig?.CUSTOM_CATEGORIES?.length > 0) {
+        setCustomCategories(runtimeConfig.CUSTOM_CATEGORIES);
+      }
+    };
+
+    void loadCustomCategories();
   }, []);
 
   // 同步最新参数值到 ref

@@ -894,6 +894,109 @@ pub struct UserPreferencesPatch {
     pub has_seen_announcement: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct RuntimeCustomCategory {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub r#type: String,
+    pub query: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RuntimeConfigResponse {
+    pub storage_type: String,
+    pub use_local_source_config: bool,
+    pub site_name: String,
+    pub announcement: String,
+    pub douban_proxy_type: String,
+    pub douban_proxy: String,
+    pub douban_image_proxy_type: String,
+    pub douban_image_proxy: String,
+    pub disable_yellow_filter: bool,
+    pub fluid_search: bool,
+    pub custom_categories: Vec<RuntimeCustomCategory>,
+}
+
+fn resolve_runtime_storage_type() -> String {
+    let raw = std::env::var("NEXT_PUBLIC_STORAGE_TYPE")
+        .ok()
+        .or_else(|| option_env!("NEXT_PUBLIC_STORAGE_TYPE").map(|value| value.to_string()))
+        .unwrap_or_else(|| "localstorage".to_string());
+
+    let normalized = raw.trim().to_lowercase();
+    if normalized.is_empty() {
+        "localstorage".to_string()
+    } else {
+        normalized
+    }
+}
+
+fn should_use_local_source_config(storage_type: &str) -> bool {
+    storage_type.eq_ignore_ascii_case("localstorage")
+}
+
+fn runtime_custom_categories_from_config(config: &Value) -> Vec<RuntimeCustomCategory> {
+    config
+        .get("CustomCategories")
+        .and_then(|value| value.as_array())
+        .map(|categories| {
+            categories
+                .iter()
+                .filter_map(|item| {
+                    let item_obj = item.as_object()?;
+                    let is_disabled = item_obj
+                        .get("disabled")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(false);
+                    if is_disabled {
+                        return None;
+                    }
+
+                    let name = item_obj.get("name").and_then(|value| value.as_str())?.trim();
+                    let query = item_obj.get("query").and_then(|value| value.as_str())?.trim();
+                    let category_type = item_obj
+                        .get("type")
+                        .and_then(|value| value.as_str())?
+                        .trim()
+                        .to_lowercase();
+
+                    if name.is_empty() || query.is_empty() {
+                        return None;
+                    }
+                    if category_type != "movie" && category_type != "tv" {
+                        return None;
+                    }
+
+                    Some(RuntimeCustomCategory {
+                        name: name.to_string(),
+                        r#type: category_type,
+                        query: query.to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn runtime_config_from_config(config: &Value) -> RuntimeConfigResponse {
+    let prefs = user_preferences_from_config(config);
+    let storage_type = resolve_runtime_storage_type();
+
+    RuntimeConfigResponse {
+        storage_type: storage_type.clone(),
+        use_local_source_config: should_use_local_source_config(&storage_type),
+        site_name: prefs.site_name,
+        announcement: prefs.announcement,
+        douban_proxy_type: prefs.douban_data_source,
+        douban_proxy: prefs.douban_proxy_url,
+        douban_image_proxy_type: prefs.douban_image_proxy_type,
+        douban_image_proxy: prefs.douban_image_proxy_url,
+        disable_yellow_filter: prefs.disable_yellow_filter,
+        fluid_search: prefs.fluid_search,
+        custom_categories: runtime_custom_categories_from_config(config),
+    }
+}
+
 fn apply_user_preferences_patch(
     mut preferences: UserPreferences,
     patch: UserPreferencesPatch,
@@ -1006,6 +1109,14 @@ pub async fn get_user_preferences(
     Ok(user_preferences_from_config(&data.config))
 }
 
+#[tauri::command]
+pub async fn get_runtime_config(
+    state: State<'_, StorageManager>,
+) -> Result<RuntimeConfigResponse, String> {
+    let data = state.get_data()?;
+    Ok(runtime_config_from_config(&data.config))
+}
+
 /// 保存用户偏好配置
 #[tauri::command]
 pub async fn set_user_preferences(
@@ -1065,8 +1176,10 @@ mod tests {
     use super::{
         apply_custom_category_action, apply_player_config_patch, apply_source_config_action,
         apply_user_preferences_patch, format_rfc3339_utc_from_secs, player_config_from_config,
-        resolve_subscription_json, user_preferences_from_config, validate_subscription_json,
-        CustomCategoryAction, PlayerConfig, PlayerConfigPatch, SourceConfigAction, UserPreferences,
+        resolve_subscription_json, runtime_config_from_config,
+        runtime_custom_categories_from_config, should_use_local_source_config,
+        user_preferences_from_config, validate_subscription_json, CustomCategoryAction,
+        PlayerConfig, PlayerConfigPatch, SourceConfigAction, UserPreferences,
         UserPreferencesPatch,
     };
     use serde_json::json;
@@ -1181,6 +1294,62 @@ mod tests {
         assert!(!updated.enable_optimization);
         assert_eq!(updated.player_buffer_mode, "max");
         assert_eq!(updated.site_name, base.site_name);
+    }
+
+    #[test]
+    fn should_use_local_source_config_only_for_localstorage() {
+        assert!(should_use_local_source_config("localstorage"));
+        assert!(should_use_local_source_config("LOCALSTORAGE"));
+        assert!(!should_use_local_source_config("upstash"));
+    }
+
+    #[test]
+    fn runtime_custom_categories_from_config_filters_disabled_or_invalid_items() {
+        let config = json!({
+            "CustomCategories": [
+                { "name": "院线热映", "type": "movie", "query": "院线", "disabled": false },
+                { "name": "已禁用", "type": "movie", "query": "禁用", "disabled": true },
+                { "name": "非法类型", "type": "anime", "query": "动画", "disabled": false },
+                { "name": "", "type": "tv", "query": "空名称", "disabled": false }
+            ]
+        });
+
+        let categories = runtime_custom_categories_from_config(&config);
+        assert_eq!(categories.len(), 1);
+        assert_eq!(categories[0].name, "院线热映");
+        assert_eq!(categories[0].r#type, "movie");
+        assert_eq!(categories[0].query, "院线");
+    }
+
+    #[test]
+    fn runtime_config_from_config_maps_preferences_and_categories() {
+        let config = json!({
+            "UserPreferences": {
+                "site_name": "QuantumTV Test",
+                "announcement": "hello",
+                "disable_yellow_filter": true,
+                "fluid_search": false,
+                "douban_data_source": "proxy-a",
+                "douban_proxy_url": "https://proxy.example.com",
+                "douban_image_proxy_type": "proxy-img",
+                "douban_image_proxy_url": "https://img.example.com"
+            },
+            "CustomCategories": [
+                { "name": "电影精选", "type": "movie", "query": "精选", "disabled": false }
+            ]
+        });
+
+        let runtime = runtime_config_from_config(&config);
+        assert_eq!(runtime.site_name, "QuantumTV Test");
+        assert_eq!(runtime.announcement, "hello");
+        assert!(runtime.disable_yellow_filter);
+        assert!(!runtime.fluid_search);
+        assert_eq!(runtime.douban_proxy_type, "proxy-a");
+        assert_eq!(runtime.douban_proxy, "https://proxy.example.com");
+        assert_eq!(runtime.douban_image_proxy_type, "proxy-img");
+        assert_eq!(runtime.douban_image_proxy, "https://img.example.com");
+        assert_eq!(runtime.custom_categories.len(), 1);
+        assert_eq!(runtime.custom_categories[0].name, "电影精选");
     }
 
     #[test]

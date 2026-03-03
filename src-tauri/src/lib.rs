@@ -113,6 +113,7 @@ pub fn run() {
             commands::config::set_player_config,
             commands::config::update_player_config,
             commands::config::get_user_preferences,
+            commands::config::get_runtime_config,
             commands::config::set_user_preferences,
             commands::config::update_user_preferences,
             commands::search::get_search_suggestions,

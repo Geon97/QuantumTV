@@ -4,7 +4,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useState } from 'react';
 
-import { ApiSite } from '@/lib/types';
+import { ApiSite, RuntimeConfigResponse } from '@/lib/types';
 
 export interface SourceCategory {
   type_id: string | number;
@@ -48,12 +48,19 @@ export function useSourceFilter(): UseSourceFilterReturn {
     setError(null);
 
     try {
-      const runtimeStorageType =
-        typeof window !== 'undefined'
-          ? (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage'
-          : 'localstorage';
+      let useLocalSourceConfig =
+        (process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage') ===
+        'localstorage';
+      try {
+        const runtimeConfig = await invoke<RuntimeConfigResponse>(
+          'get_runtime_config',
+        );
+        useLocalSourceConfig = runtimeConfig.use_local_source_config;
+      } catch {
+        // Fallback to env default when command is unavailable.
+      }
 
-      if (runtimeStorageType === 'localstorage') {
+      if (useLocalSourceConfig) {
         const config = await invoke<any>('get_config');
         const sourceConfig = config.SourceConfig || [];
         const enabledSources = sourceConfig
