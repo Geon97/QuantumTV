@@ -1,6 +1,6 @@
 [package]
 name = "quantumtv"
-version = "0.6.2"
+version = "0.6.3"
 build = "build.rs"
 description = "quantumtv Tauri App"
 authors = ["Geon"]

@@ -878,6 +878,18 @@ function PlayPageClient() {
     const seekSecondsPerPx = 0.12;
     const maxSeekSeconds = 120;
     const seekStepSeconds = 5;
+    const gestureToggleCooldownMs = 360;
+    let lastGestureToggleAt = 0;
+
+    const toggleGesturePlayPause = () => {
+      const player = plyrRef.current;
+      if (!player) return;
+      const now = Date.now();
+      if (now - lastGestureToggleAt < gestureToggleCooldownMs) return;
+      lastGestureToggleAt = now;
+      player.togglePlay();
+      showToast(player.paused ? '已暂停' : '继续播放', 'info');
+    };
 
     const calculateSeekSeconds = (distancePx: number) => {
       const rawSeekSeconds = Math.min(
@@ -1055,8 +1067,12 @@ function PlayPageClient() {
         );
 
         if (tapDistance <= doubleTapMaxDistance && plyrRef.current) {
-          plyrRef.current.togglePlay();
-          showToast(plyrRef.current.paused ? '已暂停' : '继续播放', 'info');
+          if (event.cancelable) {
+            event.preventDefault();
+          }
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          toggleGesturePlayPause();
           lastTapRef.current = null;
           gestureStartPlayerTimeRef.current = null;
           hideSwipeSeekOverlay();
@@ -1079,6 +1095,15 @@ function PlayPageClient() {
       hideSwipeSeekOverlay();
     };
 
+    const handleDoubleClick = (event: MouseEvent) => {
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      toggleGesturePlayPause();
+    };
+
     const syncSwipeSeekOverlayHost = () => {
       const fullscreenElement = resolvePlayerFullscreenElement();
       setSwipeSeekOverlayPortalHost((prev) => {
@@ -1095,10 +1120,11 @@ function PlayPageClient() {
       target.addEventListener('touchmove', handleTouchMove, {
         passive: false,
       });
-      target.addEventListener('touchend', handleTouchEnd, { passive: true });
+      target.addEventListener('touchend', handleTouchEnd, { passive: false });
       target.addEventListener('touchcancel', handleTouchCancel, {
         passive: true,
       });
+      target.addEventListener('dblclick', handleDoubleClick, true);
     };
 
     const removeGestureListeners = (target: HTMLElement) => {
@@ -1106,6 +1132,7 @@ function PlayPageClient() {
       target.removeEventListener('touchmove', handleTouchMove);
       target.removeEventListener('touchend', handleTouchEnd);
       target.removeEventListener('touchcancel', handleTouchCancel);
+      target.removeEventListener('dblclick', handleDoubleClick, true);
     };
 
     const resolveGestureTarget = () => {
@@ -1863,12 +1890,17 @@ function PlayPageClient() {
         }
 
         if (!player) {
+          const isTouchDevice =
+            typeof window !== 'undefined' &&
+            (window.matchMedia?.('(pointer: coarse)')?.matches ||
+              'ontouchstart' in window ||
+              navigator.maxTouchPoints > 0);
           player = new PlyrConstructor(video, {
             autoplay: true,
             muted: false,
             volume: lastVolumeRef.current,
             seekTime: 10,
-            clickToPlay: true,
+            clickToPlay: !isTouchDevice,
             resetOnEnd: false,
             fullscreen: {
               enabled: true,

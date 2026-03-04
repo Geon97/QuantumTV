@@ -131,6 +131,13 @@ pub fn filter_ads_from_m3_u8(content: &str) -> String {
         }
 
         // =========================================================
+        // 1.5 删除 DISCONTINUITY 标签（保留 DISCONTINUITY-SEQUENCE）
+        // =========================================================
+        if trimmed == "#EXT-X-DISCONTINUITY" {
+            continue;
+        }
+
+        // =========================================================
         // 2️⃣ DATERANGE —— 只过滤标签本身
         // =========================================================
         if trimmed.starts_with("#EXT-X-DATERANGE") {
@@ -321,6 +328,22 @@ mod tests {
         // DATERANGE 广告标签应该被移除
         assert!(!filtered.contains("CLASS=\"AD\""));
         assert!(filtered.contains("segment1.ts"));
+    }
+
+    #[test]
+    fn test_filter_ads_discontinuity() {
+        let content = "#EXTM3U\n\
+            #EXTINF:10.0\n\
+            segment1.ts\n\
+            #EXT-X-DISCONTINUITY\n\
+            #EXTINF:10.0\n\
+            segment2.ts";
+
+        let filtered = filter_ads_from_m3_u8(content);
+
+        assert!(filtered.contains("segment1.ts"));
+        assert!(filtered.contains("segment2.ts"));
+        assert!(!filtered.contains("#EXT-X-DISCONTINUITY"));
     }
 
     #[test]
