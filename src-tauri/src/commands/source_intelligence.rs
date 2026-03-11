@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tauri::State;
 
 /// 源测试结果
@@ -208,6 +208,7 @@ impl SourceIntelligenceManager {
     }
 
     /// 判断源是否应该被跳过（连续失败过多）
+    #[allow(dead_code)]
     pub fn should_skip_source(&self, source_key: &str) -> bool {
         let performances = self.performances.lock().unwrap();
         if let Some(perf) = performances.get(source_key) {
@@ -218,6 +219,7 @@ impl SourceIntelligenceManager {
     }
 
     /// 清除源的统计信息
+    #[allow(dead_code)]
     pub fn clear_source_stats(&self, source_key: &str) {
         let mut performances = self.performances.lock().unwrap();
         performances.remove(source_key);
@@ -230,6 +232,7 @@ impl SourceIntelligenceManager {
     }
 
     /// 重置源的连续失败计数
+    #[allow(dead_code)]
     pub fn reset_consecutive_failures(&self, source_key: &str) {
         let mut performances = self.performances.lock().unwrap();
         if let Some(perf) = performances.get_mut(source_key) {
@@ -335,6 +338,18 @@ mod tests {
     }
 
     #[test]
+    fn test_recent_results_limit() {
+        let mut perf = SourcePerformance::new();
+
+        // 添加 25 次测试，应该只保留最近 20 次
+        for i in 0..25 {
+            perf.record_test(i % 2 == 0, 100);
+        }
+
+        assert_eq!(perf.recent_results.len(), 20);
+    }
+
+    #[test]
     fn test_source_ranking() {
         let manager = SourceIntelligenceManager::new();
 
@@ -374,6 +389,51 @@ mod tests {
     }
 
     #[test]
+    fn test_ranking_with_no_history() {
+        let manager = SourceIntelligenceManager::new();
+
+        // 没有历史数据的源应该得到中等分数
+        let ranked = manager.rank_sources(vec![
+            "new_source1".to_string(),
+            "new_source2".to_string(),
+        ]);
+
+        // 没有历史数据时，保持原始顺序
+        assert_eq!(ranked.len(), 2);
+    }
+
+    #[test]
+    fn test_ranking_with_consecutive_failures() {
+        let manager = SourceIntelligenceManager::new();
+
+        // source1: 连续失败 3 次
+        for _ in 0..3 {
+            manager.record_test_result(SourceTestResult {
+                source_key: "source1".to_string(),
+                success: false,
+                response_time_ms: 0,
+                error_reason: Some("error".to_string()),
+                timestamp: 0,
+            });
+        }
+
+        // source2: 成功
+        manager.record_test_result(SourceTestResult {
+            source_key: "source2".to_string(),
+            success: true,
+            response_time_ms: 200,
+            error_reason: None,
+            timestamp: 0,
+        });
+
+        let ranked = manager.rank_sources(vec!["source1".to_string(), "source2".to_string()]);
+
+        // source2 应该排第一（source1 连续失败过多）
+        assert_eq!(ranked[0], "source2");
+        assert_eq!(ranked[1], "source1");
+    }
+
+    #[test]
     fn test_should_skip_source() {
         let manager = SourceIntelligenceManager::new();
 
@@ -389,6 +449,38 @@ mod tests {
         }
 
         assert!(manager.should_skip_source("bad_source"));
+        assert!(!manager.should_skip_source("unknown_source"));
+    }
+
+    #[test]
+    fn test_consecutive_failures_reset_on_success() {
+        let manager = SourceIntelligenceManager::new();
+
+        // 记录 2 次失败
+        for _ in 0..2 {
+            manager.record_test_result(SourceTestResult {
+                source_key: "source1".to_string(),
+                success: false,
+                response_time_ms: 0,
+                error_reason: Some("error".to_string()),
+                timestamp: 0,
+            });
+        }
+
+        let stats = manager.get_source_stats("source1").unwrap();
+        assert_eq!(stats.consecutive_failures, 2);
+
+        // 记录成功，应该重置连续失败计数
+        manager.record_test_result(SourceTestResult {
+            source_key: "source1".to_string(),
+            success: true,
+            response_time_ms: 100,
+            error_reason: None,
+            timestamp: 0,
+        });
+
+        let stats = manager.get_source_stats("source1").unwrap();
+        assert_eq!(stats.consecutive_failures, 0);
     }
 
     #[test]
@@ -412,5 +504,131 @@ mod tests {
 
         let stats = manager.get_source_stats("source1").unwrap();
         assert_eq!(stats.consecutive_failures, 0);
+    }
+
+    #[test]
+    fn test_clear_source_stats() {
+        let manager = SourceIntelligenceManager::new();
+
+        manager.record_test_result(SourceTestResult {
+            source_key: "source1".to_string(),
+            success: true,
+            response_time_ms: 100,
+            error_reason: None,
+            timestamp: 0,
+        });
+
+        assert!(manager.get_source_stats("source1").is_some());
+
+        manager.clear_source_stats("source1");
+
+        assert!(manager.get_source_stats("source1").is_none());
+    }
+
+    #[test]
+    fn test_clear_all_stats() {
+        let manager = SourceIntelligenceManager::new();
+
+        manager.record_test_result(SourceTestResult {
+            source_key: "source1".to_string(),
+            success: true,
+            response_time_ms: 100,
+            error_reason: None,
+            timestamp: 0,
+        });
+
+        manager.record_test_result(SourceTestResult {
+            source_key: "source2".to_string(),
+            success: true,
+            response_time_ms: 200,
+            error_reason: None,
+            timestamp: 0,
+        });
+
+        assert_eq!(manager.get_all_stats().len(), 2);
+
+        manager.clear_all_stats();
+
+        assert_eq!(manager.get_all_stats().len(), 0);
+    }
+
+    #[test]
+    fn test_get_all_stats() {
+        let manager = SourceIntelligenceManager::new();
+
+        manager.record_test_result(SourceTestResult {
+            source_key: "source1".to_string(),
+            success: true,
+            response_time_ms: 100,
+            error_reason: None,
+            timestamp: 0,
+        });
+
+        manager.record_test_result(SourceTestResult {
+            source_key: "source2".to_string(),
+            success: false,
+            response_time_ms: 0,
+            error_reason: Some("error".to_string()),
+            timestamp: 0,
+        });
+
+        let all_stats = manager.get_all_stats();
+        assert_eq!(all_stats.len(), 2);
+
+        let source1_stats = all_stats.iter().find(|s| s.source_key == "source1").unwrap();
+        assert_eq!(source1_stats.success_rate, 100.0);
+
+        let source2_stats = all_stats.iter().find(|s| s.source_key == "source2").unwrap();
+        assert_eq!(source2_stats.success_rate, 0.0);
+    }
+
+    #[test]
+    fn test_response_time_scoring() {
+        let manager = SourceIntelligenceManager::new();
+
+        // 快速源
+        manager.record_test_result(SourceTestResult {
+            source_key: "fast_source".to_string(),
+            success: true,
+            response_time_ms: 100,
+            error_reason: None,
+            timestamp: 0,
+        });
+
+        // 慢速源
+        manager.record_test_result(SourceTestResult {
+            source_key: "slow_source".to_string(),
+            success: true,
+            response_time_ms: 4000,
+            error_reason: None,
+            timestamp: 0,
+        });
+
+        let ranked = manager.rank_sources(vec![
+            "slow_source".to_string(),
+            "fast_source".to_string(),
+        ]);
+
+        // 快速源应该排第一
+        assert_eq!(ranked[0], "fast_source");
+    }
+
+    #[test]
+    fn test_to_stats_conversion() {
+        let mut perf = SourcePerformance::new();
+
+        perf.record_test(true, 100);
+        perf.record_test(true, 200);
+        perf.record_test(false, 0);
+
+        let stats = perf.to_stats("test_source".to_string());
+
+        assert_eq!(stats.source_key, "test_source");
+        assert_eq!(stats.total_tests, 3);
+        assert_eq!(stats.successful_tests, 2);
+        assert_eq!(stats.failed_tests, 1);
+        assert_eq!(stats.success_rate, 66.66666666666666);
+        assert_eq!(stats.avg_response_time_ms, 150);
+        assert_eq!(stats.consecutive_failures, 1);
     }
 }

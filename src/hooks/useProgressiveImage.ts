@@ -25,13 +25,6 @@ interface ProgressiveImageState {
  * 1. 显示占位符（可选）
  * 2. 加载低质量图片（可选）
  * 3. 加载高质量图片
- *
- * @example
- * const { src, isLoading, quality } = useProgressiveImage({
- *   lowQualitySrc: '/thumb.jpg',
- *   highQualitySrc: '/full.jpg',
- *   placeholder: 'data:image/svg+xml,...'
- * });
  */
 export function useProgressiveImage({
   lowQualitySrc,
@@ -92,15 +85,11 @@ export function useProgressiveImage({
 
     const loadSequence = async () => {
       try {
-        // 1. 加载低质量图片（如果提供）
         if (lowQualitySrc) {
           await loadImage(lowQualitySrc, 'low');
         }
-
-        // 2. 加载高质量图片
         await loadImage(highQualitySrc, 'high');
       } catch (error) {
-        // 错误已在 loadImage 中处理
         console.error('Progressive image loading failed:', error);
       }
     };
@@ -109,7 +98,6 @@ export function useProgressiveImage({
 
     return () => {
       isMounted = false;
-      // 取消所有图片加载
       images.forEach((img) => {
         img.onload = null;
         img.onerror = null;
@@ -122,7 +110,7 @@ export function useProgressiveImage({
 }
 
 /**
- * 生成 Base64 占位符（模糊效果）
+ * 生成 Base64 占位符
  */
 export function generatePlaceholder(width: number, height: number, color = '#e5e7eb'): string {
   const svg = `
@@ -134,53 +122,4 @@ export function generatePlaceholder(width: number, height: number, color = '#e5e
     </svg>
   `;
   return `data:image/svg+xml;base64,${btoa(svg)}`;
-}
-
-/**
- * 预加载图片
- */
-export function preloadImage(src: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve();
-    img.onerror = () => reject(new Error(`Failed to preload image: ${src}`));
-    img.src = src;
-  });
-}
-
-/**
- * 批量预加载图片
- */
-export async function preloadImages(
-  srcs: string[],
-  options?: {
-    concurrency?: number;
-    onProgress?: (loaded: number, total: number) => void;
-  }
-): Promise<void> {
-  const { concurrency = 3, onProgress } = options || {};
-  const total = srcs.length;
-  let loaded = 0;
-
-  const loadBatch = async (batch: string[]) => {
-    await Promise.allSettled(
-      batch.map(async (src) => {
-        try {
-          await preloadImage(src);
-          loaded++;
-          onProgress?.(loaded, total);
-        } catch (error) {
-          console.warn(`Failed to preload: ${src}`, error);
-          loaded++;
-          onProgress?.(loaded, total);
-        }
-      })
-    );
-  };
-
-  // 分批加载
-  for (let i = 0; i < srcs.length; i += concurrency) {
-    const batch = srcs.slice(i, i + concurrency);
-    await loadBatch(batch);
-  }
 }

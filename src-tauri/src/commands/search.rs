@@ -89,12 +89,14 @@ impl SearchResultCache {
     }
 
     /// 清除所有缓存
+    #[allow(dead_code)]
     pub fn clear(&self) {
         let mut cache = self.cache.lock().unwrap();
         cache.clear();
     }
 
     /// 获取缓存大小
+    #[allow(dead_code)]
     pub fn size(&self) -> usize {
         let cache = self.cache.lock().unwrap();
         cache.len()
@@ -259,12 +261,14 @@ impl FilterResultCache {
     }
 
     /// 清除所有缓存
+    #[allow(dead_code)]
     pub fn clear(&self) {
         let mut cache = self.cache.lock().unwrap();
         cache.clear();
     }
 
     /// 获取缓存大小
+    #[allow(dead_code)]
     pub fn size(&self) -> usize {
         let cache = self.cache.lock().unwrap();
         cache.len()

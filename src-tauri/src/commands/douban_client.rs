@@ -1599,6 +1599,7 @@ const SOURCE_CATEGORY_KEYWORDS: [(&str, &[&str]); 4] = [
 ];
 const SOURCE_GENERIC_FALLBACK_KEYWORDS: [&str; 3] = ["影", "剧", "漫"];
 const SOURCE_CATEGORY_FALLBACK_LIMIT: usize = 15;
+#[allow(dead_code)]
 const SOURCE_PAGE_SIZE_THRESHOLD: usize = 20;
 
 fn trim_to_option(value: Option<&str>) -> Option<String> {
