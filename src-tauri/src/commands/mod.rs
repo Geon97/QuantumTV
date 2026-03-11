@@ -6,6 +6,7 @@ pub mod preload;
 pub mod search;
 pub mod settings;
 pub mod skip;
+pub mod source_intelligence;
 pub mod version;
 pub mod version_check;
 pub mod video;

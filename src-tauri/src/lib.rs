@@ -58,6 +58,7 @@ pub fn run() {
             app.manage(commands::video::SearchCacheManager::new());
             app.manage(commands::search::SearchResultCache::new());
             app.manage(commands::search::FilterResultCache::new());
+            app.manage(commands::source_intelligence::SourceIntelligenceManager::new());
             let conn = db_init::init_db(app.handle());
             let db = db_client::Db::new(conn);
             app.manage(db);
@@ -208,6 +209,12 @@ pub fn run() {
             commands::home::get_home_bootstrap,
             commands::home::get_favorite_cards,
             commands::home::get_continue_watching,
+            // 源智能选择
+            commands::source_intelligence::record_source_test,
+            commands::source_intelligence::get_all_source_stats,
+            commands::source_intelligence::get_source_stats,
+            commands::source_intelligence::rank_sources,
+            commands::source_intelligence::clear_all_source_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
