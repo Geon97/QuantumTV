@@ -46,7 +46,6 @@ function SearchPageClient() {
 
   const [isLoading, setIsLoading] = useState(!!qParam);
   const [showResults, setShowResults] = useState(!!qParam);
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [totalSources, setTotalSources] = useState(0);
   const [completedSources, setCompletedSources] = useState(0);
@@ -104,6 +103,8 @@ function SearchPageClient() {
 
   useEffect(() => {
     const query = currentQueryRef.current;
+    if (!query) return;
+
     const filterAggPayload: SearchFilter = {
       source: filterAgg.source,
       title: filterAgg.title,
@@ -120,25 +121,17 @@ function SearchPageClient() {
     invoke<{
       aggregatedEntries: Array<[string, AggregatedGroup]>;
       filteredResults: SearchResult[];
-      filterCategoriesAll: SearchFilterCategory[];
-      filterCategoriesAgg: SearchFilterCategory[];
-    }>('build_search_page_state', {
-      results: searchResults,
+    }>('apply_search_filter', {
       query,
-      normalizedQuery: null,
       filterAgg: filterAggPayload,
       filterAll: filterAllPayload,
     })
       .then((response) => {
         setAggregatedGroups(new Map(response.aggregatedEntries));
         setFilteredAllResults(response.filteredResults);
-        setFilterOptions({
-          categoriesAll: response.filterCategoriesAll,
-          categoriesAgg: response.filterCategoriesAgg,
-        });
       })
       .catch(console.error);
-  }, [searchResults, filterAgg, filterAll]);
+  }, [filterAgg, filterAll]);
 
   useEffect(() => {
     // 无搜索参数时聚焦搜索框
@@ -210,14 +203,24 @@ function SearchPageClient() {
       document.body.removeEventListener('scroll', handleScroll);
     };
   }, []);
-  // 图片预加载：提取前 30 张搜索结果的图片
+  // 图片预加载：从聚合结果或过滤结果中提取前 30 张图片
   const searchImageUrls = useMemo(() => {
-    return searchResults
-      .slice(0, 30)
-      .map((item) => item.poster)
-      .filter(Boolean);
-  }, [searchResults]);
-  useImagePreload(searchImageUrls, !isLoading && searchResults.length > 0);
+    if (viewMode === 'agg') {
+      return Array.from(aggregatedGroups.values())
+        .slice(0, 30)
+        .map((group) => group.representative.poster)
+        .filter(Boolean);
+    } else {
+      return filteredAllResults
+        .slice(0, 30)
+        .map((item) => item.poster)
+        .filter(Boolean);
+    }
+  }, [aggregatedGroups, filteredAllResults, viewMode]);
+  useImagePreload(
+    searchImageUrls,
+    !isLoading && (aggregatedGroups.size > 0 || filteredAllResults.length > 0)
+  );
   useEffect(() => {
     if (!qParam) {
       setShowResults(false);
@@ -226,104 +229,132 @@ function SearchPageClient() {
 
     setIsLoading(true);
     setShowResults(true);
+    currentQueryRef.current = qParam;
+
+    // 重置过滤器为默认值
+    setFilterAll({
+      source: 'all',
+      title: 'all',
+      year: 'all',
+      yearOrder: 'none',
+    });
+    setFilterAgg({
+      source: 'all',
+      title: 'all',
+      year: 'all',
+      yearOrder: 'none',
+    });
 
     // 清空之前的进度
     setTotalSources(0);
     setCompletedSources(0);
-    // 如果启用流式搜索，监听事件
-    if (useFluidSearch) {
-      let unlistenStream: (() => void) | null = null;
-      let unlistenCompleted: (() => void) | null = null;
 
-      const setupListeners = async () => {
-        try {
-          // 监听流式结果事件
-          unlistenStream = await listen<any>(
-            'search-stream-result',
-            (event) => {
-              const { results, total_sources, completed_sources } =
-                event.payload;
-
-              setTotalSources(total_sources);
-              setCompletedSources(completed_sources);
-
-              // 实时添加结果（去重）
-              if (results && results.length > 0) {
-                setSearchResults((prevResults) => {
-                  const existingIds = new Set(
-                    prevResults.map((r) => `${r.source}|${r.id}`),
-                  );
-                  const filteredNew = results.filter(
-                    (r: SearchResult) =>
-                      !existingIds.has(`${r.source}|${r.id}`),
-                  );
-                  return [...prevResults, ...filteredNew];
-                });
-              }
-            },
-          );
-
-          // 监听搜索完成事件
-          unlistenCompleted = await listen<any>(
-            'search-stream-completed',
-            (event) => {
-              setIsLoading(false);
-            },
-          );
-        } catch (err) {
-          console.error('Failed to setup stream listeners:', err);
-        }
-      };
-
-      // 设置监听器
-      setupListeners();
-
-      // 调用搜索命令
-      invoke<SearchPageOpenResponse>('search_page_open', { query: qParam })
-        .then((response) => {
-          const safeResults = response?.results || [];
-          const cacheHit = response?.cacheHit ?? false;
-          setSearchHistory(response?.searchHistory || []);
-          setUseFluidSearch(response?.fluidSearch ?? true);
-          setSearchResults(safeResults);
-          setFilterOptions({
-            categoriesAll: response?.filterCategoriesAll || [],
-            categoriesAgg: response?.filterCategoriesAgg || [],
-          });
-          if (cacheHit) {
-            setIsLoading(false);
-          }
-        })
-        .catch((err) => {
-          console.error('Search error:', err);
-          setIsLoading(false);
-        })
-        .finally(() => {
-          // 清理监听器
-          if (unlistenStream) unlistenStream();
-          if (unlistenCompleted) unlistenCompleted();
+    // 调用搜索命令
+    invoke<SearchPageOpenResponse>('search_page_open', { query: qParam })
+      .then((response) => {
+        setSearchHistory(response?.searchHistory || []);
+        setUseFluidSearch(response?.fluidSearch ?? true);
+        setFilterOptions({
+          categoriesAll: response?.filterCategoriesAll || [],
+          categoriesAgg: response?.filterCategoriesAgg || [],
         });
-    } else {
-      // 非流式搜索：原有逻辑
-      invoke<SearchPageOpenResponse>('search_page_open', { query: qParam })
-        .then((response) => {
-          const safeResults = response?.results || [];
-          setSearchHistory(response?.searchHistory || []);
-          setUseFluidSearch(response?.fluidSearch ?? true);
-          setSearchResults(safeResults);
-          setFilterOptions({
-            categoriesAll: response?.filterCategoriesAll || [],
-            categoriesAgg: response?.filterCategoriesAgg || [],
-          });
-        })
-        .catch(console.error)
-        .finally(() => {
-          setIsLoading(false);
+
+        // 搜索完成后，调用 apply_search_filter 获取初始过滤结果
+        return invoke<{
+          aggregatedEntries: Array<[string, AggregatedGroup]>;
+          filteredResults: SearchResult[];
+        }>('apply_search_filter', {
+          query: qParam,
+          filterAgg: {
+            source: 'all',
+            title: 'all',
+            year: 'all',
+            year_order: 'none',
+          },
+          filterAll: {
+            source: 'all',
+            title: 'all',
+            year: 'all',
+            year_order: 'none',
+          },
         });
-    }
+      })
+      .then((filterResponse) => {
+        setAggregatedGroups(new Map(filterResponse.aggregatedEntries));
+        setFilteredAllResults(filterResponse.filteredResults);
+      })
+      .catch((err) => {
+        console.error('Search error:', err);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
   }, [qParam, useFluidSearch]);
-  // 组件卸载时，关闭可能存在的连接
-  
+
+  // 流式搜索支持（如果需要）
+  useEffect(() => {
+    if (!useFluidSearch || !qParam) return;
+
+    let unlistenStream: (() => void) | null = null;
+    let unlistenCompleted: (() => void) | null = null;
+
+    const setupListeners = async () => {
+      try {
+        // 监听流式结果事件
+        unlistenStream = await listen<any>(
+          'search-stream-result',
+          (event) => {
+            const { total_sources, completed_sources } = event.payload;
+            setTotalSources(total_sources);
+            setCompletedSources(completed_sources);
+
+            // 流式搜索时，实时调用 apply_search_filter 更新结果
+            invoke<{
+              aggregatedEntries: Array<[string, AggregatedGroup]>;
+              filteredResults: SearchResult[];
+            }>('apply_search_filter', {
+              query: qParam,
+              filterAgg: {
+                source: filterAgg.source,
+                title: filterAgg.title,
+                year: filterAgg.year,
+                year_order: filterAgg.yearOrder,
+              },
+              filterAll: {
+                source: filterAll.source,
+                title: filterAll.title,
+                year: filterAll.year,
+                year_order: filterAll.yearOrder,
+              },
+            })
+              .then((filterResponse) => {
+                setAggregatedGroups(new Map(filterResponse.aggregatedEntries));
+                setFilteredAllResults(filterResponse.filteredResults);
+              })
+              .catch(console.error);
+          },
+        );
+
+        // 监听搜索完成事件
+        unlistenCompleted = await listen<any>(
+          'search-stream-completed',
+          () => {
+            setIsLoading(false);
+          },
+        );
+      } catch (err) {
+        console.error('Failed to setup stream listeners:', err);
+      }
+    };
+
+    setupListeners();
+
+    return () => {
+      if (unlistenStream) unlistenStream();
+      if (unlistenCompleted) unlistenCompleted();
+    };
+  }, [qParam, useFluidSearch, filterAgg, filterAll]);
+
   const scrollPageToTop = (behavior: ScrollBehavior = 'auto') => {
     const options: ScrollToOptions = { top: 0, left: 0, behavior };
     try {
@@ -542,7 +573,7 @@ function SearchPageClient() {
                   </div>
                 </label>
               </div>
-              {searchResults.length === 0 ? (
+              {(viewMode === 'agg' ? aggregatedGroups.size === 0 : filteredAllResults.length === 0) ? (
                 isLoading ? (
                   <div className='flex justify-center items-center h-40'>
                     <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-green-500'></div>

@@ -1,7 +1,10 @@
 ﻿use crate::commands::bangumi::get_bangumi_calendar_data;
+use crate::commands::video::{parse_source_categories, SourceCategoryItem};
 use crate::db::page_cache::PageCacheManager;
+use crate::storage::StorageManager;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -131,6 +134,71 @@ pub struct DoubanPageRequest {
 pub struct DoubanPageResponse {
     pub list: Vec<DoubanItem>,
     pub has_more: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct DoubanSourceCategory {
+    pub type_id: String,
+    pub type_name: String,
+    pub type_pid: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DoubanPageStateRequest {
+    #[serde(rename = "type")]
+    pub request_type: String,
+    pub source_key: Option<String>,
+    pub primary_selection: Option<String>,
+    pub secondary_selection: Option<String>,
+    pub multi_level_selection: Option<HashMap<String, String>>,
+    pub selected_weekday: Option<String>,
+    pub custom_categories: Option<Vec<DoubanCustomCategory>>,
+    pub source_category_type_id: Option<String>,
+    pub page_limit: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DoubanPageStateResponse {
+    #[serde(rename = "type")]
+    pub request_type: String,
+    pub source_key: String,
+    pub primary_selection: String,
+    pub secondary_selection: String,
+    pub multi_level_selection: HashMap<String, String>,
+    pub selected_weekday: String,
+    pub source_categories: Vec<DoubanSourceCategory>,
+    pub selected_source_category_id: Option<String>,
+    pub list: Vec<DoubanItem>,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadMoreDoubanPageRequest {
+    #[serde(rename = "type")]
+    pub request_type: String,
+    pub source_key: Option<String>,
+    pub primary_selection: String,
+    pub secondary_selection: String,
+    pub multi_level_selection: Option<HashMap<String, String>>,
+    pub selected_weekday: Option<String>,
+    pub source_category_type_id: Option<String>,
+    pub page: i32,
+    pub page_limit: Option<i32>,
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedDoubanPageStateRequest {
+    request_type: String,
+    source_key: String,
+    primary_selection: String,
+    secondary_selection: String,
+    multi_level_selection: HashMap<String, String>,
+    selected_weekday: String,
+    source_category_type_id: Option<String>,
+    page_limit: i32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1523,6 +1591,317 @@ pub async fn get_douban_page_data(
     get_douban_page_data_cached(request, &cache).await
 }
 
+const SOURCE_CATEGORY_KEYWORDS: [(&str, &[&str]); 4] = [
+    ("movie", &["电影", "影片", "院线", "4k", "蓝光"]),
+    ("tv", &["电视剧", "剧集", "美剧", "韩剧", "日剧", "港剧"]),
+    ("anime", &["动漫", "动画", "番剧", "漫画"]),
+    ("show", &["综艺", "真人秀", "脱口秀", "晚会", "纪录片"]),
+];
+const SOURCE_GENERIC_FALLBACK_KEYWORDS: [&str; 3] = ["影", "剧", "漫"];
+const SOURCE_CATEGORY_FALLBACK_LIMIT: usize = 15;
+const SOURCE_PAGE_SIZE_THRESHOLD: usize = 20;
+
+fn trim_to_option(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+}
+
+fn normalize_source_key(source_key: Option<&str>) -> String {
+    trim_to_option(source_key).unwrap_or_else(|| "auto".to_string())
+}
+
+fn category_keywords_for_request_type(request_type: &str) -> &'static [&'static str] {
+    SOURCE_CATEGORY_KEYWORDS
+        .iter()
+        .find_map(|(key, keywords)| (*key == request_type).then_some(*keywords))
+        .unwrap_or(&[])
+}
+
+fn matches_category_keywords(category_name: &str, keywords: &[&str]) -> bool {
+    let lowered = category_name.to_lowercase();
+    keywords
+        .iter()
+        .any(|keyword| lowered.contains(&keyword.to_lowercase()))
+}
+
+fn stringify_source_category_value(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Number(number) => Some(number.to_string()),
+        Value::Bool(boolean) => Some(boolean.to_string()),
+        _ => None,
+    }
+}
+
+fn normalize_source_category(category: &SourceCategoryItem) -> Option<DoubanSourceCategory> {
+    Some(DoubanSourceCategory {
+        type_id: stringify_source_category_value(&category.type_id)?,
+        type_name: category.type_name.clone(),
+        type_pid: category
+            .type_pid
+            .as_ref()
+            .and_then(stringify_source_category_value),
+    })
+}
+
+fn filter_source_categories_by_request_type(
+    request_type: &str,
+    categories: &[SourceCategoryItem],
+) -> Vec<DoubanSourceCategory> {
+    let normalized: Vec<DoubanSourceCategory> = categories
+        .iter()
+        .filter_map(normalize_source_category)
+        .collect();
+
+    if normalized.is_empty() {
+        return Vec::new();
+    }
+
+    let keywords = category_keywords_for_request_type(request_type);
+
+    // 精确匹配
+    let mut matched: Vec<DoubanSourceCategory> = normalized
+        .iter()
+        .filter(|c| matches_category_keywords(&c.type_name, keywords))
+        .cloned()
+        .collect();
+
+    // 如果精确匹配为空，使用通用关键词回退
+    if matched.is_empty() {
+        matched = normalized
+            .iter()
+            .filter(|c| {
+                SOURCE_GENERIC_FALLBACK_KEYWORDS
+                    .iter()
+                    .any(|kw| c.type_name.contains(kw))
+            })
+            .cloned()
+            .collect();
+    }
+
+    // 限制返回数量
+    if matched.len() > SOURCE_CATEGORY_FALLBACK_LIMIT {
+        matched.truncate(SOURCE_CATEGORY_FALLBACK_LIMIT);
+    }
+
+    matched
+}
+
+/// 解析并规范化 Douban 页面状态请求
+fn resolve_douban_page_state_request(request: DoubanPageStateRequest) -> ResolvedDoubanPageStateRequest {
+    let source_key = normalize_source_key(request.source_key.as_deref());
+    let page_limit = request.page_limit.unwrap_or(25);
+
+    // 如果是特定源模式，直接返回
+    if source_key != "auto" {
+        return ResolvedDoubanPageStateRequest {
+            request_type: request.request_type,
+            source_key,
+            primary_selection: request.primary_selection.unwrap_or_default(),
+            secondary_selection: request.secondary_selection.unwrap_or_default(),
+            multi_level_selection: request.multi_level_selection.unwrap_or_default(),
+            selected_weekday: request.selected_weekday.unwrap_or_default(),
+            source_category_type_id: request.source_category_type_id,
+            page_limit,
+        };
+    }
+
+    // 聚合模式：应用默认值
+    let defaults = resolve_douban_defaults(&request.request_type, None, None);
+    let primary_selection = request
+        .primary_selection
+        .unwrap_or_else(|| defaults.primary_selection.clone());
+    let secondary_selection = request
+        .secondary_selection
+        .unwrap_or_else(|| defaults.secondary_selection.clone());
+
+    let selected_weekday = if request.request_type == "anime"
+        && is_anime_daily_selection(&primary_selection)
+    {
+        resolve_selected_weekday(request.selected_weekday.as_deref())
+    } else {
+        request.selected_weekday.unwrap_or_default()
+    };
+
+    let multi_level_selection = request
+        .multi_level_selection
+        .unwrap_or_else(default_multi_level_selection);
+
+    ResolvedDoubanPageStateRequest {
+        request_type: request.request_type,
+        source_key,
+        primary_selection,
+        secondary_selection,
+        multi_level_selection,
+        selected_weekday,
+        source_category_type_id: None,
+        page_limit,
+    }
+}
+
+/// 获取 Douban 页面完整状态（包括数据和源分类）
+#[tauri::command]
+pub async fn get_douban_page_state(
+    request: DoubanPageStateRequest,
+    cache: tauri::State<'_, PageCacheManager>,
+    storage: tauri::State<'_, StorageManager>,
+) -> Result<DoubanPageStateResponse, String> {
+    let resolved = resolve_douban_page_state_request(request);
+
+    // 如果是特定源模式
+    if resolved.source_key != "auto" {
+        // 获取源分类
+        let data = storage.get_data()?;
+        let source = crate::commands::video::resolve_enabled_source(&data.config, &resolved.source_key)
+            .ok_or_else(|| format!("Source not found or disabled: {}", resolved.source_key))?;
+
+        let url = crate::commands::video::source_url(&source.api, "?ac=list");
+        let body = crate::commands::video::get_video_client()
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .text()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let all_categories = parse_source_categories(&body)?;
+        let source_categories =
+            filter_source_categories_by_request_type(&resolved.request_type, &all_categories);
+
+        // 确定选中的分类
+        let selected_category = if let Some(type_id) = &resolved.source_category_type_id {
+            source_categories
+                .iter()
+                .find(|c| c.type_id == *type_id)
+                .cloned()
+        } else {
+            source_categories.first().cloned()
+        };
+
+        // 返回空列表，让前端调用 get_source_videos_by_type 获取实际数据
+        return Ok(DoubanPageStateResponse {
+            request_type: resolved.request_type,
+            source_key: resolved.source_key,
+            primary_selection: resolved.primary_selection,
+            secondary_selection: resolved.secondary_selection,
+            multi_level_selection: resolved.multi_level_selection,
+            selected_weekday: resolved.selected_weekday,
+            source_categories,
+            selected_source_category_id: selected_category.map(|c| c.type_id),
+            list: Vec::new(), // 前端需要调用 get_source_videos_by_type 获取数据
+            has_more: true,
+        });
+    }
+
+    // 聚合模式：获取豆瓣数据
+    let douban_request = DoubanPageRequest {
+        request_type: resolved.request_type.clone(),
+        primary_selection: resolved.primary_selection.clone(),
+        secondary_selection: resolved.secondary_selection.clone(),
+        multi_level_selection: Some(resolved.multi_level_selection.clone()),
+        selected_weekday: Some(resolved.selected_weekday.clone()),
+        page: Some(0),
+        page_limit: Some(resolved.page_limit),
+    };
+
+    let douban_response = get_douban_page_data_cached(douban_request, &cache).await?;
+
+    Ok(DoubanPageStateResponse {
+        request_type: resolved.request_type,
+        source_key: resolved.source_key,
+        primary_selection: resolved.primary_selection,
+        secondary_selection: resolved.secondary_selection,
+        multi_level_selection: resolved.multi_level_selection,
+        selected_weekday: resolved.selected_weekday,
+        source_categories: Vec::new(),
+        selected_source_category_id: None,
+        list: douban_response.list,
+        has_more: douban_response.has_more,
+    })
+}
+
+/// 加载更多 Douban 页面数据
+#[tauri::command]
+pub async fn load_more_douban_page(
+    request: LoadMoreDoubanPageRequest,
+    cache: tauri::State<'_, PageCacheManager>,
+) -> Result<DoubanPageResponse, String> {
+    let source_key = normalize_source_key(request.source_key.as_deref());
+    let page_limit = request.page_limit.unwrap_or(25);
+
+    // 如果是特定源模式，返回空列表，让前端调用 get_source_videos_by_type
+    if source_key != "auto" {
+        return Ok(DoubanPageResponse {
+            list: Vec::new(),
+            has_more: true,
+        });
+    }
+
+    // 聚合模式：获取豆瓣数据
+    let multi_level_selection = request
+        .multi_level_selection
+        .unwrap_or_else(default_multi_level_selection);
+
+    let selected_weekday = if request.request_type == "anime"
+        && is_anime_daily_selection(&request.primary_selection)
+    {
+        resolve_selected_weekday(request.selected_weekday.as_deref())
+    } else {
+        request.selected_weekday.unwrap_or_default()
+    };
+
+    let douban_request = DoubanPageRequest {
+        request_type: request.request_type,
+        primary_selection: request.primary_selection,
+        secondary_selection: request.secondary_selection,
+        multi_level_selection: Some(multi_level_selection),
+        selected_weekday: Some(selected_weekday),
+        page: Some(request.page),
+        page_limit: Some(page_limit),
+    };
+
+    get_douban_page_data_cached(douban_request, &cache).await
+}
+
+/// 获取过滤后的源分类（统一的分类过滤规则）
+#[tauri::command]
+pub async fn get_filtered_source_categories(
+    source_key: String,
+    content_type: String,
+    storage: tauri::State<'_, StorageManager>,
+) -> Result<Vec<DoubanSourceCategory>, String> {
+    if source_key == "auto" {
+        return Ok(Vec::new());
+    }
+
+    // 获取源分类
+    let data = storage.get_data()?;
+    let source = crate::commands::video::resolve_enabled_source(&data.config, &source_key)
+        .ok_or_else(|| format!("Source not found or disabled: {}", source_key))?;
+
+    let url = crate::commands::video::source_url(&source.api, "?ac=list");
+    let body = crate::commands::video::get_video_client()
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .text()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let all_categories = parse_source_categories(&body)?;
+    let filtered = filter_source_categories_by_request_type(&content_type, &all_categories);
+
+    Ok(filtered)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1936,5 +2315,253 @@ mod tests {
 
         assert_eq!(data.list.len(), 1);
         assert_eq!(data.list[0].title, "cached");
+    }
+
+    #[test]
+    fn test_resolve_douban_page_state_request_movie_defaults() {
+        let request = DoubanPageStateRequest {
+            request_type: "movie".to_string(),
+            source_key: None,
+            primary_selection: None,
+            secondary_selection: None,
+            multi_level_selection: None,
+            selected_weekday: None,
+            custom_categories: None,
+            source_category_type_id: None,
+            page_limit: None,
+        };
+
+        let resolved = resolve_douban_page_state_request(request);
+
+        assert_eq!(resolved.request_type, "movie");
+        assert_eq!(resolved.source_key, "auto");
+        assert_eq!(resolved.primary_selection, "热门");
+        assert_eq!(resolved.secondary_selection, "全部");
+        assert_eq!(resolved.page_limit, 25);
+    }
+
+    #[test]
+    fn test_resolve_douban_page_state_request_tv_defaults() {
+        let request = DoubanPageStateRequest {
+            request_type: "tv".to_string(),
+            source_key: None,
+            primary_selection: None,
+            secondary_selection: None,
+            multi_level_selection: None,
+            selected_weekday: None,
+            custom_categories: None,
+            source_category_type_id: None,
+            page_limit: None,
+        };
+
+        let resolved = resolve_douban_page_state_request(request);
+
+        assert_eq!(resolved.request_type, "tv");
+        assert_eq!(resolved.source_key, "auto");
+        assert_eq!(resolved.primary_selection, "最近热门");
+        assert_eq!(resolved.secondary_selection, "tv");
+    }
+
+    #[test]
+    fn test_resolve_douban_page_state_request_anime_defaults() {
+        let request = DoubanPageStateRequest {
+            request_type: "anime".to_string(),
+            source_key: None,
+            primary_selection: None,
+            secondary_selection: None,
+            multi_level_selection: None,
+            selected_weekday: None,
+            custom_categories: None,
+            source_category_type_id: None,
+            page_limit: None,
+        };
+
+        let resolved = resolve_douban_page_state_request(request);
+
+        assert_eq!(resolved.request_type, "anime");
+        assert_eq!(resolved.primary_selection, "每日放送");
+        assert_eq!(resolved.secondary_selection, "全部");
+        assert_eq!(resolved.selected_weekday, current_weekday_en());
+    }
+
+    #[test]
+    fn test_resolve_douban_page_state_request_show_defaults() {
+        let request = DoubanPageStateRequest {
+            request_type: "show".to_string(),
+            source_key: None,
+            primary_selection: None,
+            secondary_selection: None,
+            multi_level_selection: None,
+            selected_weekday: None,
+            custom_categories: None,
+            source_category_type_id: None,
+            page_limit: None,
+        };
+
+        let resolved = resolve_douban_page_state_request(request);
+
+        assert_eq!(resolved.request_type, "show");
+        assert_eq!(resolved.primary_selection, "最近热门");
+        assert_eq!(resolved.secondary_selection, "show");
+    }
+
+    #[test]
+    fn test_filter_source_categories_by_request_type_movie() {
+        let categories = vec![
+            SourceCategoryItem {
+                type_id: serde_json::Value::String("1".to_string()),
+                type_name: "电影".to_string(),
+                type_pid: None,
+            },
+            SourceCategoryItem {
+                type_id: serde_json::Value::String("2".to_string()),
+                type_name: "电视剧".to_string(),
+                type_pid: None,
+            },
+            SourceCategoryItem {
+                type_id: serde_json::Value::String("3".to_string()),
+                type_name: "动漫".to_string(),
+                type_pid: None,
+            },
+        ];
+
+        let filtered = filter_source_categories_by_request_type("movie", &categories);
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].type_name, "电影");
+    }
+
+    #[test]
+    fn test_filter_source_categories_by_request_type_tv() {
+        let categories = vec![
+            SourceCategoryItem {
+                type_id: serde_json::Value::String("1".to_string()),
+                type_name: "电影".to_string(),
+                type_pid: None,
+            },
+            SourceCategoryItem {
+                type_id: serde_json::Value::String("2".to_string()),
+                type_name: "电视剧".to_string(),
+                type_pid: None,
+            },
+            SourceCategoryItem {
+                type_id: serde_json::Value::String("3".to_string()),
+                type_name: "美剧".to_string(),
+                type_pid: None,
+            },
+        ];
+
+        let filtered = filter_source_categories_by_request_type("tv", &categories);
+
+        assert_eq!(filtered.len(), 2);
+        assert!(filtered.iter().any(|c| c.type_name == "电视剧"));
+        assert!(filtered.iter().any(|c| c.type_name == "美剧"));
+    }
+
+    #[test]
+    fn test_filter_source_categories_by_request_type_anime() {
+        let categories = vec![
+            SourceCategoryItem {
+                type_id: serde_json::Value::String("1".to_string()),
+                type_name: "电影".to_string(),
+                type_pid: None,
+            },
+            SourceCategoryItem {
+                type_id: serde_json::Value::String("2".to_string()),
+                type_name: "动漫".to_string(),
+                type_pid: None,
+            },
+            SourceCategoryItem {
+                type_id: serde_json::Value::String("3".to_string()),
+                type_name: "动画".to_string(),
+                type_pid: None,
+            },
+        ];
+
+        let filtered = filter_source_categories_by_request_type("anime", &categories);
+
+        assert_eq!(filtered.len(), 2);
+        assert!(filtered.iter().any(|c| c.type_name == "动漫"));
+        assert!(filtered.iter().any(|c| c.type_name == "动画"));
+    }
+
+    #[test]
+    fn test_filter_source_categories_fallback_generic() {
+        let categories = vec![
+            SourceCategoryItem {
+                type_id: serde_json::Value::String("1".to_string()),
+                type_name: "影视".to_string(),
+                type_pid: None,
+            },
+            SourceCategoryItem {
+                type_id: serde_json::Value::String("2".to_string()),
+                type_name: "剧集".to_string(),
+                type_pid: None,
+            },
+            SourceCategoryItem {
+                type_id: serde_json::Value::String("3".to_string()),
+                type_name: "漫画".to_string(),
+                type_pid: None,
+            },
+        ];
+
+        let filtered = filter_source_categories_by_request_type("movie", &categories);
+
+        // 应该匹配通用关键词 "影"
+        assert!(filtered.len() > 0);
+        assert!(filtered.iter().any(|c| c.type_name.contains("影")));
+    }
+
+    #[test]
+    fn test_filter_source_categories_limit() {
+        let mut categories = Vec::new();
+        for i in 0..20 {
+            categories.push(SourceCategoryItem {
+                type_id: serde_json::Value::String(i.to_string()),
+                type_name: format!("电影{}", i),
+                type_pid: None,
+            });
+        }
+
+        let filtered = filter_source_categories_by_request_type("movie", &categories);
+
+        // 应该限制在 15 个以内
+        assert!(filtered.len() <= 15);
+    }
+
+    #[test]
+    fn test_matches_category_keywords() {
+        assert!(matches_category_keywords("电影", &["电影", "影片"]));
+        assert!(matches_category_keywords("4K电影", &["电影", "影片"]));
+        assert!(matches_category_keywords("蓝光影片", &["电影", "影片"]));
+        assert!(!matches_category_keywords("电视剧", &["电影", "影片"]));
+    }
+
+    #[test]
+    fn test_normalize_source_key() {
+        assert_eq!(normalize_source_key(None), "auto");
+        assert_eq!(normalize_source_key(Some("")), "auto");
+        assert_eq!(normalize_source_key(Some("  ")), "auto");
+        assert_eq!(normalize_source_key(Some("source1")), "source1");
+        assert_eq!(normalize_source_key(Some("  source1  ")), "source1");
+    }
+
+    #[test]
+    fn test_category_keywords_for_request_type() {
+        let movie_keywords = category_keywords_for_request_type("movie");
+        assert!(movie_keywords.contains(&"电影"));
+        assert!(movie_keywords.contains(&"影片"));
+
+        let tv_keywords = category_keywords_for_request_type("tv");
+        assert!(tv_keywords.contains(&"电视剧"));
+        assert!(tv_keywords.contains(&"剧集"));
+
+        let anime_keywords = category_keywords_for_request_type("anime");
+        assert!(anime_keywords.contains(&"动漫"));
+        assert!(anime_keywords.contains(&"动画"));
+
+        let show_keywords = category_keywords_for_request_type("show");
+        assert!(show_keywords.contains(&"综艺"));
+        assert!(show_keywords.contains(&"真人秀"));
     }
 }

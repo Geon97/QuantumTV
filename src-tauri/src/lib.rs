@@ -56,6 +56,7 @@ pub fn run() {
             app.manage(StorageManager::new(app.handle()));
             app.manage(commands::video::VideoCacheManager::new());
             app.manage(commands::video::SearchCacheManager::new());
+            app.manage(commands::search::SearchResultCache::new());
             let conn = db_init::init_db(app.handle());
             let db = db_client::Db::new(conn);
             app.manage(db);
@@ -121,6 +122,7 @@ pub fn run() {
             commands::search::get_search_page_bootstrap,
             commands::search::search_page_query,
             commands::search::search_page_open,
+            commands::search::apply_search_filter,
             commands::settings::get_settings_bootstrap,
             commands::config::is_adult_source,
             // 跳过片头片尾
@@ -196,6 +198,9 @@ pub fn run() {
             commands::douban_client::get_douban_recommends,
             commands::douban_client::get_douban_list,
             commands::douban_client::get_douban_page_data,
+            commands::douban_client::get_douban_page_state,
+            commands::douban_client::load_more_douban_page,
+            commands::douban_client::get_filtered_source_categories,
             commands::douban_client::get_douban_defaults,
             commands::home::get_home_data,
             commands::home::get_home_bootstrap,

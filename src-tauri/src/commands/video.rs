@@ -598,7 +598,7 @@ struct TickTimingDecision {
     next_last_skip_check_at_ms: i64,
 }
 
-fn resolve_enabled_source(config: &Value, source_key: &str) -> Option<ApiSite> {
+pub(crate) fn resolve_enabled_source(config: &Value, source_key: &str) -> Option<ApiSite> {
     config
         .get("SourceConfig")
         .and_then(|v| v.as_array())
@@ -623,7 +623,7 @@ fn resolve_enabled_source(config: &Value, source_key: &str) -> Option<ApiSite> {
         })
 }
 
-fn source_url(base_api: &str, query: &str) -> String {
+pub(crate) fn source_url(base_api: &str, query: &str) -> String {
     if base_api.ends_with('/') {
         format!("{base_api}{query}")
     } else {
@@ -631,12 +631,12 @@ fn source_url(base_api: &str, query: &str) -> String {
     }
 }
 
-fn parse_source_categories(body: &str) -> Result<Vec<SourceCategoryItem>, String> {
+pub(crate) fn parse_source_categories(body: &str) -> Result<Vec<SourceCategoryItem>, String> {
     let parsed = serde_json::from_str::<SourceCategoryResponse>(body).map_err(|e| e.to_string())?;
     Ok(parsed.class.unwrap_or_default())
 }
 
-fn parse_source_videos(body: &str) -> Result<Vec<ApiSearchItem>, String> {
+pub(crate) fn parse_source_videos(body: &str) -> Result<Vec<ApiSearchItem>, String> {
     let parsed = serde_json::from_str::<ApiSearchResponse>(body).map_err(|e| e.to_string())?;
     Ok(parsed.list)
 }
@@ -748,7 +748,7 @@ pub struct DoubanCommentsResponse {
 }
 static VIDEO_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
-fn get_video_client() -> &'static reqwest::Client {
+pub(crate) fn get_video_client() -> &'static reqwest::Client {
     VIDEO_CLIENT.get_or_init(|| {
         reqwest::Client::builder()
             // 大幅增加连接池大小，允许更高并发

@@ -10,7 +10,49 @@ use quantumtv_core::search_aggregation::{
 use quantumtv_core::types::SearchResult;
 use rusqlite::params;
 use serde::Serialize;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use tauri::State;
+
+/// 搜索结果缓存管理器
+/// 按查询关键词缓存原始搜索结果，避免重复传输
+pub struct SearchResultCache {
+    cache: Arc<Mutex<HashMap<String, Vec<SearchResult>>>>,
+}
+
+impl SearchResultCache {
+    pub fn new() -> Self {
+        Self {
+            cache: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// 保存搜索结果
+    pub fn save(&self, query: &str, results: Vec<SearchResult>) {
+        let normalized_query = query.trim().to_lowercase();
+        let mut cache = self.cache.lock().unwrap();
+        cache.insert(normalized_query, results);
+    }
+
+    /// 获取搜索结果
+    pub fn get(&self, query: &str) -> Option<Vec<SearchResult>> {
+        let normalized_query = query.trim().to_lowercase();
+        let cache = self.cache.lock().unwrap();
+        cache.get(&normalized_query).cloned()
+    }
+
+    /// 清除缓存
+    pub fn clear(&self) {
+        let mut cache = self.cache.lock().unwrap();
+        cache.clear();
+    }
+
+    /// 获取缓存大小
+    pub fn size(&self) -> usize {
+        let cache = self.cache.lock().unwrap();
+        cache.len()
+    }
+}
 
 #[tauri::command]
 pub fn get_search_suggestions(db: State<'_, Db>, query: String) -> Result<Vec<String>, String> {
@@ -210,6 +252,51 @@ pub async fn build_search_page_state(
     })
 }
 
+/// 应用搜索过滤器响应
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplySearchFilterResponse {
+    pub aggregated_entries: Vec<(String, AggregatedGroup)>,
+    pub filtered_results: Vec<SearchResult>,
+}
+
+/// 应用搜索过滤器（从缓存读取结果）
+///
+/// 这是优化后的命令，避免每次过滤都传输完整结果集
+#[tauri::command]
+pub async fn apply_search_filter(
+    query: String,
+    filter_agg: SearchFilter,
+    filter_all: SearchFilter,
+    result_cache: State<'_, SearchResultCache>,
+) -> Result<ApplySearchFilterResponse, String> {
+    // 从缓存获取结果
+    let results = result_cache
+        .get(&query)
+        .ok_or_else(|| "搜索结果未找到，请先执行搜索".to_string())?;
+
+    // 聚合模式：应用 filter_agg
+    let aggregated_list = aggregate_search_results_with_filter(
+        results.clone(),
+        &query,
+        None,
+        &filter_agg,
+    );
+    let aggregated_entries = aggregated_list
+        .into_iter()
+        .map(|(key, group)| (key, compute_group_stats(&group)))
+        .collect::<Vec<_>>();
+
+    // 全部模式：应用 filter_all
+    let filtered = apply_filter(results, &filter_all);
+    let filtered_results = sort_by_year(filtered, filter_all.year_order.clone());
+
+    Ok(ApplySearchFilterResponse {
+        aggregated_entries,
+        filtered_results,
+    })
+}
+
 #[tauri::command]
 pub async fn get_search_page_bootstrap(
     db: State<'_, Db>,
@@ -226,8 +313,13 @@ pub async fn search_page_query(
     app_handle: tauri::AppHandle,
     storage: State<'_, StorageManager>,
     cache: State<'_, SearchCacheManager>,
+    result_cache: State<'_, SearchResultCache>,
 ) -> Result<SearchPageQueryResponse, String> {
-    let (results, cache_hit) = search_with_cache_hit(query, app_handle, storage, cache).await?;
+    let (results, cache_hit) = search_with_cache_hit(query.clone(), app_handle, storage, cache).await?;
+
+    // 保存搜索结果到缓存
+    result_cache.save(&query, results.clone());
+
     let filter_categories = build_filter_categories(&results);
 
     Ok(SearchPageQueryResponse {
@@ -245,6 +337,7 @@ pub async fn search_page_open(
     storage: State<'_, StorageManager>,
     app_handle: tauri::AppHandle,
     cache: State<'_, SearchCacheManager>,
+    result_cache: State<'_, SearchResultCache>,
 ) -> Result<SearchPageOpenResponse, String> {
     let search_history = get_search_history(db)?;
     let preferences = get_user_preferences(storage.clone()).await?;
@@ -253,8 +346,14 @@ pub async fn search_page_open(
     let (results, cache_hit) = if trimmed_query.is_empty() {
         (Vec::new(), false)
     } else {
-        search_with_cache_hit(trimmed_query, app_handle, storage, cache).await?
+        search_with_cache_hit(trimmed_query.clone(), app_handle, storage, cache).await?
     };
+
+    // 保存搜索结果到缓存
+    if !trimmed_query.is_empty() {
+        result_cache.save(&trimmed_query, results.clone());
+    }
+
     let filter_categories = build_filter_categories(&results);
 
     Ok(SearchPageOpenResponse {
@@ -270,6 +369,53 @@ pub async fn search_page_open(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn search_result_cache_saves_and_retrieves() {
+        let cache = SearchResultCache::new();
+        let results = vec![SearchResult {
+            id: "1".to_string(),
+            title: "测试".to_string(),
+            ..Default::default()
+        }];
+
+        cache.save("测试查询", results.clone());
+        let retrieved = cache.get("测试查询").unwrap();
+        assert_eq!(retrieved.len(), 1);
+        assert_eq!(retrieved[0].id, "1");
+    }
+
+    #[test]
+    fn search_result_cache_normalizes_query() {
+        let cache = SearchResultCache::new();
+        let results = vec![SearchResult {
+            id: "1".to_string(),
+            ..Default::default()
+        }];
+
+        cache.save("  Test Query  ", results.clone());
+
+        // 不同格式的查询应该命中同一缓存
+        assert!(cache.get("test query").is_some());
+        assert!(cache.get("  TEST QUERY  ").is_some());
+    }
+
+    #[test]
+    fn search_result_cache_clears() {
+        let cache = SearchResultCache::new();
+        cache.save("query1", vec![SearchResult::default()]);
+        cache.save("query2", vec![SearchResult::default()]);
+
+        assert_eq!(cache.size(), 2);
+        cache.clear();
+        assert_eq!(cache.size(), 0);
+    }
+
+    #[test]
+    fn search_result_cache_returns_none_for_missing() {
+        let cache = SearchResultCache::new();
+        assert!(cache.get("不存在的查询").is_none());
+    }
 
     #[test]
     fn build_filter_categories_sorts_and_includes_unknown() {
