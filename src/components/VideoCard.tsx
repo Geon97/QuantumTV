@@ -77,14 +77,18 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
   ) {
     const router = useRouter();
     const [favorited, setFavorited] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
     const [showMobileActions, setShowMobileActions] = useState(false);
     const [searchFavorited, setSearchFavorited] = useState<boolean | null>(
       null,
     ); // 搜索结果的收藏状态
 
     // 使用 Tauri proxy_image 命令加载图片
-    const { url: proxiedPosterUrl } = useProxyImage(poster || '');
+    const { url: proxiedPosterUrl, isLoading: proxyIsLoading } = useProxyImage(
+      poster || ''
+    );
+
+    // 追踪图片是否真正加载完成（只依赖 Image 的 onLoad，不依赖代理状态）
+    const [imageLoaded, setImageLoaded] = useState(false);
 
     // 可外部修改的可控字段
     const [dynamicEpisodes, setDynamicEpisodes] = useState<number | undefined>(
@@ -573,27 +577,28 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               return false;
             }}
           >
-            {/* 骨架屏 */}
-            {!isLoading && <ImagePlaceholder aspectRatio='aspect-2/3' />}
-            {/* 图片 */}
-            <Image
-              src={proxiedPosterUrl}
-              alt={actualTitle}
-              fill
-              className={origin === 'live' ? 'object-contain' : 'object-cover'}
-              referrerPolicy='no-referrer'
-              loading='lazy'
-              onLoad={() => setIsLoading(true)}
-              onError={(e) => {
-                // 图片加载失败时的重试机制
-                const img = e.target as HTMLImageElement;
-                if (!img.dataset.retried) {
-                  img.dataset.retried = 'true';
-                  setTimeout(() => {
-                    img.src = proxiedPosterUrl;
-                  }, 2000);
-                }
-              }}
+            {/* 骨架屏 - 等待代理加载或图片加载 */}
+            {(proxyIsLoading || !imageLoaded) && <ImagePlaceholder aspectRatio='aspect-2/3' />}
+            {/* 图片 - 只在代理加载完成后显示 */}
+            {!proxyIsLoading && (
+              <Image
+                src={proxiedPosterUrl}
+                alt={actualTitle}
+                fill
+                className={origin === 'live' ? 'object-contain' : 'object-cover'}
+                referrerPolicy='no-referrer'
+                loading='lazy'
+                onLoad={() => setImageLoaded(true)}
+                onError={(e) => {
+                  // 图片加载失败时的重试机制
+                  const img = e.target as HTMLImageElement;
+                  if (!img.dataset.retried) {
+                    img.dataset.retried = 'true';
+                    setTimeout(() => {
+                      img.src = proxiedPosterUrl;
+                    }, 2000);
+                  }
+                }}
               style={
                 {
                   // 禁用图片的默认长按效果
@@ -612,6 +617,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                 return false;
               }}
             />
+            )}
 
             {/* 悬浮遮罩 */}
             <div
