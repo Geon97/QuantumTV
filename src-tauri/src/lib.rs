@@ -57,6 +57,7 @@ pub fn run() {
             app.manage(commands::video::VideoCacheManager::new());
             app.manage(commands::video::SearchCacheManager::new());
             app.manage(commands::search::SearchResultCache::new());
+            app.manage(commands::search::FilterResultCache::new());
             let conn = db_init::init_db(app.handle());
             let db = db_client::Db::new(conn);
             app.manage(db);
@@ -123,6 +124,7 @@ pub fn run() {
             commands::search::search_page_query,
             commands::search::search_page_open,
             commands::search::apply_search_filter,
+            commands::search::get_search_cache_stats,
             commands::settings::get_settings_bootstrap,
             commands::config::is_adult_source,
             // 跳过片头片尾

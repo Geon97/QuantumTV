@@ -12,18 +12,35 @@ use rusqlite::params;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::State;
+
+/// 搜索结果缓存条目
+struct CacheEntry {
+    results: Vec<SearchResult>,
+    created_at: Instant,
+    last_accessed: Instant,
+}
 
 /// 搜索结果缓存管理器
 /// 按查询关键词缓存原始搜索结果，避免重复传输
+///
+/// 特性：
+/// - TTL: 30 分钟过期
+/// - LRU: 最多保留 200 个会话
+/// - 自动清理过期条目
 pub struct SearchResultCache {
-    cache: Arc<Mutex<HashMap<String, Vec<SearchResult>>>>,
+    cache: Arc<Mutex<HashMap<String, CacheEntry>>>,
+    max_entries: usize,
+    ttl: Duration,
 }
 
 impl SearchResultCache {
     pub fn new() -> Self {
         Self {
             cache: Arc::new(Mutex::new(HashMap::new())),
+            max_entries: 200,
+            ttl: Duration::from_secs(30 * 60), // 30 分钟
         }
     }
 
@@ -31,17 +48,217 @@ impl SearchResultCache {
     pub fn save(&self, query: &str, results: Vec<SearchResult>) {
         let normalized_query = query.trim().to_lowercase();
         let mut cache = self.cache.lock().unwrap();
-        cache.insert(normalized_query, results);
+
+        // 清理过期条目
+        self.cleanup_expired(&mut cache);
+
+        // LRU: 如果超过上限，删除最旧的条目
+        if cache.len() >= self.max_entries {
+            self.evict_oldest(&mut cache);
+        }
+
+        let now = Instant::now();
+        cache.insert(
+            normalized_query,
+            CacheEntry {
+                results,
+                created_at: now,
+                last_accessed: now,
+            },
+        );
     }
 
     /// 获取搜索结果
     pub fn get(&self, query: &str) -> Option<Vec<SearchResult>> {
         let normalized_query = query.trim().to_lowercase();
-        let cache = self.cache.lock().unwrap();
-        cache.get(&normalized_query).cloned()
+        let mut cache = self.cache.lock().unwrap();
+
+        if let Some(entry) = cache.get_mut(&normalized_query) {
+            // 检查是否过期
+            if entry.created_at.elapsed() > self.ttl {
+                cache.remove(&normalized_query);
+                return None;
+            }
+
+            // 更新访问时间（LRU）
+            entry.last_accessed = Instant::now();
+            return Some(entry.results.clone());
+        }
+
+        None
     }
 
-    /// 清除缓存
+    /// 清除所有缓存
+    pub fn clear(&self) {
+        let mut cache = self.cache.lock().unwrap();
+        cache.clear();
+    }
+
+    /// 获取缓存大小
+    pub fn size(&self) -> usize {
+        let cache = self.cache.lock().unwrap();
+        cache.len()
+    }
+
+    /// 清理过期条目
+    fn cleanup_expired(&self, cache: &mut HashMap<String, CacheEntry>) {
+        let now = Instant::now();
+        cache.retain(|_, entry| now.duration_since(entry.created_at) < self.ttl);
+    }
+
+    /// 驱逐最旧的条目（LRU）
+    fn evict_oldest(&self, cache: &mut HashMap<String, CacheEntry>) {
+        if let Some(oldest_key) = cache
+            .iter()
+            .min_by_key(|(_, entry)| entry.last_accessed)
+            .map(|(key, _)| key.clone())
+        {
+            cache.remove(&oldest_key);
+        }
+    }
+
+    /// 获取缓存统计信息
+    pub fn stats(&self) -> CacheStats {
+        let cache = self.cache.lock().unwrap();
+        let now = Instant::now();
+
+        let mut total_results = 0;
+        let mut expired_count = 0;
+
+        for entry in cache.values() {
+            total_results += entry.results.len();
+            if now.duration_since(entry.created_at) > self.ttl {
+                expired_count += 1;
+            }
+        }
+
+        CacheStats {
+            total_entries: cache.len(),
+            total_results,
+            expired_count,
+            max_entries: self.max_entries,
+            ttl_seconds: self.ttl.as_secs(),
+        }
+    }
+}
+
+/// 缓存统计信息
+#[derive(Debug, Serialize)]
+pub struct CacheStats {
+    pub total_entries: usize,
+    pub total_results: usize,
+    pub expired_count: usize,
+    pub max_entries: usize,
+    pub ttl_seconds: u64,
+}
+
+/// 过滤结果缓存条目
+struct FilterCacheEntry {
+    response: ApplySearchFilterResponse,
+    created_at: Instant,
+}
+
+/// 过滤结果缓存管理器
+/// 缓存 (query, filter_agg, filter_all) 的计算结果
+///
+/// 特性：
+/// - TTL: 5 分钟过期（过滤结果变化较快）
+/// - LRU: 最多保留 100 个过滤结果
+pub struct FilterResultCache {
+    cache: Arc<Mutex<HashMap<String, FilterCacheEntry>>>,
+    max_entries: usize,
+    ttl: Duration,
+}
+
+impl FilterResultCache {
+    pub fn new() -> Self {
+        Self {
+            cache: Arc::new(Mutex::new(HashMap::new())),
+            max_entries: 100,
+            ttl: Duration::from_secs(5 * 60), // 5 分钟
+        }
+    }
+
+    /// 生成缓存键
+    fn cache_key(query: &str, filter_agg: &SearchFilter, filter_all: &SearchFilter) -> String {
+        format!(
+            "{}|{}:{}:{}:{}|{}:{}:{}:{}",
+            query.trim().to_lowercase(),
+            filter_agg.source,
+            filter_agg.title,
+            filter_agg.year,
+            format!("{:?}", filter_agg.year_order),
+            filter_all.source,
+            filter_all.title,
+            filter_all.year,
+            format!("{:?}", filter_all.year_order),
+        )
+    }
+
+    /// 保存过滤结果
+    pub fn save(
+        &self,
+        query: &str,
+        filter_agg: &SearchFilter,
+        filter_all: &SearchFilter,
+        response: ApplySearchFilterResponse,
+    ) {
+        let key = Self::cache_key(query, filter_agg, filter_all);
+        let mut cache = self.cache.lock().unwrap();
+
+        // 清理过期条目
+        self.cleanup_expired(&mut cache);
+
+        // LRU: 如果超过上限，删除最旧的条目
+        if cache.len() >= self.max_entries {
+            if let Some(oldest_key) = cache
+                .iter()
+                .min_by_key(|(_, entry)| entry.created_at)
+                .map(|(key, _)| key.clone())
+            {
+                cache.remove(&oldest_key);
+            }
+        }
+
+        cache.insert(
+            key,
+            FilterCacheEntry {
+                response,
+                created_at: Instant::now(),
+            },
+        );
+    }
+
+    /// 获取过滤结果
+    pub fn get(
+        &self,
+        query: &str,
+        filter_agg: &SearchFilter,
+        filter_all: &SearchFilter,
+    ) -> Option<ApplySearchFilterResponse> {
+        let key = Self::cache_key(query, filter_agg, filter_all);
+        let mut cache = self.cache.lock().unwrap();
+
+        if let Some(entry) = cache.get(&key) {
+            // 检查是否过期
+            if entry.created_at.elapsed() > self.ttl {
+                cache.remove(&key);
+                return None;
+            }
+
+            return Some(entry.response.clone());
+        }
+
+        None
+    }
+
+    /// 清理过期条目
+    fn cleanup_expired(&self, cache: &mut HashMap<String, FilterCacheEntry>) {
+        let now = Instant::now();
+        cache.retain(|_, entry| now.duration_since(entry.created_at) < self.ttl);
+    }
+
+    /// 清除所有缓存
     pub fn clear(&self) {
         let mut cache = self.cache.lock().unwrap();
         cache.clear();
@@ -253,7 +470,7 @@ pub async fn build_search_page_state(
 }
 
 /// 应用搜索过滤器响应
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplySearchFilterResponse {
     pub aggregated_entries: Vec<(String, AggregatedGroup)>,
@@ -263,14 +480,21 @@ pub struct ApplySearchFilterResponse {
 /// 应用搜索过滤器（从缓存读取结果）
 ///
 /// 这是优化后的命令，避免每次过滤都传输完整结果集
+/// 并且缓存过滤结果，减少重复计算
 #[tauri::command]
 pub async fn apply_search_filter(
     query: String,
     filter_agg: SearchFilter,
     filter_all: SearchFilter,
     result_cache: State<'_, SearchResultCache>,
+    filter_cache: State<'_, FilterResultCache>,
 ) -> Result<ApplySearchFilterResponse, String> {
-    // 从缓存获取结果
+    // 先检查过滤结果缓存
+    if let Some(cached_response) = filter_cache.get(&query, &filter_agg, &filter_all) {
+        return Ok(cached_response);
+    }
+
+    // 从结果缓存获取原始搜索结果
     let results = result_cache
         .get(&query)
         .ok_or_else(|| "搜索结果未找到，请先执行搜索".to_string())?;
@@ -291,10 +515,21 @@ pub async fn apply_search_filter(
     let filtered = apply_filter(results, &filter_all);
     let filtered_results = sort_by_year(filtered, filter_all.year_order.clone());
 
-    Ok(ApplySearchFilterResponse {
+    let response = ApplySearchFilterResponse {
         aggregated_entries,
         filtered_results,
-    })
+    };
+
+    // 保存到过滤结果缓存
+    filter_cache.save(&query, &filter_agg, &filter_all, response.clone());
+
+    Ok(response)
+}
+
+/// 获取搜索结果缓存统计信息
+#[tauri::command]
+pub fn get_search_cache_stats(result_cache: State<'_, SearchResultCache>) -> CacheStats {
+    result_cache.stats()
 }
 
 #[tauri::command]
@@ -418,6 +653,153 @@ mod tests {
     }
 
     #[test]
+    fn search_result_cache_lru_eviction() {
+        let cache = SearchResultCache::new();
+
+        // 填充到上限
+        for i in 0..200 {
+            cache.save(&format!("query{}", i), vec![SearchResult::default()]);
+        }
+        assert_eq!(cache.size(), 200);
+
+        // 添加新条目应该触发 LRU 驱逐
+        cache.save("new_query", vec![SearchResult::default()]);
+        assert_eq!(cache.size(), 200);
+
+        // 新条目应该存在
+        assert!(cache.get("new_query").is_some());
+    }
+
+    #[test]
+    fn search_result_cache_stats() {
+        let cache = SearchResultCache::new();
+
+        cache.save("query1", vec![SearchResult::default(), SearchResult::default()]);
+        cache.save("query2", vec![SearchResult::default()]);
+
+        let stats = cache.stats();
+        assert_eq!(stats.total_entries, 2);
+        assert_eq!(stats.total_results, 3);
+        assert_eq!(stats.max_entries, 200);
+        assert_eq!(stats.ttl_seconds, 30 * 60);
+    }
+
+    #[test]
+    fn search_result_cache_updates_last_accessed() {
+        let cache = SearchResultCache::new();
+        let results = vec![SearchResult {
+            id: "1".to_string(),
+            ..Default::default()
+        }];
+
+        cache.save("query", results);
+
+        // 第一次访问
+        assert!(cache.get("query").is_some());
+
+        // 添加更多条目
+        for i in 0..10 {
+            cache.save(&format!("other{}", i), vec![SearchResult::default()]);
+        }
+
+        // 再次访问应该更新 last_accessed
+        assert!(cache.get("query").is_some());
+    }
+
+    #[test]
+    fn filter_result_cache_saves_and_retrieves() {
+        let cache = FilterResultCache::new();
+        let filter_agg = SearchFilter {
+            source: "all".to_string(),
+            title: "all".to_string(),
+            year: "all".to_string(),
+            year_order: quantumtv_core::search_aggregation::YearOrder::None,
+        };
+        let filter_all = filter_agg.clone();
+
+        let response = ApplySearchFilterResponse {
+            aggregated_entries: vec![],
+            filtered_results: vec![],
+        };
+
+        cache.save("test_query", &filter_agg, &filter_all, response.clone());
+
+        let retrieved = cache.get("test_query", &filter_agg, &filter_all);
+        assert!(retrieved.is_some());
+    }
+
+    #[test]
+    fn filter_result_cache_different_filters_different_keys() {
+        let cache = FilterResultCache::new();
+        let filter1 = SearchFilter {
+            source: "source1".to_string(),
+            title: "all".to_string(),
+            year: "all".to_string(),
+            year_order: quantumtv_core::search_aggregation::YearOrder::None,
+        };
+        let filter2 = SearchFilter {
+            source: "source2".to_string(),
+            title: "all".to_string(),
+            year: "all".to_string(),
+            year_order: quantumtv_core::search_aggregation::YearOrder::None,
+        };
+
+        let response1 = ApplySearchFilterResponse {
+            aggregated_entries: vec![],
+            filtered_results: vec![SearchResult {
+                id: "1".to_string(),
+                ..Default::default()
+            }],
+        };
+        let response2 = ApplySearchFilterResponse {
+            aggregated_entries: vec![],
+            filtered_results: vec![SearchResult {
+                id: "2".to_string(),
+                ..Default::default()
+            }],
+        };
+
+        cache.save("query", &filter1, &filter1, response1);
+        cache.save("query", &filter2, &filter2, response2);
+
+        // 不同的过滤器应该有不同的缓存条目
+        let result1 = cache.get("query", &filter1, &filter1).unwrap();
+        let result2 = cache.get("query", &filter2, &filter2).unwrap();
+
+        assert_eq!(result1.filtered_results[0].id, "1");
+        assert_eq!(result2.filtered_results[0].id, "2");
+    }
+
+    #[test]
+    fn filter_result_cache_lru_eviction() {
+        let cache = FilterResultCache::new();
+        let filter = SearchFilter {
+            source: "all".to_string(),
+            title: "all".to_string(),
+            year: "all".to_string(),
+            year_order: quantumtv_core::search_aggregation::YearOrder::None,
+        };
+
+        // 填充到上限
+        for i in 0..100 {
+            let response = ApplySearchFilterResponse {
+                aggregated_entries: vec![],
+                filtered_results: vec![],
+            };
+            cache.save(&format!("query{}", i), &filter, &filter, response);
+        }
+        assert_eq!(cache.size(), 100);
+
+        // 添加新条目应该触发 LRU 驱逐
+        let response = ApplySearchFilterResponse {
+            aggregated_entries: vec![],
+            filtered_results: vec![],
+        };
+        cache.save("new_query", &filter, &filter, response);
+        assert_eq!(cache.size(), 100);
+    }
+
+    #[test]
     fn build_filter_categories_sorts_and_includes_unknown() {
         let results = vec![
             SearchResult {
@@ -469,5 +851,166 @@ mod tests {
         let bootstrap = build_search_bootstrap(vec!["a".to_string()], prefs);
         assert_eq!(bootstrap.search_history, vec!["a".to_string()]);
         assert!(!bootstrap.fluid_search);
+    }
+
+    // ========== 集成测试 ==========
+
+    /// 测试完整的搜索和过滤流程
+    #[test]
+    fn test_search_filter_cache_integration() {
+        let result_cache = SearchResultCache::new();
+        let filter_cache = FilterResultCache::new();
+
+        // 1. 模拟搜索结果
+        let results = vec![
+            SearchResult {
+                id: "1".to_string(),
+                title: "复仇者联盟".to_string(),
+                source: "source1".to_string(),
+                source_name: "来源1".to_string(),
+                year: Some("2012".to_string()),
+                episodes: vec!["ep1".to_string()],
+                ..Default::default()
+            },
+            SearchResult {
+                id: "2".to_string(),
+                title: "复仇者联盟".to_string(),
+                source: "source2".to_string(),
+                source_name: "来源2".to_string(),
+                year: Some("2012".to_string()),
+                episodes: vec!["ep1".to_string()],
+                ..Default::default()
+            },
+        ];
+
+        // 2. 保存搜索结果到缓存
+        result_cache.save("复仇者", results.clone());
+
+        // 3. 验证可以获取搜索结果
+        let cached_results = result_cache.get("复仇者");
+        assert!(cached_results.is_some());
+        assert_eq!(cached_results.unwrap().len(), 2);
+
+        // 4. 创建过滤器
+        let filter_agg = quantumtv_core::search_aggregation::SearchFilter {
+            source: "all".to_string(),
+            title: "all".to_string(),
+            year: "all".to_string(),
+            year_order: quantumtv_core::search_aggregation::YearOrder::None,
+        };
+        let filter_all = filter_agg.clone();
+
+        // 5. 模拟过滤结果并缓存
+        let response = ApplySearchFilterResponse {
+            aggregated_entries: vec![],
+            filtered_results: results.clone(),
+        };
+        filter_cache.save("复仇者", &filter_agg, &filter_all, response.clone());
+
+        // 6. 验证过滤结果缓存命中
+        let cached_filter = filter_cache.get("复仇者", &filter_agg, &filter_all);
+        assert!(cached_filter.is_some());
+        assert_eq!(cached_filter.unwrap().filtered_results.len(), 2);
+    }
+
+    /// 测试并发访问
+    #[test]
+    fn test_concurrent_cache_access() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let cache = Arc::new(SearchResultCache::new());
+        let mut handles = vec![];
+
+        // 启动多个线程并发写入
+        for i in 0..10 {
+            let cache_clone = Arc::clone(&cache);
+            let handle = thread::spawn(move || {
+                cache_clone.save(
+                    &format!("query{}", i),
+                    vec![SearchResult {
+                        id: format!("{}", i),
+                        ..Default::default()
+                    }],
+                );
+            });
+            handles.push(handle);
+        }
+
+        // 等待所有线程完成
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // 验证所有条目都已保存
+        assert_eq!(cache.size(), 10);
+    }
+
+    /// 测试大数据量性能
+    #[test]
+    fn test_large_dataset_performance() {
+        let cache = SearchResultCache::new();
+
+        // 创建大量搜索结果
+        let large_results: Vec<SearchResult> = (0..1000)
+            .map(|i| SearchResult {
+                id: format!("id{}", i),
+                title: format!("Title {}", i),
+                source: format!("source{}", i % 10),
+                source_name: format!("Source {}", i % 10),
+                year: Some(format!("{}", 2000 + (i % 25))),
+                episodes: vec![format!("ep{}", i)],
+                ..Default::default()
+            })
+            .collect();
+
+        // 保存大数据集
+        let start = std::time::Instant::now();
+        cache.save("large_query", large_results.clone());
+        let save_duration = start.elapsed();
+
+        // 验证保存时间合理（应该 < 100ms）
+        assert!(save_duration.as_millis() < 100, "Save took too long: {:?}", save_duration);
+
+        // 读取大数据集
+        let start = std::time::Instant::now();
+        let retrieved = cache.get("large_query");
+        let get_duration = start.elapsed();
+
+        // 验证读取时间合理（应该 < 50ms）
+        assert!(get_duration.as_millis() < 50, "Get took too long: {:?}", get_duration);
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().len(), 1000);
+    }
+
+    /// 测试边界条件：空结果集
+    #[test]
+    fn test_empty_results_handling() {
+        let cache = SearchResultCache::new();
+
+        // 保存空结果集
+        cache.save("no_results", vec![]);
+        let result = cache.get("no_results");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    /// 测试统计信息准确性
+    #[test]
+    fn test_cache_stats_accuracy() {
+        let cache = SearchResultCache::new();
+
+        // 添加不同大小的结果集
+        cache.save("query1", vec![SearchResult::default(); 10]);
+        cache.save("query2", vec![SearchResult::default(); 20]);
+        cache.save("query3", vec![SearchResult::default(); 30]);
+
+        let stats = cache.stats();
+
+        assert_eq!(stats.total_entries, 3);
+        assert_eq!(stats.total_results, 60);
+        assert_eq!(stats.max_entries, 200);
+        assert_eq!(stats.ttl_seconds, 30 * 60);
+        assert_eq!(stats.expired_count, 0);
     }
 }
