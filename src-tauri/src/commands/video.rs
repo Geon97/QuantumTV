@@ -1453,7 +1453,7 @@ pub async fn proxy_image(
     // 3. 压缩图片
     let compressed_bytes = tokio::task::spawn_blocking(move || {
         let img =
-            image::load_from_memory(&bytes).map_err(|e| format!("鍥剧墖瑙ｇ爜澶辫触: {}", e))?;
+            image::load_from_memory(&bytes).map_err(|e| format!("图片解码失败: {}", e))?;
         let (width, height) = img.dimensions();
         let processed_img = if width > 800 {
             img.resize(
