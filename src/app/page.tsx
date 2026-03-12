@@ -126,6 +126,7 @@ function HomeClient() {
     };
 
     loadHomeBootstrap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [announcement]);
 
   // 处理收藏数据更新的函数
@@ -258,6 +259,7 @@ function HomeClient() {
                           title={item.title}
                           poster={item.cover}
                           year={item.year}
+                          source={item.source_name}
                           from='recommendation'
                           query={item.title}
                         />

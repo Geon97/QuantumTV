@@ -85,9 +85,19 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
     // 使用 Tauri proxy_image 命令加载图片（携带元数据写入缓存）
     const imageMetadata: ImageMetadata = {
       title,
-      source_name: isBangumi ? 'Bangumi' : from === 'douban' ? '豆瓣' : source_name,
+      source_name: isBangumi
+        ? 'Bangumi'
+        : from === 'douban'
+          ? '豆瓣'
+          : source_name,
       year,
-      category: isBangumi ? 'Anime' : type === 'movie' ? 'Movie' : type === 'tv' ? 'TvSeries' : '',
+      category: isBangumi
+        ? 'Anime'
+        : type === 'movie'
+          ? 'Movie'
+          : type === 'tv'
+            ? 'TvSeries'
+            : '',
       rating: rate ? parseFloat(rate) : undefined,
     };
     const { url: proxiedPosterUrl, isLoading: proxyIsLoading } = useProxyImage(
@@ -250,7 +260,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
     );
 
     const handleClick = useCallback(() => {
-      if (from === 'douban' || (isAggregate && !actualSource && !actualId)) {
+      if (from === 'douban' || from === 'recommendation' || (isAggregate && !actualSource && !actualId)) {
         const url = `/play?title=${encodeURIComponent(actualTitle.trim())}${
           actualYear ? `&year=${actualYear}` : ''
         }${actualSearchType ? `&stype=${actualSearchType}` : ''}${isAggregate ? '&prefer=true' : ''}${actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''}`;
@@ -728,7 +738,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                     }}
                   />
                 )}
-                {config.showHeart && from !== 'search' && (
+                {config.showHeart && from !== 'search' && from !== 'recommendation' && (
                   <Heart
                     onClick={handleToggleFavorite}
                     size={20}
