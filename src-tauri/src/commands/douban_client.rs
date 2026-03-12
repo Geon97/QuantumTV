@@ -1,5 +1,7 @@
 ﻿use crate::commands::bangumi::get_bangumi_calendar_data;
+use crate::commands::recommendation::infer_category;
 use crate::commands::video::{parse_source_categories, SourceCategoryItem};
+use crate::db::db_client::Db;
 use crate::db::page_cache::PageCacheManager;
 use crate::storage::StorageManager;
 use regex::Regex;
@@ -1583,12 +1585,95 @@ async fn get_douban_page_data_cached(
     Ok(response)
 }
 
+/// 将豆瓣页面数据同步到 content_pool 和 image_cache
+/// request_type: movie / tv / anime / show
+fn sync_douban_items_to_pool(db: &Db, items: &[DoubanItem], request_type: &str) {
+    if items.is_empty() {
+        return;
+    }
+
+    let category = match request_type {
+        "movie" => "Movie",
+        "tv" => "TvSeries",
+        "anime" => "Anime",
+        "show" => "Variety",
+        _ => "",
+    };
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    let _ = db.with_conn(|conn| {
+        let mut pool_stmt = conn.prepare(
+            "INSERT OR IGNORE INTO content_pool
+             (title, source_name, year, cover, category, rating, description, tags, popularity_score, created_at, last_updated)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, '', '', ?7, ?8, ?9)"
+        )?;
+
+        let mut cache_stmt = conn.prepare(
+            "UPDATE image_cache
+             SET title = ?1, source_name = ?2, year = ?3, category = ?4, rating = ?5
+             WHERE url = ?6 AND (title IS NULL OR title = '')"
+        )?;
+
+        for item in items {
+            if item.title.is_empty() {
+                continue;
+            }
+
+            let rating: f64 = item.rate.parse().unwrap_or(0.0);
+            // 如果 category 为空，尝试智能推断
+            let final_category = if category.is_empty() {
+                infer_category(&item.title, "豆瓣").unwrap_or_default()
+            } else {
+                category.to_string()
+            };
+
+            // 写入 content_pool
+            let _ = pool_stmt.execute(rusqlite::params![
+                item.title,
+                "豆瓣",
+                item.year,
+                item.poster,
+                final_category,
+                rating,
+                rating * 10.0,
+                now,
+                now,
+            ]);
+
+            // 回填 image_cache
+            if !item.poster.is_empty() {
+                let _ = cache_stmt.execute(rusqlite::params![
+                    item.title,
+                    "豆瓣",
+                    item.year,
+                    final_category,
+                    rating,
+                    item.poster,
+                ]);
+            }
+        }
+
+        Ok::<(), rusqlite::Error>(())
+    });
+}
+
 #[tauri::command]
 pub async fn get_douban_page_data(
     request: DoubanPageRequest,
     cache: tauri::State<'_, PageCacheManager>,
+    db: tauri::State<'_, Db>,
 ) -> Result<DoubanPageResponse, String> {
-    get_douban_page_data_cached(request, &cache).await
+    let request_type = request.request_type.clone();
+    let response = get_douban_page_data_cached(request, &cache).await?;
+
+    // 后台同步到 content_pool 和 image_cache
+    sync_douban_items_to_pool(&db, &response.list, &request_type);
+
+    Ok(response)
 }
 
 const SOURCE_CATEGORY_KEYWORDS: [(&str, &[&str]); 4] = [
@@ -1748,6 +1833,7 @@ pub async fn get_douban_page_state(
     request: DoubanPageStateRequest,
     cache: tauri::State<'_, PageCacheManager>,
     storage: tauri::State<'_, StorageManager>,
+    db: tauri::State<'_, Db>,
 ) -> Result<DoubanPageStateResponse, String> {
     let resolved = resolve_douban_page_state_request(request);
 
@@ -1812,6 +1898,9 @@ pub async fn get_douban_page_state(
 
     let douban_response = get_douban_page_data_cached(douban_request, &cache).await?;
 
+    // 后台同步到 content_pool 和 image_cache
+    sync_douban_items_to_pool(&db, &douban_response.list, &resolved.request_type);
+
     Ok(DoubanPageStateResponse {
         request_type: resolved.request_type,
         source_key: resolved.source_key,
@@ -1831,6 +1920,7 @@ pub async fn get_douban_page_state(
 pub async fn load_more_douban_page(
     request: LoadMoreDoubanPageRequest,
     cache: tauri::State<'_, PageCacheManager>,
+    db: tauri::State<'_, Db>,
 ) -> Result<DoubanPageResponse, String> {
     let source_key = normalize_source_key(request.source_key.as_deref());
     let page_limit = request.page_limit.unwrap_or(25);
@@ -1856,6 +1946,7 @@ pub async fn load_more_douban_page(
         request.selected_weekday.unwrap_or_default()
     };
 
+    let request_type = request.request_type.clone();
     let douban_request = DoubanPageRequest {
         request_type: request.request_type,
         primary_selection: request.primary_selection,
@@ -1866,7 +1957,12 @@ pub async fn load_more_douban_page(
         page_limit: Some(page_limit),
     };
 
-    get_douban_page_data_cached(douban_request, &cache).await
+    let response = get_douban_page_data_cached(douban_request, &cache).await?;
+
+    // 后台同步到 content_pool 和 image_cache
+    sync_douban_items_to_pool(&db, &response.list, &request_type);
+
+    Ok(response)
 }
 
 /// 获取过滤后的源分类（统一的分类过滤规则）

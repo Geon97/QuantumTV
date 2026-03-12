@@ -1401,6 +1401,11 @@ pub async fn get_source_videos_by_type(
 #[tauri::command]
 pub async fn proxy_image(
     url: String,
+    title: Option<String>,
+    source_name: Option<String>,
+    year: Option<String>,
+    category: Option<String>,
+    rating: Option<f64>,
     cache_manager: State<'_, crate::db::image_cache::ImageCacheManager>,
 ) -> Result<Vec<u8>, String> {
     // 1. 先尝试从 SQLite 缓存获取
@@ -1476,8 +1481,16 @@ pub async fn proxy_image(
     .await
     .map_err(|e| e.to_string())??;
 
-    // 4. 保存到 SQLite 缓存
-    if let Err(e) = cache_manager.set(&url, &compressed_bytes) {
+    // 4. 保存到 SQLite 缓存（带元数据）
+    if let Err(e) = cache_manager.set_with_metadata(
+        &url,
+        &compressed_bytes,
+        title.as_deref(),
+        source_name.as_deref(),
+        year.as_deref(),
+        category.as_deref(),
+        rating,
+    ) {
         eprintln!("Failed to save image to cache: {}", e);
     }
 

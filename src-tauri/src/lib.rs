@@ -63,6 +63,14 @@ pub fn run() {
             app.manage(commands::analytics::AnalyticsEngine::new());
             let conn = db_init::init_db(app.handle());
             let db = db_client::Db::new(conn);
+
+            // 启动时修复空元数据（回填 image_cache、推断 content_pool category）
+            if let Ok(stats) = commands::recommendation::fix_empty_metadata_direct(&db) {
+                if !stats.is_empty() {
+                    println!("启动修复元数据: {}", stats);
+                }
+            }
+
             app.manage(db);
 
             // 初始化图片缓存管理器
@@ -188,6 +196,7 @@ pub fn run() {
             // 图片缓存
             db::image_cache::get_cached_image,
             db::image_cache::save_cached_image,
+            db::image_cache::clear_image_cache,
             // 页面缓存
             db::page_cache::get_page_cache,
             db::page_cache::set_page_cache,
@@ -223,6 +232,7 @@ pub fn run() {
             commands::recommendation::add_to_content_pool,
             commands::recommendation::batch_add_to_content_pool,
             commands::recommendation::update_image_cache_metadata,
+            commands::recommendation::fix_empty_metadata,
             // 统计分析
             commands::analytics::get_user_behavior_stats,
             commands::analytics::get_popular_items,

@@ -16,7 +16,7 @@ import React, {
 
 import { generateStorageKey, subscribeToDataUpdates } from '@/lib/utils';
 import { useLongPress } from '@/hooks/useLongPress';
-import { useProxyImage } from '@/hooks/useProxyImage';
+import { ImageMetadata, useProxyImage } from '@/hooks/useProxyImage';
 
 import { ImagePlaceholder } from '@/components/ImagePlaceholder';
 import MobileActionSheet from '@/components/MobileActionSheet';
@@ -82,9 +82,17 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       null,
     ); // 搜索结果的收藏状态
 
-    // 使用 Tauri proxy_image 命令加载图片
+    // 使用 Tauri proxy_image 命令加载图片（携带元数据写入缓存）
+    const imageMetadata: ImageMetadata = {
+      title,
+      source_name: isBangumi ? 'Bangumi' : from === 'douban' ? '豆瓣' : source_name,
+      year,
+      category: isBangumi ? 'Anime' : type === 'movie' ? 'Movie' : type === 'tv' ? 'TvSeries' : '',
+      rating: rate ? parseFloat(rate) : undefined,
+    };
     const { url: proxiedPosterUrl, isLoading: proxyIsLoading } = useProxyImage(
       poster || '',
+      imageMetadata,
     );
 
     // 追踪图片是否真正加载完成（只依赖 Image 的 onLoad，不依赖代理状态）

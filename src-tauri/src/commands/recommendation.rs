@@ -308,17 +308,9 @@ impl RecommendationEngine {
 
                 // 2. 如果分析结果是 Unknown，尝试从来源判断
                 if analyzed_category == crate::commands::content_analyzer::VideoCategory::Unknown {
-                    // 根据来源和标题特征智能判断
-                    if source.contains("Bangumi") || title.contains("第") && title.contains("季") {
-                        // Bangumi 来源或包含"第X季"的通常是动漫或电视剧
-                        if title.chars().any(|c| c.is_ascii_alphanumeric() && !c.is_ascii_digit()) {
-                            crate::commands::content_analyzer::VideoCategory::Anime
-                        } else {
-                            crate::commands::content_analyzer::VideoCategory::TvSeries
-                        }
-                    } else if title.contains("第") && (title.contains("季") || title.contains("期")) {
-                        // 包含"第X季"或"第X期"的是电视剧或综艺
-                        crate::commands::content_analyzer::VideoCategory::TvSeries
+                    // 根据来源判断
+                    if source.contains("Bangumi") {
+                        crate::commands::content_analyzer::VideoCategory::Anime
                     } else {
                         // 默认为电影
                         crate::commands::content_analyzer::VideoCategory::Movie
@@ -1503,24 +1495,8 @@ pub fn update_image_cache_metadata(
     // 智能推断 category（如果没有提供）
     let inferred_category = if category.is_none() || category.as_ref().map(|c| c.is_empty()).unwrap_or(true) {
         if let Some(ref t) = title {
-            // 根据标题和来源智能推断分类
             let src = source_name.as_deref().unwrap_or("");
-
-            if src.contains("Bangumi") {
-                Some("Anime".to_string())
-            } else if t.contains("第") && (t.contains("季") || t.contains("期")) {
-                // 包含"第X季"或"第X期"的是电视剧或综艺
-                if t.contains("综艺") || t.contains("真人秀") || t.contains("脱口秀") {
-                    Some("Variety".to_string())
-                } else {
-                    Some("TvSeries".to_string())
-                }
-            } else if src.contains("豆瓣") {
-                // 豆瓣来源，默认为电影（除非标题有明确特征）
-                Some("Movie".to_string())
-            } else {
-                None
-            }
+            infer_category(t, src)
         } else {
             None
         }
@@ -1548,6 +1524,106 @@ pub fn update_image_cache_metadata(
         )?;
         Ok(())
     })
+}
+
+/// 智能推断分类（公开方法，供 douban_client 等模块调用）
+pub fn infer_category(_title: &str, source_name: &str) -> Option<String> {
+    // Bangumi 来源 → Anime
+    if source_name.contains("Bangumi") {
+        return Some("Anime".to_string());
+    }
+
+    // 豆瓣来源默认 → Movie
+    if source_name.contains("豆瓣") {
+        return Some("Movie".to_string());
+    }
+
+    None
+}
+
+/// 修复 image_cache 和 content_pool 的空数据
+///
+/// 1. 从 content_pool 回填 image_cache 的 title 和 category
+/// 2. 智能推断 content_pool 的空 category
+#[tauri::command]
+pub fn fix_empty_metadata(db: State<'_, Db>) -> Result<String, String> {
+    fix_empty_metadata_direct(&db)
+}
+
+/// 直接调用版本（启动时使用，不需要 State 包装）
+pub fn fix_empty_metadata_direct(db: &Db) -> Result<String, String> {
+    let mut stats = String::new();
+
+    // 1. 从 content_pool 回填 image_cache 的元数据
+    let updated_images = db.with_conn(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT ic.url, cp.title, cp.source_name, cp.year, cp.category, cp.rating
+             FROM image_cache ic
+             LEFT JOIN content_pool cp ON ic.url = cp.cover
+             WHERE (ic.title IS NULL OR ic.title = '')
+               AND cp.title IS NOT NULL",
+        )?;
+
+        let rows: Vec<(String, String, String, String, String, f64)> = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut count = 0;
+        for (url, title, source_name, year, category, rating) in rows {
+            conn.execute(
+                "UPDATE image_cache
+                 SET title = ?, source_name = ?, year = ?, category = ?, rating = ?
+                 WHERE url = ?",
+                (&title, &source_name, &year, &category, rating, &url),
+            )?;
+            count += 1;
+        }
+
+        Ok::<usize, rusqlite::Error>(count)
+    })?;
+
+    stats.push_str(&format!("回填 image_cache: {} 条记录\n", updated_images));
+
+    // 2. 智能推断 content_pool 的空 category
+    let updated_categories = db.with_conn(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT title, source_name FROM content_pool
+             WHERE category IS NULL OR category = ''",
+        )?;
+
+        let rows: Vec<(String, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut count = 0;
+        for (title, source_name) in rows {
+            if let Some(category) = infer_category(&title, &source_name) {
+                conn.execute(
+                    "UPDATE content_pool SET category = ? WHERE title = ? AND source_name = ?",
+                    (&category, &title, &source_name),
+                )?;
+                count += 1;
+            }
+        }
+
+        Ok::<usize, rusqlite::Error>(count)
+    })?;
+
+    stats.push_str(&format!(
+        "推断 content_pool category: {} 条记录",
+        updated_categories
+    ));
+
+    Ok(stats)
 }
 
 #[cfg(test)]

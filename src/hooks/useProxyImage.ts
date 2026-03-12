@@ -1,10 +1,18 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useEffect, useRef, useState } from 'react';
 
+export interface ImageMetadata {
+  title?: string;
+  source_name?: string;
+  year?: string;
+  category?: string;
+  rating?: number;
+}
+
 // 正在进行的请求，避免重复请求
 const pendingRequests = new Map<string, Promise<Uint8Array>>();
 
-async function getImageData(originalUrl: string): Promise<Uint8Array> {
+async function getImageData(originalUrl: string, metadata?: ImageMetadata): Promise<Uint8Array> {
   // 检查是否有正在进行的请求
   const pending = pendingRequests.get(originalUrl);
   if (pending) {
@@ -14,7 +22,14 @@ async function getImageData(originalUrl: string): Promise<Uint8Array> {
   // 创建新请求（proxy_image 内部会自动处理 SQLite 缓存）
   const request = (async () => {
     try {
-      const imageData = await invoke<number[]>('proxy_image', { url: originalUrl });
+      const imageData = await invoke<number[]>('proxy_image', {
+        url: originalUrl,
+        title: metadata?.title || null,
+        sourceName: metadata?.source_name || null,
+        year: metadata?.year || null,
+        category: metadata?.category || null,
+        rating: metadata?.rating || null,
+      });
       const data = new Uint8Array(imageData);
       pendingRequests.delete(originalUrl);
       return data;
@@ -31,7 +46,7 @@ async function getImageData(originalUrl: string): Promise<Uint8Array> {
 
 const PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg"%3E%3C/svg%3E';
 
-export function useProxyImage(originalUrl: string): {
+export function useProxyImage(originalUrl: string, metadata?: ImageMetadata): {
   url: string;
   isLoading: boolean;
   error: Error | null;
@@ -69,7 +84,7 @@ export function useProxyImage(originalUrl: string): {
 
     let cancelled = false;
 
-    getImageData(originalUrl)
+    getImageData(originalUrl, metadata)
       .then((imageData) => {
         if (cancelled) return;
 

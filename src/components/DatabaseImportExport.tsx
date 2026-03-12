@@ -178,6 +178,8 @@ export default function DatabaseImportExport({ showAlert }: Props) {
         setClearing(true);
         try {
           await invoke('clear_cache');
+          await invoke('clear_image_cache');
+          await invoke('clear_all_page_cache');
           showAlert('success', '数据库已清空', '所有数据已被清除');
         } catch (error) {
           console.error('清空失败:', error);

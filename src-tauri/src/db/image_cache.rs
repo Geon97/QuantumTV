@@ -78,27 +78,49 @@ impl ImageCacheManager {
         }
     }
 
-    /// 保存图片到缓存
-    pub fn set(&self, url: &str, data: &[u8]) -> Result<()> {
+    /// 保存图片到缓存（带元数据）
+    pub fn set_with_metadata(
+        &self,
+        url: &str,
+        data: &[u8],
+        title: Option<&str>,
+        source_name: Option<&str>,
+        year: Option<&str>,
+        category: Option<&str>,
+        rating: Option<f64>,
+    ) -> Result<()> {
         let size = data.len() as i32;
         let now = Self::current_timestamp();
 
         let conn = self.conn.lock().unwrap();
-
-        // 检查是否需要清理缓存
         drop(conn);
         self.cleanup_if_needed()?;
 
         let conn = self.conn.lock().unwrap();
 
-        // 插入或替换
         conn.execute(
-            "INSERT OR REPLACE INTO image_cache (url, data, created_at, last_accessed, access_count, size)
-             VALUES (?, ?, ?, ?, 1, ?)",
-            params![url, data, now, now, size],
+            "INSERT OR REPLACE INTO image_cache (url, data, created_at, last_accessed, access_count, size, title, source_name, year, category, rating)
+             VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)",
+            params![
+                url,
+                data,
+                now,
+                now,
+                size,
+                title.unwrap_or(""),
+                source_name.unwrap_or(""),
+                year.unwrap_or(""),
+                category.unwrap_or(""),
+                rating.unwrap_or(0.0),
+            ],
         )?;
 
         Ok(())
+    }
+
+    /// 保存图片到缓存
+    pub fn set(&self, url: &str, data: &[u8]) -> Result<()> {
+        self.set_with_metadata(url, data, None, None, None, None, None)
     }
 
     /// 检查并清理缓存
@@ -150,6 +172,13 @@ impl ImageCacheManager {
 
         Ok(())
     }
+
+    /// 清空全部图片缓存
+    pub fn clear_all(&self) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM image_cache", [])?;
+        Ok(())
+    }
 }
 
 // Tauri 命令
@@ -172,4 +201,13 @@ pub fn save_cached_image(
     cache_manager
         .set(&url, &data)
         .map_err(|e| format!("Failed to save cached image: {}", e))
+}
+
+#[tauri::command]
+pub fn clear_image_cache(
+    cache_manager: tauri::State<ImageCacheManager>,
+) -> Result<(), String> {
+    cache_manager
+        .clear_all()
+        .map_err(|e| format!("Failed to clear image cache: {}", e))
 }

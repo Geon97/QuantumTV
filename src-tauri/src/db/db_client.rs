@@ -179,6 +179,7 @@ impl Db {
             conn.execute("DELETE FROM favorites", [])?;
             conn.execute("DELETE FROM search_history", [])?;
             conn.execute("DELETE FROM skip_configs", [])?;
+            conn.execute("DELETE FROM content_pool", [])?;
             Ok(())
         })
     }
