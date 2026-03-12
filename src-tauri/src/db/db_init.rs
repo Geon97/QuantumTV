@@ -59,6 +59,12 @@ pub fn init_db(app: &tauri::AppHandle) -> Connection {
     // 打开外键支持
     conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
 
+    // 检查数据库版本并执行迁移
+    let user_version: i32 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    // 创建基础表（如果不存在）
     conn.execute_batch(
         // 播放记录表
         r#"
@@ -130,14 +136,90 @@ pub fn init_db(app: &tauri::AppHandle) -> Connection {
             created_at INTEGER NOT NULL,
             last_accessed INTEGER NOT NULL,
             access_count INTEGER DEFAULT 1,
-            size INTEGER NOT NULL
+            size INTEGER NOT NULL,
+            title TEXT,
+            source_name TEXT,
+            year TEXT,
+            category TEXT,
+            rating REAL
         );
 
         CREATE INDEX IF NOT EXISTS idx_last_accessed ON image_cache(last_accessed);
         CREATE INDEX IF NOT EXISTS idx_created_at ON image_cache(created_at);
+        CREATE INDEX IF NOT EXISTS idx_access_count ON image_cache(access_count);
+        CREATE INDEX IF NOT EXISTS idx_rating ON image_cache(rating);
         "#,
     )
     .expect("failed to create image_cache table");
+
+    conn.execute_batch(
+        // 内容池表：存储全局可推荐的内容
+        r#"
+        CREATE TABLE IF NOT EXISTS content_pool (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            source_name TEXT NOT NULL,
+            year TEXT,
+            cover TEXT,
+            category TEXT,
+            rating REAL DEFAULT 0.0,
+            description TEXT,
+            tags TEXT,
+            popularity_score REAL DEFAULT 0.0,
+            created_at INTEGER NOT NULL,
+            last_updated INTEGER NOT NULL,
+            UNIQUE(title, source_name)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_content_category ON content_pool(category);
+        CREATE INDEX IF NOT EXISTS idx_content_rating ON content_pool(rating);
+        CREATE INDEX IF NOT EXISTS idx_content_popularity ON content_pool(popularity_score);
+        CREATE INDEX IF NOT EXISTS idx_content_year ON content_pool(year);
+        "#,
+    )
+    .expect("failed to create content_pool table");
+
+    // 数据库迁移：为 image_cache 表添加新字段（如果不存在）
+    if user_version < 1 {
+        // 检查 image_cache 表是否有新字段
+        let has_title_column: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('image_cache') WHERE name='title'",
+                [],
+                |row| {
+                    let count: i32 = row.get(0)?;
+                    Ok(count > 0)
+                },
+            )
+            .unwrap_or(false);
+
+        if !has_title_column {
+            // 添加新字段
+            conn.execute_batch(
+                r#"
+                ALTER TABLE image_cache ADD COLUMN title TEXT;
+                ALTER TABLE image_cache ADD COLUMN source_name TEXT;
+                ALTER TABLE image_cache ADD COLUMN year TEXT;
+                ALTER TABLE image_cache ADD COLUMN category TEXT;
+                ALTER TABLE image_cache ADD COLUMN rating REAL;
+                "#,
+            )
+            .expect("failed to add columns to image_cache table");
+
+            // 创建新索引
+            conn.execute_batch(
+                r#"
+                CREATE INDEX IF NOT EXISTS idx_access_count ON image_cache(access_count);
+                CREATE INDEX IF NOT EXISTS idx_rating ON image_cache(rating);
+                "#,
+            )
+            .expect("failed to create indexes on image_cache table");
+        }
+
+        // 更新数据库版本
+        conn.execute("PRAGMA user_version = 1", [])
+            .expect("failed to update database version");
+    }
 
     conn
 }

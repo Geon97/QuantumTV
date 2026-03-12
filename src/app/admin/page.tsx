@@ -24,6 +24,7 @@ import { invoke } from '@tauri-apps/api/core';
 import {
   AlertCircle,
   AlertTriangle,
+  BarChart3,
   Check,
   CheckCircle,
   ChevronDown,
@@ -45,6 +46,7 @@ import { createPortal } from 'react-dom';
 import { AdminConfig } from '@/lib/admin.types';
 import { appLayoutClasses } from '@/lib/ui-layout';
 
+import AnalyticsDashboard from '@/components/AnalyticsDashboard';
 import DatabaseImportExport, {
   ConfirmModal,
 } from '@/components/DatabaseImportExport';
@@ -1329,6 +1331,7 @@ function AdminPageContent() {
     categoryConfig: false,
     liveSource: false,
     databaseImportExport: false,
+    analytics: false,
   });
   const [alertModal, setAlertModal] = useState({
     isOpen: false,
@@ -1448,6 +1451,15 @@ function AdminPageContent() {
             onUpdate={replaceConfig}
             showAlert={showAlert}
           />
+        </CollapsibleTab>
+        {/* 数据统计 */}
+        <CollapsibleTab
+          title='数据统计'
+          icon={<BarChart3 className='w-5 h-5 text-indigo-500' />}
+          isExpanded={expandedTabs.analytics}
+          onToggle={() => toggleTab('analytics')}
+        >
+          <AnalyticsDashboard />
         </CollapsibleTab>
         {/* 数据库导入导出 */}
         <CollapsibleTab

@@ -1,8 +1,12 @@
+pub mod analytics;
 pub mod bangumi;
 pub mod config;
+pub mod content_analyzer;
+pub mod data_fusion;
 pub mod douban_client;
 pub mod home;
 pub mod preload;
+pub mod recommendation;
 pub mod search;
 pub mod settings;
 pub mod skip;

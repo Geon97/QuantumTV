@@ -59,6 +59,8 @@ pub fn run() {
             app.manage(commands::search::SearchResultCache::new());
             app.manage(commands::search::FilterResultCache::new());
             app.manage(commands::source_intelligence::SourceIntelligenceManager::new());
+            app.manage(commands::recommendation::RecommendationEngine::new());
+            app.manage(commands::analytics::AnalyticsEngine::new());
             let conn = db_init::init_db(app.handle());
             let db = db_client::Db::new(conn);
             app.manage(db);
@@ -215,6 +217,20 @@ pub fn run() {
             commands::source_intelligence::get_source_stats,
             commands::source_intelligence::rank_sources,
             commands::source_intelligence::clear_all_source_stats,
+            // 智能推荐
+            commands::recommendation::get_recommendations,
+            commands::recommendation::clear_recommendation_cache,
+            commands::recommendation::add_to_content_pool,
+            commands::recommendation::batch_add_to_content_pool,
+            commands::recommendation::update_image_cache_metadata,
+            // 统计分析
+            commands::analytics::get_user_behavior_stats,
+            commands::analytics::get_popular_items,
+            commands::analytics::get_watch_trends,
+            commands::analytics::get_category_stats,
+            commands::analytics::get_hourly_stats,
+            commands::analytics::generate_analytics_report,
+            commands::analytics::clear_analytics_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -14,12 +14,25 @@ import {
   HomeBootstrapResponse,
   HomePageData,
 } from '@/lib/types';
+
+interface RecommendationItem {
+  title: string;
+  source_name: string;
+  year: string;
+  cover: string;
+  score: number;
+}
 import {
   appLayoutClasses,
   getGridColumnsClass,
   getRailItemClass,
 } from '@/lib/ui-layout';
 import { subscribeToDataUpdates } from '@/lib/utils';
+import {
+  extractFromBangumiItem,
+  extractFromDoubanItem,
+  useContentPoolSync,
+} from '@/hooks/useContentPoolSync';
 import { useImagePreload } from '@/hooks/useImagePreload';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
@@ -35,14 +48,19 @@ function HomeClient() {
   const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
   const [hotVarietyShows, setHotVarietyShows] = useState<DoubanItem[]>([]);
   const [todayBangumi, setTodayBangumi] = useState<BangumiItem[]>([]);
+  const [recommendations, setRecommendations] = useState<RecommendationItem[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
   const { announcement } = useSite();
 
   const [showAnnouncement, setShowAnnouncement] = useState(false);
 
   // 收藏夹数据
-
   const [favoriteItems, setFavoriteItems] = useState<FavoriteCard[]>([]);
+
+  // 内容池同步
+  const { batchSyncToContentPool } = useContentPoolSync();
 
   // 图片预加载：提取所有图片 URL
   const allImageUrls = [
@@ -70,6 +88,33 @@ function HomeClient() {
         setHotVarietyShows(homeData.hotVarietyShows);
         setTodayBangumi(homeData.todayBangumi);
         setShowAnnouncement(data.shouldShowAnnouncement);
+
+        // 自动同步内容到内容池（后台异步执行）
+        setTimeout(() => {
+          const allItems = [
+            ...homeData.hotMovies.map(extractFromDoubanItem),
+            ...homeData.hotTvShows.map(extractFromDoubanItem),
+            ...homeData.hotVarietyShows.map(extractFromDoubanItem),
+            ...homeData.todayBangumi.map(extractFromBangumiItem),
+          ];
+          batchSyncToContentPool(allItems);
+        }, 1000);
+
+        // 加载推荐内容
+        try {
+          // 清除推荐缓存，确保获取最新数据
+          await invoke('clear_recommendation_cache');
+          console.log('已清除推荐缓存');
+
+          const items = await invoke<RecommendationItem[]>(
+            'get_recommendations',
+          );
+          console.log('收到推荐:', items.length, '个');
+          console.log('推荐列表:', items);
+          setRecommendations(items); // 显示所有推荐（后端已限制为6个）
+        } catch (error) {
+          console.error('加载推荐失败:', error);
+        }
       } catch (error) {
         console.error('获取推荐数据失败:', error);
         if (announcement) {
@@ -196,6 +241,31 @@ function HomeClient() {
             <>
               {/* 继续观看 */}
               <ContinueWatching />
+
+              {/* 为你推荐 */}
+              {recommendations.length > 0 && (
+                <section className={appLayoutClasses.sectionGap}>
+                  <div className='mb-5 flex items-center justify-between'>
+                    <h2 className='flex items-center gap-2 text-lg font-bold text-gray-800 max-[375px]:text-base min-[834px]:text-[1.35rem] min-[1440px]:text-[1.5rem] dark:text-gray-100'>
+                      <Sparkles className='w-5 h-5 text-purple-500' />
+                      为你推荐
+                    </h2>
+                  </div>
+                  <ScrollableRow>
+                    {recommendations.map((item, index) => (
+                      <div key={index} className={getRailItemClass('default')}>
+                        <VideoCard
+                          title={item.title}
+                          poster={item.cover}
+                          year={item.year}
+                          from='recommendation'
+                          query={item.title}
+                        />
+                      </div>
+                    ))}
+                  </ScrollableRow>
+                </section>
+              )}
 
               {/* 热门电影 */}
               <section className={appLayoutClasses.sectionGap}>

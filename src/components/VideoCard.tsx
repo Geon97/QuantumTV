@@ -33,7 +33,7 @@ export interface VideoCardProps {
   source_names?: string[];
   progress?: number;
   year?: string;
-  from: 'playrecord' | 'favorite' | 'search' | 'douban';
+  from: 'playrecord' | 'favorite' | 'search' | 'douban' | 'recommendation';
   currentEpisode?: number;
   douban_id?: number;
   onDelete?: () => void;
@@ -84,7 +84,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
 
     // 使用 Tauri proxy_image 命令加载图片
     const { url: proxiedPosterUrl, isLoading: proxyIsLoading } = useProxyImage(
-      poster || ''
+      poster || '',
     );
 
     // 追踪图片是否真正加载完成（只依赖 Image 的 onLoad，不依赖代理状态）
@@ -372,6 +372,16 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
           showRating: !!rate,
           showYear: false,
         },
+        recommendation: {
+          showSourceName: false,
+          showProgress: false,
+          showPlayButton: true,
+          showHeart: true,
+          showCheckCircle: false,
+          showDoubanLink: false,
+          showRating: false,
+          showYear: true,
+        },
       };
       return configs[from] || configs.search;
     }, [from, isAggregate, douban_id, rate]);
@@ -578,14 +588,18 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
             }}
           >
             {/* 骨架屏 - 等待代理加载或图片加载 */}
-            {(proxyIsLoading || !imageLoaded) && <ImagePlaceholder aspectRatio='aspect-2/3' />}
+            {(proxyIsLoading || !imageLoaded) && (
+              <ImagePlaceholder aspectRatio='aspect-2/3' />
+            )}
             {/* 图片 - 只在代理加载完成后显示 */}
-            {!proxyIsLoading && (
+            {!proxyIsLoading && proxiedPosterUrl && (
               <Image
                 src={proxiedPosterUrl}
                 alt={actualTitle}
                 fill
-                className={origin === 'live' ? 'object-contain' : 'object-cover'}
+                className={
+                  origin === 'live' ? 'object-contain' : 'object-cover'
+                }
                 referrerPolicy='no-referrer'
                 loading='lazy'
                 onLoad={() => setImageLoaded(true)}
@@ -599,24 +613,24 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                     }, 2000);
                   }
                 }}
-              style={
-                {
-                  // 禁用图片的默认长按效果
-                  WebkitUserSelect: 'none',
-                  userSelect: 'none',
-                  WebkitTouchCallout: 'none',
-                  pointerEvents: 'none', // 图片不响应任何指针事件
-                } as React.CSSProperties
-              }
-              onContextMenu={(e) => {
-                e.preventDefault();
-                return false;
-              }}
-              onDragStart={(e) => {
-                e.preventDefault();
-                return false;
-              }}
-            />
+                style={
+                  {
+                    // 禁用图片的默认长按效果
+                    WebkitUserSelect: 'none',
+                    userSelect: 'none',
+                    WebkitTouchCallout: 'none',
+                    pointerEvents: 'none', // 图片不响应任何指针事件
+                  } as React.CSSProperties
+                }
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  return false;
+                }}
+                onDragStart={(e) => {
+                  e.preventDefault();
+                  return false;
+                }}
+              />
             )}
 
             {/* 悬浮遮罩 */}

@@ -1,4 +1,4 @@
-﻿/* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-explicit-any,@typescript-eslint/no-non-null-assertion,no-empty */
+﻿/* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-explicit-any,no-empty */
 'use client';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -6,13 +6,13 @@ import { ChevronUp, Search, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
-import {
-  AggregatedGroup,
-  SearchFilter,
-  SearchResult,
-} from '@/lib/types';
+import { AggregatedGroup, SearchFilter, SearchResult } from '@/lib/types';
 import { appLayoutClasses, getGridColumnsClass } from '@/lib/ui-layout';
 import { subscribeToDataUpdates } from '@/lib/utils';
+import {
+  extractFromSearchResult,
+  useContentPoolSync,
+} from '@/hooks/useContentPoolSync';
 import { useImagePreload } from '@/hooks/useImagePreload';
 
 import PageLayout from '@/components/PageLayout';
@@ -39,7 +39,7 @@ function SearchPageClient() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  // 避免渲染时的“初次加载”闪烁
+  // 避免渲染时的”初次加载”闪烁
   const qParam = searchParams.get('q') || '';
   const currentQueryRef = useRef<string>('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -53,6 +53,10 @@ function SearchPageClient() {
   const focusScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+
+  // 内容池同步
+  const { batchSyncToContentPool } = useContentPoolSync();
+
   // 聚合卡片 refs
   const groupRefs = useRef<
     Map<string, React.RefObject<VideoCardHandle | null>>
@@ -129,6 +133,14 @@ function SearchPageClient() {
       .then((response) => {
         setAggregatedGroups(new Map(response.aggregatedEntries));
         setFilteredAllResults(response.filteredResults);
+
+        // 自动同步搜索结果到内容池（后台异步执行）
+        if (response.filteredResults.length > 0) {
+          setTimeout(() => {
+            const items = response.filteredResults.map(extractFromSearchResult);
+            batchSyncToContentPool(items);
+          }, 1000);
+        }
       })
       .catch(console.error);
   }, [filterAgg, filterAll]);
@@ -219,7 +231,7 @@ function SearchPageClient() {
   }, [aggregatedGroups, filteredAllResults, viewMode]);
   useImagePreload(
     searchImageUrls,
-    !isLoading && (aggregatedGroups.size > 0 || filteredAllResults.length > 0)
+    !isLoading && (aggregatedGroups.size > 0 || filteredAllResults.length > 0),
   );
   useEffect(() => {
     if (!qParam) {
@@ -282,6 +294,16 @@ function SearchPageClient() {
       .then((filterResponse) => {
         setAggregatedGroups(new Map(filterResponse.aggregatedEntries));
         setFilteredAllResults(filterResponse.filteredResults);
+
+        // 自动同步搜索结果到内容池（后台异步执行）
+        if (filterResponse.filteredResults.length > 0) {
+          setTimeout(() => {
+            const items = filterResponse.filteredResults.map(
+              extractFromSearchResult,
+            );
+            batchSyncToContentPool(items);
+          }, 1000);
+        }
       })
       .catch((err) => {
         console.error('Search error:', err);
@@ -301,47 +323,41 @@ function SearchPageClient() {
     const setupListeners = async () => {
       try {
         // 监听流式结果事件
-        unlistenStream = await listen<any>(
-          'search-stream-result',
-          (event) => {
-            const { total_sources, completed_sources } = event.payload;
-            setTotalSources(total_sources);
-            setCompletedSources(completed_sources);
+        unlistenStream = await listen<any>('search-stream-result', (event) => {
+          const { total_sources, completed_sources } = event.payload;
+          setTotalSources(total_sources);
+          setCompletedSources(completed_sources);
 
-            // 流式搜索时，实时调用 apply_search_filter 更新结果
-            invoke<{
-              aggregatedEntries: Array<[string, AggregatedGroup]>;
-              filteredResults: SearchResult[];
-            }>('apply_search_filter', {
-              query: qParam,
-              filterAgg: {
-                source: filterAgg.source,
-                title: filterAgg.title,
-                year: filterAgg.year,
-                year_order: filterAgg.yearOrder,
-              },
-              filterAll: {
-                source: filterAll.source,
-                title: filterAll.title,
-                year: filterAll.year,
-                year_order: filterAll.yearOrder,
-              },
+          // 流式搜索时，实时调用 apply_search_filter 更新结果
+          invoke<{
+            aggregatedEntries: Array<[string, AggregatedGroup]>;
+            filteredResults: SearchResult[];
+          }>('apply_search_filter', {
+            query: qParam,
+            filterAgg: {
+              source: filterAgg.source,
+              title: filterAgg.title,
+              year: filterAgg.year,
+              year_order: filterAgg.yearOrder,
+            },
+            filterAll: {
+              source: filterAll.source,
+              title: filterAll.title,
+              year: filterAll.year,
+              year_order: filterAll.yearOrder,
+            },
+          })
+            .then((filterResponse) => {
+              setAggregatedGroups(new Map(filterResponse.aggregatedEntries));
+              setFilteredAllResults(filterResponse.filteredResults);
             })
-              .then((filterResponse) => {
-                setAggregatedGroups(new Map(filterResponse.aggregatedEntries));
-                setFilteredAllResults(filterResponse.filteredResults);
-              })
-              .catch(console.error);
-          },
-        );
+            .catch(console.error);
+        });
 
         // 监听搜索完成事件
-        unlistenCompleted = await listen<any>(
-          'search-stream-completed',
-          () => {
-            setIsLoading(false);
-          },
-        );
+        unlistenCompleted = await listen<any>('search-stream-completed', () => {
+          setIsLoading(false);
+        });
       } catch (err) {
         console.error('Failed to setup stream listeners:', err);
       }
@@ -355,7 +371,9 @@ function SearchPageClient() {
     };
   }, [qParam, useFluidSearch, filterAgg, filterAll]);
 
+  // eslint-disable-next-line no-undef
   const scrollPageToTop = (behavior: ScrollBehavior = 'auto') => {
+    // eslint-disable-next-line no-undef
     const options: ScrollToOptions = { top: 0, left: 0, behavior };
     try {
       window.scrollTo(options);
@@ -518,7 +536,9 @@ function SearchPageClient() {
         </div>
 
         {/* 搜索结果或搜索历史 */}
-        <div className={`${appLayoutClasses.pageContent} mt-10 sm:mt-12 min-[834px]:mt-14 overflow-visible`}>
+        <div
+          className={`${appLayoutClasses.pageContent} mt-10 sm:mt-12 min-[834px]:mt-14 overflow-visible`}
+        >
           {showResults ? (
             <section className='mb-12'>
               {/* 标题 */}
@@ -573,7 +593,11 @@ function SearchPageClient() {
                   </div>
                 </label>
               </div>
-              {(viewMode === 'agg' ? aggregatedGroups.size === 0 : filteredAllResults.length === 0) ? (
+              {(
+                viewMode === 'agg'
+                  ? aggregatedGroups.size === 0
+                  : filteredAllResults.length === 0
+              ) ? (
                 isLoading ? (
                   <div className='flex justify-center items-center h-40'>
                     <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-green-500'></div>

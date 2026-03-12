@@ -12,6 +12,10 @@ import type {
   RuntimeConfigResponse,
 } from '@/lib/types';
 import { appLayoutClasses, getGridColumnsClass } from '@/lib/ui-layout';
+import {
+  extractFromDoubanItem,
+  useContentPoolSync,
+} from '@/hooks/useContentPoolSync';
 import { useImagePreload } from '@/hooks/useImagePreload';
 import { useSourceFilter } from '@/hooks/useSourceFilter';
 
@@ -98,6 +102,9 @@ function DoubanPageClient() {
     getFilteredCategories,
   } = useSourceFilter();
 
+  // 内容池同步
+  const { batchSyncToContentPool } = useContentPoolSync();
+
   // 【核心修复】存储当前源的过滤后分类列表（用于渲染）
   const [filteredSourceCategories, setFilteredSourceCategories] = useState<
     SourceCategory[]
@@ -141,9 +148,8 @@ function DoubanPageClient() {
   useEffect(() => {
     const loadCustomCategories = async () => {
       try {
-        const runtimeConfig = await invoke<RuntimeConfigResponse>(
-          'get_runtime_config',
-        );
+        const runtimeConfig =
+          await invoke<RuntimeConfigResponse>('get_runtime_config');
         if (runtimeConfig.custom_categories.length > 0) {
           setCustomCategories(runtimeConfig.custom_categories);
           return;
@@ -332,6 +338,14 @@ function DoubanPageClient() {
       if (isSnapshotEqual(requestSnapshot, currentSnapshot, false)) {
         setDoubanData(data.list);
         setHasMore(data.has_more);
+
+        // 自动同步内容到内容池（后台异步执行）
+        if (data.list.length > 0) {
+          setTimeout(() => {
+            const items = data.list.map(extractFromDoubanItem);
+            batchSyncToContentPool(items);
+          }, 1000);
+        }
       } else {
         console.log('参数不一致，不执行任何操作，避免设置过期数据');
       }
@@ -438,7 +452,8 @@ function DoubanPageClient() {
           if (!isSnapshotEqual(requestSnapshot, currentSnapshot)) {
             return;
           }
-          const message = err instanceof Error ? err.message : String(err ?? '');
+          const message =
+            err instanceof Error ? err.message : String(err ?? '');
           if (!isRetryableDoubanErrorMessage(message)) {
             console.error(err);
           }
