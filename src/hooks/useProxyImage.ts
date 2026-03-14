@@ -12,6 +12,10 @@ export interface ImageMetadata {
 // 正在进行的请求，避免重复请求
 const pendingRequests = new Map<string, Promise<Uint8Array>>();
 
+export function clearPendingRequests(): void {
+  pendingRequests.clear();
+}
+
 async function getImageData(originalUrl: string, metadata?: ImageMetadata): Promise<Uint8Array> {
   // 检查是否有正在进行的请求
   const pending = pendingRequests.get(originalUrl);
@@ -54,7 +58,14 @@ export function useProxyImage(originalUrl: string, metadata?: ImageMetadata): {
   const [url, setUrl] = useState(PLACEHOLDER);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [resumeKey, setResumeKey] = useState(0);
   const blobUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const handleResume = () => setResumeKey((k) => k + 1);
+    window.addEventListener('app-resumed', handleResume);
+    return () => window.removeEventListener('app-resumed', handleResume);
+  }, []);
 
   useEffect(() => {
     if (!originalUrl) {
@@ -113,7 +124,7 @@ export function useProxyImage(originalUrl: string, metadata?: ImageMetadata): {
         blobUrlRef.current = null;
       }
     };
-  }, [originalUrl]);
+  }, [originalUrl, resumeKey]);
 
   return { url, isLoading, error };
 }

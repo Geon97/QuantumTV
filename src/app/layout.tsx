@@ -8,6 +8,7 @@ import './globals.css';
 
 import { RuntimeConfigResponse } from '@/lib/types';
 
+import { AppLifecycleWatcher } from '../components/AppLifecycleWatcher';
 import { GlobalErrorIndicator } from '../components/GlobalErrorIndicator';
 import NavbarGate from '../components/NavbarGate';
 import ParticleBackground from '../components/ParticleBackground';
@@ -130,6 +131,7 @@ export default async function RootLayout({
             </NavbarGate>
             {children}
             <GlobalErrorIndicator />
+            <AppLifecycleWatcher />
           </SiteProvider>
         </ThemeProvider>
       </body>

@@ -83,3 +83,11 @@ async function processPreloadQueue(): Promise<void> {
 export function clearPreloadQueue(): void {
   preloadQueue.clear();
 }
+
+/**
+ * 重置预加载状态（队列 + 进行中），用于 Android WebView 恢复时清理失效引用
+ */
+export function resetPreloadState(): void {
+  preloadQueue.clear();
+  preloadInProgress.clear();
+}
