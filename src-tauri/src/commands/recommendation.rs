@@ -211,7 +211,6 @@ impl RecommendationEngine {
     fn cold_start_recommendations(&self, db: &Db) -> Result<Vec<RecommendationItem>, String> {
         let mut recommendations = Vec::new();
 
-        eprintln!("冷启动推荐：结合用户习惯和新内容");
 
         // 策略1：分析用户观影习惯，找到相似的新内容
         let history_videos = self.get_videos_from_history(db)?;
@@ -1259,7 +1258,6 @@ impl RecommendationEngine {
             }
         }
 
-        eprintln!("生成新的推荐结果...");
 
         // 获取用户统计
         let user_stats = self.get_user_stats(db)?;
@@ -1306,7 +1304,6 @@ impl RecommendationEngine {
 
         // 去重
         recommendations = self.deduplicate_recommendations(recommendations);
-        eprintln!("去重后: {} 个推荐", recommendations.len());
 
         // 按分数排序
         recommendations.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
@@ -1314,7 +1311,6 @@ impl RecommendationEngine {
         // 限制返回数量为6个
         recommendations.truncate(6);
 
-        eprintln!("最终推荐: {} 个", recommendations.len());
         for (i, item) in recommendations.iter().enumerate() {
             eprintln!("  {}. {} (来源: {}, 分数: {:.2})", i+1, item.title, item.source_name, item.score);
         }
