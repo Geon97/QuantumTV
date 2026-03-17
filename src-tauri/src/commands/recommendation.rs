@@ -1677,4 +1677,272 @@ mod tests {
         let engine = RecommendationEngine::new();
         assert_eq!(engine.cache_ttl, Duration::from_secs(300));
     }
+
+    #[test]
+    fn test_recommendation_item_creation() {
+        let item = RecommendationItem {
+            title: "Test Movie".to_string(),
+            source_name: "Source1".to_string(),
+            year: "2024".to_string(),
+            cover: "http://example.com/cover.jpg".to_string(),
+            score: 8.5,
+            reason: RecommendationReason::Popular,
+        };
+
+        assert_eq!(item.title, "Test Movie");
+        assert_eq!(item.source_name, "Source1");
+        assert_eq!(item.year, "2024");
+        assert!((item.score - 8.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_recommendation_reason_variants() {
+        let reasons = vec![
+            RecommendationReason::Popular,
+            RecommendationReason::SimilarToHistory,
+            RecommendationReason::Favorite,
+            RecommendationReason::CategoryBased,
+            RecommendationReason::NewContent,
+            RecommendationReason::ContentDiscovery,
+        ];
+
+        assert_eq!(reasons.len(), 6);
+    }
+
+    #[test]
+    fn test_user_profile_initialization() {
+        let profile = UserProfile {
+            watched_titles: vec!["Show1".to_string(), "Show2".to_string()],
+            favorite_categories: vec![VideoCategory::Movie, VideoCategory::Anime],
+            favorite_years: vec!["2023".to_string(), "2024".to_string()],
+        };
+
+        assert_eq!(profile.watched_titles.len(), 2);
+        assert_eq!(profile.favorite_categories.len(), 2);
+        assert_eq!(profile.favorite_years.len(), 2);
+    }
+
+    #[test]
+    fn test_user_history_stats() {
+        let stats = UserHistoryStats {
+            total_records: 50,
+            favorite_count: 10,
+            last_update: Instant::now(),
+            search_count: 5,
+        };
+
+        assert_eq!(stats.total_records, 50);
+        assert_eq!(stats.favorite_count, 10);
+        assert_eq!(stats.search_count, 5);
+    }
+
+    #[test]
+    fn test_recommendation_item_serialization() {
+        let item = RecommendationItem {
+            title: "Test".to_string(),
+            source_name: "Source".to_string(),
+            year: "2024".to_string(),
+            cover: "url".to_string(),
+            score: 8.0,
+            reason: RecommendationReason::Popular,
+        };
+
+        let json = serde_json::to_string(&item).unwrap();
+        assert!(json.contains("\"title\":\"Test\""));
+        assert!(json.contains("\"score\":8.0"));
+        // reason should not be serialized
+        assert!(!json.contains("reason"));
+    }
+
+    #[test]
+    fn test_default_recommendations_not_empty() {
+        let engine = RecommendationEngine::new();
+        let recs = engine.get_default_recommendations();
+        assert!(!recs.is_empty());
+    }
+
+    #[test]
+    fn test_default_recommendations_all_positive_scores() {
+        let engine = RecommendationEngine::new();
+        let recs = engine.get_default_recommendations();
+        for rec in recs {
+            assert!(rec.score > 0.0, "Score should be positive");
+        }
+    }
+
+    #[test]
+    fn test_deduplicate_basic() {
+        let engine = RecommendationEngine::new();
+        let recommendations = vec![
+            RecommendationItem {
+                title: "Duplicate".to_string(),
+                source_name: "Source1".to_string(),
+                year: "2024".to_string(),
+                cover: "".to_string(),
+                score: 7.0,
+                reason: RecommendationReason::Popular,
+            },
+            RecommendationItem {
+                title: "Duplicate".to_string(),
+                source_name: "Source2".to_string(),
+                year: "2024".to_string(),
+                cover: "".to_string(),
+                score: 9.5,
+                reason: RecommendationReason::Favorite,
+            },
+        ];
+
+        let deduplicated = engine.deduplicate_recommendations(recommendations);
+        // Should eliminate one duplicate
+        assert_eq!(deduplicated.len(), 1);
+        assert_eq!(deduplicated[0].title, "Duplicate");
+    }
+
+    #[test]
+    fn test_deduplicate_empty_list() {
+        let engine = RecommendationEngine::new();
+        let empty: Vec<RecommendationItem> = vec![];
+        let result = engine.deduplicate_recommendations(empty);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_deduplicate_single_item() {
+        let engine = RecommendationEngine::new();
+        let items = vec![
+            RecommendationItem {
+                title: "Single".to_string(),
+                source_name: "Source".to_string(),
+                year: "2024".to_string(),
+                cover: "".to_string(),
+                score: 8.0,
+                reason: RecommendationReason::Popular,
+            },
+        ];
+
+        let result = engine.deduplicate_recommendations(items);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].title, "Single");
+    }
+
+    #[test]
+    fn test_recommendation_engine_initialization() {
+        let engine = RecommendationEngine::new();
+        // Verify it has the correct TTL
+        assert_eq!(engine.cache_ttl, Duration::from_secs(300));
+    }
+
+    #[test]
+    fn test_video_category_enum_variants() {
+        let categories = vec![
+            VideoCategory::Movie,
+            VideoCategory::Anime,
+        ];
+
+        assert_eq!(categories.len(), 2);
+    }
+
+    #[test]
+    fn test_quality_factors_creation() {
+        let factors = QualityFactors {
+            has_year: true,
+            has_cover: true,
+            has_description: false,
+            title_length: 25,
+            source_reliability: 0.8,
+            metadata_completeness: 0.75,
+        };
+
+        assert!(factors.has_year);
+        assert!(factors.has_cover);
+        assert!(!factors.has_description);
+        assert_eq!(factors.title_length, 25);
+        assert!((factors.source_reliability - 0.8).abs() < 0.01);
+        assert!((factors.metadata_completeness - 0.75).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_video_metadata_creation() {
+        let metadata = VideoMetadata {
+            title: "Test".to_string(),
+            normalized_title: "test".to_string(),
+            category: VideoCategory::Movie,
+            year: Some(2024),
+            tags: vec!["tag1".to_string(), "tag2".to_string()],
+            quality_score: 0.85,
+            actors: vec![],
+            director: Some("Director".to_string()),
+            description: Some("Description".to_string()),
+        };
+
+        assert_eq!(metadata.title, "Test");
+        assert_eq!(metadata.normalized_title, "test");
+        assert_eq!(metadata.year, Some(2024));
+        assert!((metadata.quality_score - 0.85).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_recommendation_item_score_range() {
+        // Test various score values
+        let scores = vec![0.0, 0.5, 5.0, 9.5, 10.0];
+
+        for score in scores {
+            let item = RecommendationItem {
+                title: "Test".to_string(),
+                source_name: "Source".to_string(),
+                year: "2024".to_string(),
+                cover: "".to_string(),
+                score,
+                reason: RecommendationReason::Popular,
+            };
+            assert!((item.score - score).abs() < 0.01);
+        }
+    }
+
+    #[test]
+    fn test_deduplicate_maintains_order() {
+        let engine = RecommendationEngine::new();
+        let recommendations = vec![
+            RecommendationItem {
+                title: "First".to_string(),
+                source_name: "S1".to_string(),
+                year: "2024".to_string(),
+                cover: "".to_string(),
+                score: 8.0,
+                reason: RecommendationReason::Popular,
+            },
+            RecommendationItem {
+                title: "Second".to_string(),
+                source_name: "S2".to_string(),
+                year: "2024".to_string(),
+                cover: "".to_string(),
+                score: 7.0,
+                reason: RecommendationReason::Popular,
+            },
+            RecommendationItem {
+                title: "Third".to_string(),
+                source_name: "S3".to_string(),
+                year: "2024".to_string(),
+                cover: "".to_string(),
+                score: 9.0,
+                reason: RecommendationReason::Popular,
+            },
+        ];
+
+        let deduplicated = engine.deduplicate_recommendations(recommendations);
+        assert_eq!(deduplicated.len(), 3);
+        assert_eq!(deduplicated[0].title, "First");
+        assert_eq!(deduplicated[1].title, "Second");
+        assert_eq!(deduplicated[2].title, "Third");
+    }
+
+    #[test]
+    fn test_recommendation_reason_default() {
+        let reason = RecommendationReason::default();
+        // Default should be Popular
+        match reason {
+            RecommendationReason::Popular => assert!(true),
+            _ => assert!(false, "Default should be Popular"),
+        }
+    }
 }

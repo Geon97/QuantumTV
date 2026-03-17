@@ -188,15 +188,46 @@ impl DataFusion {
         }
     }
 
-    /// 按时间融合（假设最新的最好）
-    fn fuse_by_recency(&self, group: Vec<VideoMetadata>) -> FusedVideo {
-        // 简化实现：选择第一个
-        self.fuse_by_quality(group)
+    /// 按时间融合：选择年份最新的作为基础信息
+    fn fuse_by_recency(&self, mut group: Vec<VideoMetadata>) -> FusedVideo {
+        // 年份降序排列，None 排最后
+        group.sort_by(|a, b| b.year.cmp(&a.year));
+        let base = &group[0];
+        FusedVideo {
+            title: base.title.clone(),
+            normalized_title: base.normalized_title.clone(),
+            year: base.year,
+            cover: "".to_string(),
+            description: base.description.clone(),
+            sources: self.extract_sources(&group),
+            quality_score: base.quality_score,
+            tags: base.tags.clone(),
+            confidence: self.calculate_confidence(&group),
+        }
     }
 
-    /// 按可靠性融合
+    /// 按可靠性融合：以最接近均值质量的源为基础（最具代表性），合并所有元数据
     fn fuse_by_reliability(&self, group: Vec<VideoMetadata>) -> FusedVideo {
-        self.fuse_by_quality(group)
+        let avg_quality = self.calculate_average_quality(&group);
+        let base = group
+            .iter()
+            .min_by(|a, b| {
+                let da = (a.quality_score - avg_quality).abs();
+                let db = (b.quality_score - avg_quality).abs();
+                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap_or(&group[0]);
+        FusedVideo {
+            title: base.title.clone(),
+            normalized_title: base.normalized_title.clone(),
+            year: self.merge_year(&group),
+            cover: "".to_string(),
+            description: self.merge_description(&group),
+            sources: self.extract_sources(&group),
+            quality_score: avg_quality,
+            tags: self.merge_tags(&group),
+            confidence: self.calculate_confidence(&group),
+        }
     }
 
     /// 合并所有信息
@@ -595,5 +626,76 @@ mod tests {
         let duplicates = fusion.find_duplicates(&videos);
         // 可能找到也可能找不到，取决于相似度计算
         assert!(duplicates.len() <= 1);
+    }
+
+    #[test]
+    fn test_fuse_by_recency_picks_latest_year() {
+        let fusion = DataFusion::new();
+        let mut old = create_test_video("电影A", 9.0);
+        old.year = Some(2010);
+        let mut new = create_test_video("电影A", 7.0);
+        new.year = Some(2023);
+        let mut no_year = create_test_video("电影A", 8.0);
+        no_year.year = None;
+
+        let result = fusion.fuse_by_recency(vec![old, new, no_year]);
+        // 最新年份（2023）应成为基础，无论质量分高低
+        assert_eq!(result.year, Some(2023));
+    }
+
+    #[test]
+    fn test_fuse_by_recency_none_year_is_last() {
+        let fusion = DataFusion::new();
+        let mut v1 = create_test_video("电影B", 9.0);
+        v1.year = None;
+        let mut v2 = create_test_video("电影B", 7.0);
+        v2.year = Some(2020);
+
+        let result = fusion.fuse_by_recency(vec![v1, v2]);
+        // 有年份的优先
+        assert_eq!(result.year, Some(2020));
+    }
+
+    #[test]
+    fn test_fuse_by_reliability_uses_average_quality() {
+        let fusion = DataFusion::new();
+        let v1 = create_test_video("电影C", 10.0);
+        let v2 = create_test_video("电影C", 6.0);
+        let v3 = create_test_video("电影C", 8.0);
+
+        let result = fusion.fuse_by_reliability(vec![v1, v2, v3]);
+        // 平均分应为 8.0
+        assert!((result.quality_score - 8.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_fuse_by_reliability_merges_tags() {
+        let fusion = DataFusion::new();
+        let mut v1 = create_test_video("电影D", 9.0);
+        v1.tags = vec!["动作".to_string()];
+        let mut v2 = create_test_video("电影D", 7.0);
+        v2.tags = vec!["冒险".to_string()];
+
+        let result = fusion.fuse_by_reliability(vec![v1, v2]);
+        assert_eq!(result.tags.len(), 2);
+    }
+
+    #[test]
+    fn test_recency_vs_quality_differ() {
+        let fusion = DataFusion::new();
+        let mut high_quality_old = create_test_video("电影E", 9.5);
+        high_quality_old.year = Some(2000);
+        let mut low_quality_new = create_test_video("电影E", 5.0);
+        low_quality_new.year = Some(2024);
+
+        let recency_result =
+            fusion.fuse_by_recency(vec![high_quality_old.clone(), low_quality_new.clone()]);
+        let quality_result =
+            fusion.fuse_by_quality(vec![high_quality_old, low_quality_new]);
+
+        // 按时间：以最新年份的元数据为基础
+        assert_eq!(recency_result.year, Some(2024));
+        // 按质量：以高分的年份为基础
+        assert_eq!(quality_result.year, Some(2000));
     }
 }

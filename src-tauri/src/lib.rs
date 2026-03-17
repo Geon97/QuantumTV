@@ -17,6 +17,7 @@ fn greet(name: &str) -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    env_logger::init();
     tauri::Builder::default()
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
@@ -67,7 +68,7 @@ pub fn run() {
             // 启动时修复空元数据（回填 image_cache、推断 content_pool category）
             if let Ok(stats) = commands::recommendation::fix_empty_metadata_direct(&db) {
                 if !stats.is_empty() {
-                    println!("启动修复元数据: {}", stats);
+                    log::info!("启动修复元数据: {}", stats);
                 }
             }
 

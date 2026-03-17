@@ -2661,4 +2661,231 @@ mod tests {
         assert!(show_keywords.contains(&"综艺"));
         assert!(show_keywords.contains(&"真人秀"));
     }
+
+    #[test]
+    fn kind_serialization_tv() {
+        let kind = Kind::Tv;
+        let json = serde_json::to_string(&kind).unwrap();
+        assert_eq!(json, "\"tv\"");
+        let deserialized: Kind = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, Kind::Tv);
+    }
+
+    #[test]
+    fn kind_serialization_movie() {
+        let kind = Kind::Movie;
+        let json = serde_json::to_string(&kind).unwrap();
+        assert_eq!(json, "\"movie\"");
+        let deserialized: Kind = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, Kind::Movie);
+    }
+
+    #[test]
+    fn douban_item_creation() {
+        let item = DoubanItem {
+            id: "12345".to_string(),
+            title: "Test Title".to_string(),
+            poster: "http://example.com/poster.jpg".to_string(),
+            rate: "8.5".to_string(),
+            year: "2024".to_string(),
+        };
+
+        assert_eq!(item.id, "12345");
+        assert_eq!(item.title, "Test Title");
+        assert!((item.rate.parse::<f64>().unwrap() - 8.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn douban_item_serialization() {
+        let item = DoubanItem {
+            id: "123".to_string(),
+            title: "Test".to_string(),
+            poster: "url".to_string(),
+            rate: "8.0".to_string(),
+            year: "2024".to_string(),
+        };
+
+        let json = serde_json::to_string(&item).unwrap();
+        assert!(json.contains("\"id\":\"123\""));
+        assert!(json.contains("\"title\":\"Test\""));
+    }
+
+    #[test]
+    fn douban_result_creation() {
+        let items = vec![
+            DoubanItem {
+                id: "1".to_string(),
+                title: "Item 1".to_string(),
+                poster: "url1".to_string(),
+                rate: "8.0".to_string(),
+                year: "2024".to_string(),
+            },
+            DoubanItem {
+                id: "2".to_string(),
+                title: "Item 2".to_string(),
+                poster: "url2".to_string(),
+                rate: "7.5".to_string(),
+                year: "2023".to_string(),
+            },
+        ];
+
+        let result = DoubanResult {
+            code: 0,
+            message: "success".to_string(),
+            list: items,
+        };
+
+        assert_eq!(result.code, 0);
+        assert_eq!(result.message, "success");
+        assert_eq!(result.list.len(), 2);
+    }
+
+    #[test]
+    fn douban_page_request_creation() {
+        let request = DoubanPageRequest {
+            request_type: "movie".to_string(),
+            primary_selection: "hot".to_string(),
+            secondary_selection: "all".to_string(),
+            multi_level_selection: None,
+            selected_weekday: None,
+            page: Some(0),
+            page_limit: Some(25),
+        };
+
+        assert_eq!(request.request_type, "movie");
+        assert_eq!(request.page, Some(0));
+        assert_eq!(request.page_limit, Some(25));
+    }
+
+    #[test]
+    fn douban_page_response_creation() {
+        let items = vec![
+            DoubanItem {
+                id: "1".to_string(),
+                title: "Item".to_string(),
+                poster: "url".to_string(),
+                rate: "8.0".to_string(),
+                year: "2024".to_string(),
+            },
+        ];
+
+        let response = DoubanPageResponse {
+            list: items,
+            has_more: true,
+        };
+
+        assert_eq!(response.list.len(), 1);
+        assert!(response.has_more);
+    }
+
+    #[test]
+    fn douban_source_category_equality() {
+        let cat1 = DoubanSourceCategory {
+            type_id: "1".to_string(),
+            type_name: "电影".to_string(),
+            type_pid: None,
+        };
+
+        let cat2 = DoubanSourceCategory {
+            type_id: "1".to_string(),
+            type_name: "电影".to_string(),
+            type_pid: None,
+        };
+
+        assert_eq!(cat1, cat2);
+    }
+
+    #[test]
+    fn douban_source_category_with_parent_id() {
+        let cat = DoubanSourceCategory {
+            type_id: "2".to_string(),
+            type_name: "爱情".to_string(),
+            type_pid: Some("1".to_string()),
+        };
+
+        assert_eq!(cat.type_id, "2");
+        assert_eq!(cat.type_name, "爱情");
+        assert_eq!(cat.type_pid, Some("1".to_string()));
+    }
+
+    #[test]
+    fn category_keywords_variation_coverage() {
+        // TV categories
+        let tv_keywords = category_keywords_for_request_type("tv");
+        assert!(tv_keywords.contains(&"电视剧"));
+        assert!(tv_keywords.len() > 2);
+
+        // Anime categories
+        let anime_keywords = category_keywords_for_request_type("anime");
+        assert!(anime_keywords.contains(&"动漫"));
+        assert!(anime_keywords.len() > 2);
+
+        // Movie categories
+        let movie_keywords = category_keywords_for_request_type("movie");
+        assert!(movie_keywords.contains(&"电影"));
+        assert!(movie_keywords.len() > 2);
+
+        // Show categories
+        let show_keywords = category_keywords_for_request_type("show");
+        assert!(show_keywords.contains(&"综艺"));
+        assert!(show_keywords.len() > 2);
+
+        // Unknown type returns empty
+        let unknown_keywords = category_keywords_for_request_type("unknown");
+        assert!(unknown_keywords.is_empty());
+    }
+
+    #[test]
+    fn normalize_source_key_comprehensive() {
+        // None values
+        assert_eq!(normalize_source_key(None), "auto");
+
+        // Empty and whitespace
+        assert_eq!(normalize_source_key(Some("")), "auto");
+        assert_eq!(normalize_source_key(Some("   ")), "auto");
+        assert_eq!(normalize_source_key(Some("\t\n")), "auto");
+
+        // Valid keys
+        assert_eq!(normalize_source_key(Some("source1")), "source1");
+        assert_eq!(normalize_source_key(Some("  source1")), "source1");
+        assert_eq!(normalize_source_key(Some("source1  ")), "source1");
+        assert_eq!(normalize_source_key(Some("  source1  ")), "source1");
+
+        // Keys with special characters
+        assert_eq!(normalize_source_key(Some("source-1")), "source-1");
+        assert_eq!(normalize_source_key(Some("source_1")), "source_1");
+    }
+
+    #[test]
+    fn matches_category_keywords_comprehensive() {
+        // Exact matches
+        assert!(matches_category_keywords("电影", &["电影"]));
+        assert!(matches_category_keywords("电视剧", &["电视剧"]));
+
+        // Substring matches
+        assert!(matches_category_keywords("高清电影", &["电影"]));
+        assert!(matches_category_keywords("喜剧电视剧", &["电视剧"]));
+
+        // Multiple keywords
+        assert!(matches_category_keywords("电影", &["电视剧", "电影"]));
+
+        // Non-matching
+        assert!(!matches_category_keywords("电视剧", &["电影"]));
+        assert!(!matches_category_keywords("动漫", &["电视剧"]));
+    }
+
+    #[test]
+    fn douban_categories_params_creation() {
+        let params = DoubanCategoriesParams {
+            kind: Kind::Movie,
+            category: "冒险".to_string(),
+            type_: "热门".to_string(),
+            page_limit: Some(20),
+            page_start: Some(0),
+        };
+
+        assert_eq!(params.kind, Kind::Movie);
+        assert_eq!(params.category, "冒险");
+        assert_eq!(params.page_limit, Some(20));
+    }
 }

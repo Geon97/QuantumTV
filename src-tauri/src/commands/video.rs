@@ -3013,4 +3013,202 @@ mod tests {
         assert_eq!(decision.next_last_save_at_ms, 19_000);
         assert_eq!(decision.next_last_skip_check_at_ms, 19_200);
     }
+
+    #[test]
+    fn cache_stats_creation() {
+        let stats = CacheStats {
+            entry_count: 100,
+            weighted_size: 50000,
+        };
+        assert_eq!(stats.entry_count, 100);
+        assert_eq!(stats.weighted_size, 50000);
+    }
+
+    #[test]
+    fn cache_stats_serialization() {
+        let stats = CacheStats {
+            entry_count: 50,
+            weighted_size: 25000,
+        };
+        let json = serde_json::to_string(&stats).unwrap();
+        assert!(json.contains("\"entry_count\":50"));
+        assert!(json.contains("\"weighted_size\":25000"));
+
+        let deserialized: CacheStats = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.entry_count, 50);
+        assert_eq!(deserialized.weighted_size, 25000);
+    }
+
+    #[test]
+    fn player_initial_state_serialization() {
+        let detail = make_result("Test", "2024", 12, "source1", "id1");
+        let state = PlayerInitialState {
+            detail: detail.clone(),
+            other_sources: vec![],
+            play_record: None,
+            initial_episode_index: 0,
+            resume_time: None,
+            is_favorited: false,
+            skip_config: None,
+            block_ad_enabled: true,
+            optimization_enabled: true,
+        };
+
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(json.contains("\"initial_episode_index\":0"));
+        assert!(json.contains("\"block_ad_enabled\":true"));
+    }
+
+    #[test]
+    fn play_record_info_with_values() {
+        let info = PlayRecordInfo {
+            episode_index: 5,
+            play_time: 123,
+        };
+        assert_eq!(info.episode_index, 5);
+        assert_eq!(info.play_time, 123);
+    }
+
+    #[test]
+    fn skip_config_info_serialization() {
+        let config = SkipConfigInfo {
+            enable: true,
+            intro_time: 10,
+            outro_time: -5,
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("\"enable\":true"));
+        assert!(json.contains("\"intro_time\":10"));
+        assert!(json.contains("\"outro_time\":-5"));
+    }
+
+    #[test]
+    fn change_play_source_request_creation() {
+        let request = ChangePlaySourceRequest {
+            current_source: Some("s1".to_string()),
+            current_id: Some("id1".to_string()),
+            new_source: "s2".to_string(),
+            new_id: "id2".to_string(),
+            available_sources: vec![],
+            current_episode_index: 3,
+            current_play_time: 45.5,
+            resume_time: Some(50.0),
+            skip_config: None,
+        };
+
+        assert_eq!(request.current_episode_index, 3);
+        assert!((request.current_play_time - 45.5).abs() < 0.01);
+        assert_eq!(request.new_source, "s2");
+    }
+
+    #[test]
+    fn normalize_episode_index_boundary_cases() {
+        // Test with 0 maximum episodes
+        assert_eq!(normalize_episode_index(1, 0), 0);
+        assert_eq!(normalize_episode_index(0, 0), 0);
+        assert_eq!(normalize_episode_index(-1, 0), 0);
+
+        // Test with large values
+        assert_eq!(normalize_episode_index(1000, 100), 99);
+        assert_eq!(normalize_episode_index(99, 100), 98);
+
+        // Test negative values
+        assert_eq!(normalize_episode_index(-10, 50), 0);
+        assert_eq!(normalize_episode_index(-1, 50), 0);
+    }
+
+    #[test]
+    fn filter_sources_for_fallback_title_matching() {
+        let results = vec![
+            make_result("Exact Title", "2020", 12, "s1", "1"),
+            make_result("exact title", "2020", 12, "s2", "2"),
+            make_result("Exact", "2020", 12, "s3", "3"),
+            make_result("Exact Title Extra", "2020", 12, "s4", "4"),
+        ];
+
+        let filtered = filter_sources_for_fallback(
+            &results,
+            "Exact Title",
+            Some("2020"),
+            None,
+        );
+
+        assert!(filtered.len() > 0);
+        let sources: Vec<String> = filtered.iter().map(|r| r.source.clone()).collect();
+        assert!(sources.contains(&"s1".to_string()));
+        assert!(sources.contains(&"s2".to_string()));
+    }
+
+    #[test]
+    fn player_tick_request_creation_with_all_fields() {
+        let request = PlayerTickRequest {
+            current_time: 50.5,
+            total_duration: 100.0,
+            now_ms: 100_000,
+            last_save_at_ms: 90_000,
+            save_interval_ms: 5_000,
+            last_skip_check_at_ms: 95_000,
+            skip_enabled: true,
+            intro_time: 10.0,
+            outro_time: -5.0,
+            source: Some("s1".to_string()),
+            id: Some("id1".to_string()),
+            current_episode: Some(2),
+            total_episodes: Some(12),
+        };
+
+        assert_eq!(request.current_episode, Some(2));
+        assert!((request.current_time - 50.5).abs() < 0.01);
+        assert_eq!(request.save_interval_ms, 5_000);
+    }
+
+    #[test]
+    fn resolve_source_change_with_clamping() {
+        let detail = make_result("Show", "2024", 3, "s1", "1");
+
+        let resolved = resolve_source_change(&detail, 100, 10.0, None);
+        assert_eq!(resolved.target_episode_index, 0);
+        assert_eq!(resolved.resume_time, 0.0);
+
+        let resolved = resolve_source_change(&detail, -5, 10.0, None);
+        assert_eq!(resolved.target_episode_index, 0);
+    }
+
+    #[test]
+    fn parse_search_type_filter_valid_cases() {
+        // Valid cases that work
+        assert_eq!(
+            parse_search_type_filter(Some("tv")),
+            Some(SearchTypeFilter::Tv)
+        );
+        assert_eq!(
+            parse_search_type_filter(Some("movie")),
+            Some(SearchTypeFilter::Movie)
+        );
+        // None case
+        assert_eq!(parse_search_type_filter(None), None);
+    }
+
+    #[test]
+    fn derive_search_type_filter_tv_range() {
+        // Test TV: total > 1
+        assert_eq!(derive_search_type_filter(Some(2)), Some(SearchTypeFilter::Tv));
+        assert_eq!(derive_search_type_filter(Some(10)), Some(SearchTypeFilter::Tv));
+        assert_eq!(derive_search_type_filter(Some(100)), Some(SearchTypeFilter::Tv));
+    }
+
+    #[test]
+    fn derive_search_type_filter_movie_range() {
+        // Test Movie: total == 1
+        assert_eq!(derive_search_type_filter(Some(1)), Some(SearchTypeFilter::Movie));
+    }
+
+    #[test]
+    fn derive_search_type_filter_edge_values() {
+        // Test edge cases that don't match
+        assert_eq!(derive_search_type_filter(Some(0)), None);
+        assert_eq!(derive_search_type_filter(Some(-1)), None);
+        assert_eq!(derive_search_type_filter(None), None);
+    }
 }
