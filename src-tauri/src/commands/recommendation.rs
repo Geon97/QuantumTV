@@ -1261,7 +1261,7 @@ impl RecommendationEngine {
 
         // 获取用户统计
         let user_stats = self.get_user_stats(db)?;
-        eprintln!("用户统计: {} 条播放记录", user_stats.total_records);
+        // eprintln!("用户统计: {} 条播放记录", user_stats.total_records);
         let mut recommendations = Vec::new();
 
         // 根据用户历史数量决定推荐策略

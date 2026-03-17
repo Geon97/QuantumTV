@@ -173,6 +173,17 @@ impl ImageCacheManager {
         Ok(())
     }
 
+    /// 清理过期的缓存条目，返回被删除的行数
+    pub fn cleanup_expired(&self) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let ttl_timestamp = Self::current_timestamp() - (self.ttl_days * 24 * 3600);
+        let deleted = conn.execute(
+            "DELETE FROM image_cache WHERE created_at < ?",
+            params![ttl_timestamp],
+        )?;
+        Ok(deleted)
+    }
+
     /// 清空全部图片缓存
     pub fn clear_all(&self) -> Result<()> {
         let conn = self.conn.lock().unwrap();

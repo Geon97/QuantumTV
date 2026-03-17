@@ -156,7 +156,7 @@ pub async fn parse_admin_config(raw_json: String) -> Result<Value, String> {
     parse_admin_config_core(&raw_json)
 }
 
-fn validate_subscription_json(raw_json: &str) -> Result<(), String> {
+pub(crate) fn validate_subscription_json(raw_json: &str) -> Result<(), String> {
     serde_json::from_str::<Value>(raw_json)
         .map(|_| ())
         .map_err(|_| "返回内容不是有效的 JSON 格式".to_string())
@@ -177,7 +177,7 @@ fn format_rfc3339_utc_from_secs(secs: i64, nanos: u32) -> String {
     )
 }
 
-fn format_rfc3339_utc_now() -> String {
+pub(crate) fn format_rfc3339_utc_now() -> String {
     let duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
@@ -199,7 +199,7 @@ fn civil_from_days(days: i64) -> (i32, u32, u32) {
     (year as i32, m as u32, d as u32)
 }
 
-async fn fetch_subscription_text(url: &str) -> Result<String, String> {
+pub(crate) async fn fetch_subscription_text(url: &str) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")

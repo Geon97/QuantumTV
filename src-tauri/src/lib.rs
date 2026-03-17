@@ -1,5 +1,6 @@
 mod commands;
 mod db;
+mod scheduler;
 mod storage;
 
 use db::db_client;
@@ -90,17 +91,10 @@ pub fn run() {
                 .expect("failed to init page cache table");
             let _ = page_cache_manager.cleanup_expired();
 
-            // 启动后在后台定时清理过期页面缓存，替代前端初始化
-            let page_cache_cleanup_manager = page_cache_manager.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_secs(30 * 60));
-                loop {
-                    interval.tick().await;
-                    let _ = page_cache_cleanup_manager.cleanup_expired();
-                }
-            });
-
             app.manage(page_cache_manager);
+
+            // 启动所有后台任务
+            scheduler::start_background_tasks(app.handle().clone());
 
             Ok(())
         })
