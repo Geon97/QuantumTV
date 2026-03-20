@@ -102,10 +102,6 @@ function HomeClient() {
 
         // 加载推荐内容
         try {
-          // 清除推荐缓存，确保获取最新数据
-          await invoke('clear_recommendation_cache');
-          console.log('已清除推荐缓存');
-
           const items = await invoke<RecommendationItem[]>(
             'get_recommendations',
           );

@@ -215,9 +215,7 @@ pub fn save_cached_image(
 }
 
 #[tauri::command]
-pub fn clear_image_cache(
-    cache_manager: tauri::State<ImageCacheManager>,
-) -> Result<(), String> {
+pub fn clear_image_cache(cache_manager: tauri::State<ImageCacheManager>) -> Result<(), String> {
     cache_manager
         .clear_all()
         .map_err(|e| format!("Failed to clear image cache: {}", e))

@@ -204,7 +204,10 @@ impl SourceIntelligenceManager {
         // 按得分降序排序
         sources_with_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
-        sources_with_scores.into_iter().map(|(key, _)| key).collect()
+        sources_with_scores
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect()
     }
 
     /// 判断源是否应该被跳过（连续失败过多）
@@ -281,9 +284,7 @@ pub fn rank_sources(
 
 /// 清除所有源统计信息
 #[tauri::command]
-pub fn clear_all_source_stats(
-    manager: State<'_, SourceIntelligenceManager>,
-) -> Result<(), String> {
+pub fn clear_all_source_stats(manager: State<'_, SourceIntelligenceManager>) -> Result<(), String> {
     manager.clear_all_stats();
     Ok(())
 }
@@ -393,10 +394,8 @@ mod tests {
         let manager = SourceIntelligenceManager::new();
 
         // 没有历史数据的源应该得到中等分数
-        let ranked = manager.rank_sources(vec![
-            "new_source1".to_string(),
-            "new_source2".to_string(),
-        ]);
+        let ranked =
+            manager.rank_sources(vec!["new_source1".to_string(), "new_source2".to_string()]);
 
         // 没有历史数据时，保持原始顺序
         assert_eq!(ranked.len(), 2);
@@ -575,10 +574,16 @@ mod tests {
         let all_stats = manager.get_all_stats();
         assert_eq!(all_stats.len(), 2);
 
-        let source1_stats = all_stats.iter().find(|s| s.source_key == "source1").unwrap();
+        let source1_stats = all_stats
+            .iter()
+            .find(|s| s.source_key == "source1")
+            .unwrap();
         assert_eq!(source1_stats.success_rate, 100.0);
 
-        let source2_stats = all_stats.iter().find(|s| s.source_key == "source2").unwrap();
+        let source2_stats = all_stats
+            .iter()
+            .find(|s| s.source_key == "source2")
+            .unwrap();
         assert_eq!(source2_stats.success_rate, 0.0);
     }
 
@@ -604,10 +609,8 @@ mod tests {
             timestamp: 0,
         });
 
-        let ranked = manager.rank_sources(vec![
-            "slow_source".to_string(),
-            "fast_source".to_string(),
-        ]);
+        let ranked =
+            manager.rank_sources(vec!["slow_source".to_string(), "fast_source".to_string()]);
 
         // 快速源应该排第一
         assert_eq!(ranked[0], "fast_source");

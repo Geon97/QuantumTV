@@ -1,4 +1,4 @@
-﻿use crate::commands::bangumi::get_bangumi_calendar_data;
+use crate::commands::bangumi::get_bangumi_calendar_data;
 use crate::commands::recommendation::infer_category;
 use crate::commands::video::{parse_source_categories, SourceCategoryItem};
 use crate::db::db_client::Db;
@@ -1544,10 +1544,11 @@ async fn get_douban_page_data_cached(
                                 let fallback_params = build_recommends_fallback_list_params(
                                     &request, page_limit, page_start,
                                 );
-                                ensure_success(get_douban_list(fallback_params).await?)
-                                    .map_err(|fallback_err| {
+                                ensure_success(get_douban_list(fallback_params).await?).map_err(
+                                    |fallback_err| {
                                         format!("{err}; fallback failed: {fallback_err}")
-                                    })
+                                    },
+                                )
                             }
                         }
                     }
@@ -1565,10 +1566,7 @@ async fn get_douban_page_data_cached(
                 if attempts >= max_attempts || !is_retryable_douban_error(&err) {
                     return Err(err);
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(
-                    120 * attempts as u64,
-                ))
-                .await;
+                tokio::time::sleep(std::time::Duration::from_millis(120 * attempts as u64)).await;
             }
         }
     };
@@ -1776,7 +1774,9 @@ fn filter_source_categories_by_request_type(
 }
 
 /// 解析并规范化 Douban 页面状态请求
-fn resolve_douban_page_state_request(request: DoubanPageStateRequest) -> ResolvedDoubanPageStateRequest {
+fn resolve_douban_page_state_request(
+    request: DoubanPageStateRequest,
+) -> ResolvedDoubanPageStateRequest {
     let source_key = normalize_source_key(request.source_key.as_deref());
     let page_limit = request.page_limit.unwrap_or(25);
 
@@ -1803,13 +1803,12 @@ fn resolve_douban_page_state_request(request: DoubanPageStateRequest) -> Resolve
         .secondary_selection
         .unwrap_or_else(|| defaults.secondary_selection.clone());
 
-    let selected_weekday = if request.request_type == "anime"
-        && is_anime_daily_selection(&primary_selection)
-    {
-        resolve_selected_weekday(request.selected_weekday.as_deref())
-    } else {
-        request.selected_weekday.unwrap_or_default()
-    };
+    let selected_weekday =
+        if request.request_type == "anime" && is_anime_daily_selection(&primary_selection) {
+            resolve_selected_weekday(request.selected_weekday.as_deref())
+        } else {
+            request.selected_weekday.unwrap_or_default()
+        };
 
     let multi_level_selection = request
         .multi_level_selection
@@ -1841,8 +1840,9 @@ pub async fn get_douban_page_state(
     if resolved.source_key != "auto" {
         // 获取源分类
         let data = storage.get_data()?;
-        let source = crate::commands::video::resolve_enabled_source(&data.config, &resolved.source_key)
-            .ok_or_else(|| format!("Source not found or disabled: {}", resolved.source_key))?;
+        let source =
+            crate::commands::video::resolve_enabled_source(&data.config, &resolved.source_key)
+                .ok_or_else(|| format!("Source not found or disabled: {}", resolved.source_key))?;
 
         let url = crate::commands::video::source_url(&source.api, "?ac=list");
         let body = crate::commands::video::get_video_client()
@@ -2759,15 +2759,13 @@ mod tests {
 
     #[test]
     fn douban_page_response_creation() {
-        let items = vec![
-            DoubanItem {
-                id: "1".to_string(),
-                title: "Item".to_string(),
-                poster: "url".to_string(),
-                rate: "8.0".to_string(),
-                year: "2024".to_string(),
-            },
-        ];
+        let items = vec![DoubanItem {
+            id: "1".to_string(),
+            title: "Item".to_string(),
+            poster: "url".to_string(),
+            rate: "8.0".to_string(),
+            year: "2024".to_string(),
+        }];
 
         let response = DoubanPageResponse {
             list: items,

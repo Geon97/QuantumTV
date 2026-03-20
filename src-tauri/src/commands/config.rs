@@ -760,11 +760,14 @@ pub async fn set_player_config(
 
 /// 播放器配置结构
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct PlayerConfig {
     /// 去广告开关
     pub block_ad_enabled: bool,
     /// 优选开关
     pub optimization_enabled: bool,
+    /// 是否允许局域网/本机源
+    pub allow_lan_sources: bool,
 }
 
 impl Default for PlayerConfig {
@@ -772,6 +775,7 @@ impl Default for PlayerConfig {
         Self {
             block_ad_enabled: true,
             optimization_enabled: true,
+            allow_lan_sources: false,
         }
     }
 }
@@ -780,6 +784,7 @@ impl Default for PlayerConfig {
 pub struct PlayerConfigPatch {
     pub block_ad_enabled: Option<bool>,
     pub optimization_enabled: Option<bool>,
+    pub allow_lan_sources: Option<bool>,
 }
 
 fn apply_player_config_patch(mut config: PlayerConfig, patch: PlayerConfigPatch) -> PlayerConfig {
@@ -788,6 +793,9 @@ fn apply_player_config_patch(mut config: PlayerConfig, patch: PlayerConfigPatch)
     }
     if let Some(value) = patch.optimization_enabled {
         config.optimization_enabled = value;
+    }
+    if let Some(value) = patch.allow_lan_sources {
+        config.allow_lan_sources = value;
     }
     config
 }
@@ -952,8 +960,14 @@ fn runtime_custom_categories_from_config(config: &Value) -> Vec<RuntimeCustomCat
                         return None;
                     }
 
-                    let name = item_obj.get("name").and_then(|value| value.as_str())?.trim();
-                    let query = item_obj.get("query").and_then(|value| value.as_str())?.trim();
+                    let name = item_obj
+                        .get("name")
+                        .and_then(|value| value.as_str())?
+                        .trim();
+                    let query = item_obj
+                        .get("query")
+                        .and_then(|value| value.as_str())?
+                        .trim();
                     let category_type = item_obj
                         .get("type")
                         .and_then(|value| value.as_str())?
@@ -1179,8 +1193,7 @@ mod tests {
         resolve_subscription_json, runtime_config_from_config,
         runtime_custom_categories_from_config, should_use_local_source_config,
         user_preferences_from_config, validate_subscription_json, CustomCategoryAction,
-        PlayerConfig, PlayerConfigPatch, SourceConfigAction, UserPreferences,
-        UserPreferencesPatch,
+        PlayerConfig, PlayerConfigPatch, SourceConfigAction, UserPreferences, UserPreferencesPatch,
     };
     use serde_json::json;
 
@@ -1228,14 +1241,36 @@ mod tests {
         let base = PlayerConfig {
             block_ad_enabled: true,
             optimization_enabled: true,
+            allow_lan_sources: false,
         };
         let patch = PlayerConfigPatch {
             block_ad_enabled: Some(false),
             optimization_enabled: None,
+            allow_lan_sources: Some(true),
         };
         let updated = apply_player_config_patch(base, patch);
         assert!(!updated.block_ad_enabled);
         assert!(updated.optimization_enabled);
+        assert!(updated.allow_lan_sources);
+    }
+
+    #[test]
+    fn player_config_defaults_to_disallow_lan_sources() {
+        let config = PlayerConfig::default();
+        assert!(!config.allow_lan_sources);
+    }
+
+    #[test]
+    fn player_config_from_config_reads_allow_lan_sources() {
+        let config = json!({
+            "PlayerConfig": {
+                "block_ad_enabled": true,
+                "optimization_enabled": true,
+                "allow_lan_sources": true
+            }
+        });
+        let prefs = player_config_from_config(&config);
+        assert!(prefs.allow_lan_sources);
     }
 
     #[test]

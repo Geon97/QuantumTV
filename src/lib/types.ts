@@ -25,6 +25,7 @@ export interface PlayRecord {
 export interface PlayerConfig {
   block_ad_enabled: boolean;
   optimization_enabled: boolean;
+  allow_lan_sources: boolean;
 }
 
 // 用户偏好配置类型（统一配置，包含原 SiteConfig 字段）

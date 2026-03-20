@@ -130,9 +130,7 @@ fn build_favorite_cards(
         .collect()
 }
 
-fn sort_continue_watching(
-    mut records: Vec<ContinueWatchingRecord>,
-) -> Vec<ContinueWatchingRecord> {
+fn sort_continue_watching(mut records: Vec<ContinueWatchingRecord>) -> Vec<ContinueWatchingRecord> {
     records.sort_by(|a, b| b.save_time.cmp(&a.save_time));
     records
 }

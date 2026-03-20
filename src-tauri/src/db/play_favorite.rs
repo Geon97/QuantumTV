@@ -1,9 +1,10 @@
 // 收藏
+use crate::commands::recommendation::{invalidate_recommendation_cache, RecommendationEngine};
 use crate::db::db_client::Db;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(Debug, Serialize)]
 pub struct TogglePlayFavoriteResponse {
@@ -23,14 +24,18 @@ pub struct Favorite {
 }
 // 删除收藏
 #[tauri::command]
-pub fn delete_play_favorite(db: State<'_, Db>, key: String) -> Result<(), String> {
+pub fn delete_play_favorite(app: AppHandle, db: State<'_, Db>, key: String) -> Result<(), String> {
     db.with_conn(|conn| {
         conn.execute(
             "DELETE FROM favorites WHERE key = ?1",
             rusqlite::params![key],
         )?;
         Ok(())
-    })
+    })?;
+    let engine = app.state::<RecommendationEngine>();
+    invalidate_recommendation_cache(&engine);
+    let _ = app.emit("favoritesUpdated", ());
+    Ok(())
 }
 // 获取收藏
 #[tauri::command]
@@ -122,7 +127,11 @@ pub fn get_play_favorites_by_title(
 
 #[tauri::command]
 // 添加收藏记录
-pub fn save_play_favorite(db: State<'_, Db>, record: Favorite) -> Result<(), String> {
+pub fn save_play_favorite(
+    app: AppHandle,
+    db: State<'_, Db>,
+    record: Favorite,
+) -> Result<(), String> {
     db.with_conn(|conn| {
     conn.execute(
         "INSERT OR REPLACE INTO favorites (key, title, source_name, year, cover, episode_index, total_episodes, save_time, search_title) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -139,7 +148,11 @@ pub fn save_play_favorite(db: State<'_, Db>, record: Favorite) -> Result<(), Str
         ],
     )?;
     Ok(())
-    })
+    })?;
+    let engine = app.state::<RecommendationEngine>();
+    invalidate_recommendation_cache(&engine);
+    let _ = app.emit("favoritesUpdated", ());
+    Ok(())
 }
 
 fn toggle_favorite_in_db(db: &Db, record: &Favorite) -> Result<bool, String> {
@@ -186,6 +199,8 @@ pub fn toggle_play_favorite(
     record: Favorite,
 ) -> Result<TogglePlayFavoriteResponse, String> {
     let favorited = toggle_favorite_in_db(&db, &record)?;
+    let engine = app.state::<RecommendationEngine>();
+    invalidate_recommendation_cache(&engine);
     let _ = app.emit("favoritesUpdated", ());
     Ok(TogglePlayFavoriteResponse { favorited })
 }
@@ -196,6 +211,8 @@ pub fn clear_all_favorites(app: AppHandle, db: State<'_, Db>) -> Result<(), Stri
         conn.execute("DELETE FROM favorites", [])?;
         Ok(())
     })?;
+    let engine = app.state::<RecommendationEngine>();
+    invalidate_recommendation_cache(&engine);
     let _ = app.emit("favoritesUpdated", ());
     Ok(())
 }

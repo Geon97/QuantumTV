@@ -8,7 +8,9 @@
 /// 5. 智能搜索推荐：基于用户偏好从豆瓣API获取新内容
 /// 6. 混合推荐策略：根据用户历史数量动态调整
 /// 7. 隐私保护：推荐原因不暴露给前端
-use crate::commands::content_analyzer::{ContentAnalyzer, QualityFactors, VideoCategory, VideoMetadata};
+use crate::commands::content_analyzer::{
+    ContentAnalyzer, QualityFactors, VideoCategory, VideoMetadata,
+};
 use crate::commands::data_fusion::{ConflictResolution, DataFusion, DeduplicationStrategy};
 use crate::db::db_client::Db;
 use serde::{Deserialize, Serialize};
@@ -76,7 +78,7 @@ pub struct RecommendationEngine {
     recommendation_cache: Arc<Mutex<HashMap<String, (Vec<RecommendationItem>, Instant)>>>,
     cache_ttl: Duration,
     analyzer: ContentAnalyzer, // 内容分析器
-    fusion: DataFusion,         // 数据融合器
+    fusion: DataFusion,        // 数据融合器
 }
 
 impl RecommendationEngine {
@@ -211,14 +213,17 @@ impl RecommendationEngine {
     fn cold_start_recommendations(&self, db: &Db) -> Result<Vec<RecommendationItem>, String> {
         let mut recommendations = Vec::new();
 
-
         // 策略1：分析用户观影习惯，找到相似的新内容
         let history_videos = self.get_videos_from_history(db)?;
         let favorite_videos = self.get_videos_from_favorites(db)?;
         let search_videos = self.get_videos_from_search_history(db)?;
 
-        eprintln!("  用户历史: {} 个观看, {} 个收藏, {} 个搜索",
-            history_videos.len(), favorite_videos.len(), search_videos.len());
+        eprintln!(
+            "  用户历史: {} 个观看, {} 个收藏, {} 个搜索",
+            history_videos.len(),
+            favorite_videos.len(),
+            search_videos.len()
+        );
 
         // 提取用户偏好的年份和分类
         let mut preferred_years = Vec::new();
@@ -231,11 +236,18 @@ impl RecommendationEngine {
             preferred_categories.push(video.category.clone());
         }
 
-        eprintln!("  偏好年份: {:?}", preferred_years.iter().take(3).collect::<Vec<_>>());
-        eprintln!("  偏好分类: {:?}", preferred_categories.iter().take(3).collect::<Vec<_>>());
+        eprintln!(
+            "  偏好年份: {:?}",
+            preferred_years.iter().take(3).collect::<Vec<_>>()
+        );
+        eprintln!(
+            "  偏好分类: {:?}",
+            preferred_categories.iter().take(3).collect::<Vec<_>>()
+        );
 
         // 策略2：使用 find_similar_content 找到与用户历史相似的新内容
-        let watched_titles: Vec<String> = history_videos.iter()
+        let watched_titles: Vec<String> = history_videos
+            .iter()
             .chain(favorite_videos.iter())
             .map(|v| v.title.clone())
             .collect();
@@ -247,32 +259,33 @@ impl RecommendationEngine {
         }
 
         // 策略3：从 content_pool 获取与用户偏好匹配的新内容
-        let pool_content: Vec<(String, String, String, String, f64, String)> = db.with_conn(|conn| {
-            let mut stmt = conn.prepare(
-                "SELECT title, source_name, year, cover, rating, category
+        let pool_content: Vec<(String, String, String, String, f64, String)> =
+            db.with_conn(|conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT title, source_name, year, cover, rating, category
                  FROM content_pool
                  WHERE title NOT IN (SELECT title FROM play_records)
                  AND title NOT IN (SELECT title FROM favorites)
                  ORDER BY popularity_score DESC, created_at DESC
-                 LIMIT 50"
-            )?;
+                 LIMIT 50",
+                )?;
 
-            let rows: Vec<(String, String, String, String, f64, String)> = stmt
-                .query_map([], |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2).unwrap_or_default(),
-                        row.get(3).unwrap_or_default(),
-                        row.get(4).unwrap_or(0.0),
-                        row.get(5).unwrap_or_default(),
-                    ))
-                })?
-                .filter_map(|r| r.ok())
-                .collect();
+                let rows: Vec<(String, String, String, String, f64, String)> = stmt
+                    .query_map([], |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2).unwrap_or_default(),
+                            row.get(3).unwrap_or_default(),
+                            row.get(4).unwrap_or(0.0),
+                            row.get(5).unwrap_or_default(),
+                        ))
+                    })?
+                    .filter_map(|r| r.ok())
+                    .collect();
 
-            Ok(rows)
-        })?;
+                Ok(rows)
+            })?;
 
         // eprintln!("  从 content_pool 获取 {} 条候选内容", pool_content.len());
 
@@ -290,11 +303,21 @@ impl RecommendationEngine {
             let db_category = if !category.is_empty() {
                 // 如果数据库有分类，直接映射
                 match category.as_str() {
-                    "Anime" | "动漫" | "动画" => crate::commands::content_analyzer::VideoCategory::Anime,
-                    "Movie" | "电影" | "movie" => crate::commands::content_analyzer::VideoCategory::Movie,
-                    "TvSeries" | "电视剧" | "剧集" | "tv" => crate::commands::content_analyzer::VideoCategory::TvSeries,
-                    "Variety" | "综艺" | "show" => crate::commands::content_analyzer::VideoCategory::Variety,
-                    "Documentary" | "纪录片" => crate::commands::content_analyzer::VideoCategory::Documentary,
+                    "Anime" | "动漫" | "动画" => {
+                        crate::commands::content_analyzer::VideoCategory::Anime
+                    }
+                    "Movie" | "电影" | "movie" => {
+                        crate::commands::content_analyzer::VideoCategory::Movie
+                    }
+                    "TvSeries" | "电视剧" | "剧集" | "tv" => {
+                        crate::commands::content_analyzer::VideoCategory::TvSeries
+                    }
+                    "Variety" | "综艺" | "show" => {
+                        crate::commands::content_analyzer::VideoCategory::Variety
+                    }
+                    "Documentary" | "纪录片" => {
+                        crate::commands::content_analyzer::VideoCategory::Documentary
+                    }
                     _ => {
                         // 如果数据库分类不明确，使用 ContentAnalyzer 分析
                         self.analyzer.classify_video(&title, Some(&category))
@@ -326,10 +349,18 @@ impl RecommendationEngine {
 
             // 与用户历史内容计算相似度
             for history_video in history_videos.iter().take(5) {
-                let similarity = self.analyzer.calculate_similarity(&title, &history_video.title);
+                let similarity = self
+                    .analyzer
+                    .calculate_similarity(&title, &history_video.title);
                 if similarity > 0.6 {
                     score += similarity * 1.5;
-                    eprintln!("    {} 与 {} 相似度 {:.2} +{:.2}", title, history_video.title, similarity, similarity * 1.5);
+                    eprintln!(
+                        "    {} 与 {} 相似度 {:.2} +{:.2}",
+                        title,
+                        history_video.title,
+                        similarity,
+                        similarity * 1.5
+                    );
                 }
             }
 
@@ -346,7 +377,10 @@ impl RecommendationEngine {
         // 策略4：使用 get_incomplete_videos 找到用户可能感兴趣但未完成的内容
         // 注意：这些内容不会被推荐，但会用于分析用户偏好
         let incomplete_videos = self.get_incomplete_videos(db)?;
-        eprintln!("  发现 {} 个未完成视频（用于偏好分析）", incomplete_videos.len());
+        eprintln!(
+            "  发现 {} 个未完成视频（用于偏好分析）",
+            incomplete_videos.len()
+        );
 
         // 将未完成视频的分类和年份也加入偏好分析
         for video in incomplete_videos.iter() {
@@ -356,14 +390,23 @@ impl RecommendationEngine {
             }
         }
 
-        eprintln!("  增强后偏好分类: {:?}", preferred_categories.iter().take(5).collect::<Vec<_>>());
-        eprintln!("  增强后偏好年份: {:?}", preferred_years.iter().take(5).collect::<Vec<_>>());
+        eprintln!(
+            "  增强后偏好分类: {:?}",
+            preferred_categories.iter().take(5).collect::<Vec<_>>()
+        );
+        eprintln!(
+            "  增强后偏好年份: {:?}",
+            preferred_years.iter().take(5).collect::<Vec<_>>()
+        );
 
         // 策略5：如果用户数据不足，使用全局热门统计
         if recommendations.len() < 10 {
             let global_stats = self.get_global_stats(db)?;
-            eprintln!("  补充全局热门内容: {} 个关键词, {} 个标题",
-                global_stats.popular_keywords.len(), global_stats.popular_titles.len());
+            eprintln!(
+                "  补充全局热门内容: {} 个关键词, {} 个标题",
+                global_stats.popular_keywords.len(),
+                global_stats.popular_titles.len()
+            );
 
             // 基于热门标题推荐（但排除用户已看过的）
             for (title, count) in global_stats.popular_titles.iter().take(5) {
@@ -392,7 +435,7 @@ impl RecommendationEngine {
                      AND title NOT IN (SELECT title FROM play_records)
                      AND title NOT IN (SELECT title FROM favorites)
                      ORDER BY access_count DESC, last_accessed DESC
-                     LIMIT 20"
+                     LIMIT 20",
                 )?;
 
                 let rows: Vec<(String, String, String, String)> = stmt
@@ -492,8 +535,12 @@ impl RecommendationEngine {
         let favorite_videos = self.get_videos_from_favorites(db)?;
         let search_videos = self.get_videos_from_search_history(db)?;
 
-        eprintln!("  历史: {}, 收藏: {}, 搜索: {}",
-            history_videos.len(), favorite_videos.len(), search_videos.len());
+        eprintln!(
+            "  历史: {}, 收藏: {}, 搜索: {}",
+            history_videos.len(),
+            favorite_videos.len(),
+            search_videos.len()
+        );
 
         // 2. 合并所有用户偏好视频
         let mut all_user_videos = Vec::new();
@@ -507,45 +554,50 @@ impl RecommendationEngine {
         }
 
         // 3. 从 content_pool 获取候选内容
-        let pool_content: Vec<(String, String, String, String, f64, String)> = db.with_conn(|conn| {
-            let mut stmt = conn.prepare(
-                "SELECT title, source_name, year, cover, rating, category
+        let pool_content: Vec<(String, String, String, String, f64, String)> =
+            db.with_conn(|conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT title, source_name, year, cover, rating, category
                  FROM content_pool
                  WHERE title NOT IN (SELECT title FROM play_records)
                  AND title NOT IN (SELECT title FROM favorites)
                  ORDER BY popularity_score DESC
-                 LIMIT 100"
-            )?;
+                 LIMIT 100",
+                )?;
 
-            let rows: Vec<(String, String, String, String, f64, String)> = stmt
-                .query_map([], |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2).unwrap_or_default(),
-                        row.get(3).unwrap_or_default(),
-                        row.get(4).unwrap_or(0.0),
-                        row.get(5).unwrap_or_default(),
-                    ))
-                })?
-                .filter_map(|r| r.ok())
-                .collect();
+                let rows: Vec<(String, String, String, String, f64, String)> = stmt
+                    .query_map([], |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2).unwrap_or_default(),
+                            row.get(3).unwrap_or_default(),
+                            row.get(4).unwrap_or(0.0),
+                            row.get(5).unwrap_or_default(),
+                        ))
+                    })?
+                    .filter_map(|r| r.ok())
+                    .collect();
 
-            Ok(rows)
-        })?;
+                Ok(rows)
+            })?;
 
         eprintln!("  候选内容: {} 个", pool_content.len());
 
         // 4. 使用 ContentAnalyzer 计算相似度
         for (title, source, year, cover, rating, _category) in pool_content {
-            let candidate = self.analyzer.analyze_video(&title, Some(&year), Some(&cover), None, &source);
+            let candidate =
+                self.analyzer
+                    .analyze_video(&title, Some(&year), Some(&cover), None, &source);
 
             let mut max_similarity = 0.0;
             let mut similar_to = String::new();
 
             // 与用户所有视频计算相似度
             for user_video in &all_user_videos {
-                let similarity = self.analyzer.calculate_similarity(&candidate.title, &user_video.title);
+                let similarity = self
+                    .analyzer
+                    .calculate_similarity(&candidate.title, &user_video.title);
                 if similarity > max_similarity {
                     max_similarity = similarity;
                     similar_to = user_video.title.clone();
@@ -556,8 +608,10 @@ impl RecommendationEngine {
             if max_similarity > 0.5 {
                 let score = (rating * 0.5 + max_similarity * 10.0 * 0.5).min(10.0);
 
-                eprintln!("    {} 与 {} 相似度 {:.2}, 分数 {:.2}",
-                    title, similar_to, max_similarity, score);
+                eprintln!(
+                    "    {} 与 {} 相似度 {:.2}, 分数 {:.2}",
+                    title, similar_to, max_similarity, score
+                );
 
                 recommendations.push(RecommendationItem {
                     title,
@@ -603,7 +657,7 @@ impl RecommendationEngine {
                      AND title NOT IN (SELECT title FROM favorites)
                  )
                  ORDER BY title
-                 LIMIT 100"
+                 LIMIT 100",
             )?;
 
             let rows = stmt
@@ -625,7 +679,10 @@ impl RecommendationEngine {
             return Ok(similar_recommendations);
         }
 
-        let candidate_titles: Vec<String> = candidates.iter().map(|(title, _, _, _)| title.clone()).collect();
+        let candidate_titles: Vec<String> = candidates
+            .iter()
+            .map(|(title, _, _, _)| title.clone())
+            .collect();
 
         // 对用户观看过的每个视频找相似的
         for user_title in watched_titles.iter().take(10) {
@@ -637,7 +694,9 @@ impl RecommendationEngine {
 
             for (candidate_title, similarity) in similar_videos.into_iter().take(5) {
                 // 找到对应的完整信息
-                if let Some((_, source, year, cover)) = candidates.iter().find(|(t, _, _, _)| t == &candidate_title) {
+                if let Some((_, source, year, cover)) =
+                    candidates.iter().find(|(t, _, _, _)| t == &candidate_title)
+                {
                     let has_year = self.analyzer.extract_year(&candidate_title).is_some();
                     let has_cover = !cover.is_empty();
 
@@ -647,7 +706,13 @@ impl RecommendationEngine {
                         has_description: false,
                         title_length: candidate_title.len(),
                         source_reliability: 0.7,
-                        metadata_completeness: if has_year && has_cover { 0.67 } else if has_year || has_cover { 0.33 } else { 0.0 },
+                        metadata_completeness: if has_year && has_cover {
+                            0.67
+                        } else if has_year || has_cover {
+                            0.33
+                        } else {
+                            0.0
+                        },
                     };
 
                     let quality_score = self.analyzer.calculate_quality_score(&quality_factors);
@@ -700,16 +765,20 @@ impl RecommendationEngine {
         let mut sorted_categories: Vec<_> = category_counts.into_iter().collect();
         sorted_categories.sort_by(|a, b| b.1.cmp(&a.1));
 
-        eprintln!("  用户偏好分类: {:?}", sorted_categories.iter().take(3).collect::<Vec<_>>());
+        eprintln!(
+            "  用户偏好分类: {:?}",
+            sorted_categories.iter().take(3).collect::<Vec<_>>()
+        );
 
         // 3. 为每个热门分类推荐内容
         for (category_name, count) in sorted_categories.iter().take(3) {
             eprintln!("  处理分类: {} (出现 {} 次)", category_name, count);
 
             // 从 content_pool 和 image_cache 获取该分类的新内容
-            let category_items: Vec<(String, String, String, String, f64)> = db.with_conn(|conn| {
-                let mut stmt = conn.prepare(
-                    "SELECT DISTINCT title, source_name, year, cover, rating
+            let category_items: Vec<(String, String, String, String, f64)> =
+                db.with_conn(|conn| {
+                    let mut stmt = conn.prepare(
+                        "SELECT DISTINCT title, source_name, year, cover, rating
                      FROM (
                          SELECT title, source_name, year, cover, rating FROM content_pool
                          WHERE category = ?1
@@ -724,26 +793,30 @@ impl RecommendationEngine {
                          AND title NOT IN (SELECT title FROM favorites)
                      )
                      ORDER BY rating DESC
-                     LIMIT 20"
-                )?;
+                     LIMIT 20",
+                    )?;
 
-                let rows = stmt
-                    .query_map([category_name], |row| {
-                        Ok((
-                            row.get(0)?,
-                            row.get(1).unwrap_or_default(),
-                            row.get(2).unwrap_or_default(),
-                            row.get(3).unwrap_or_default(),
-                            row.get(4).unwrap_or(7.0),
-                        ))
-                    })?
-                    .filter_map(|r| r.ok())
-                    .collect();
+                    let rows = stmt
+                        .query_map([category_name], |row| {
+                            Ok((
+                                row.get(0)?,
+                                row.get(1).unwrap_or_default(),
+                                row.get(2).unwrap_or_default(),
+                                row.get(3).unwrap_or_default(),
+                                row.get(4).unwrap_or(7.0),
+                            ))
+                        })?
+                        .filter_map(|r| r.ok())
+                        .collect();
 
-                Ok(rows)
-            })?;
+                    Ok(rows)
+                })?;
 
-            eprintln!("    找到 {} 个 {} 分类的内容", category_items.len(), category_name);
+            eprintln!(
+                "    找到 {} 个 {} 分类的内容",
+                category_items.len(),
+                category_name
+            );
 
             // 添加到推荐列表
             for (title, source, year, cover, rating) in category_items {
@@ -770,12 +843,32 @@ impl RecommendationEngine {
     }
 
     /// 智能推荐：使用 DataFusion 融合多源数据，发现新内容
-    async fn intelligent_recommendations(&self, db: &Db) -> Result<Vec<RecommendationItem>, String> {
+    async fn intelligent_recommendations(
+        &self,
+        db: &Db,
+    ) -> Result<Vec<RecommendationItem>, String> {
         // 第一步：分析用户偏好（从历史数据中提取）
         let user_profile = self.build_user_profile(db)?;
-        eprintln!("用户画像: 已观看 {} 个视频", user_profile.watched_titles.len());
-        eprintln!("  偏好分类: {:?}", user_profile.favorite_categories.iter().take(3).collect::<Vec<_>>());
-        eprintln!("  偏好年份: {:?}", user_profile.favorite_years.iter().take(3).collect::<Vec<_>>());
+        eprintln!(
+            "用户画像: 已观看 {} 个视频",
+            user_profile.watched_titles.len()
+        );
+        eprintln!(
+            "  偏好分类: {:?}",
+            user_profile
+                .favorite_categories
+                .iter()
+                .take(3)
+                .collect::<Vec<_>>()
+        );
+        eprintln!(
+            "  偏好年份: {:?}",
+            user_profile
+                .favorite_years
+                .iter()
+                .take(3)
+                .collect::<Vec<_>>()
+        );
 
         // 第二步：从全局数据库中发现新内容（只包括用户未接触过的内容）
         let mut discovered_videos = self.discover_global_content(db, &user_profile)?;
@@ -857,12 +950,16 @@ impl RecommendationEngine {
             .collect();
 
         // 第十一步：获取融合统计信息
-        let stats = self.fusion.get_fusion_stats(original_count, recommendations.len());
+        let stats = self
+            .fusion
+            .get_fusion_stats(original_count, recommendations.len());
 
         // 记录去重率（用于调试）
         if stats.deduplication_rate > 0.0 {
-            eprintln!("内容发现去重率: {:.1}%，发现 {} 个重复项",
-                stats.deduplication_rate, stats.duplicate_count);
+            eprintln!(
+                "内容发现去重率: {:.1}%，发现 {} 个重复项",
+                stats.deduplication_rate, stats.duplicate_count
+            );
         }
 
         // 第十二步：按分数排序
@@ -883,7 +980,7 @@ impl RecommendationEngine {
             let mut stmt = conn.prepare(
                 "SELECT title, year FROM play_records
                  WHERE play_time > total_time * 0.5
-                 ORDER BY save_time DESC LIMIT 50"
+                 ORDER BY save_time DESC LIMIT 50",
             )?;
 
             let rows = stmt.query_map([], |row| {
@@ -897,13 +994,13 @@ impl RecommendationEngine {
                 }
             }
             Ok::<_, rusqlite::Error>(())
-        }).map_err(|e| e.to_string())?;
+        })
+        .map_err(|e| e.to_string())?;
 
         // 从收藏提取偏好
         db.with_conn(|conn| {
-            let mut stmt = conn.prepare(
-                "SELECT title, year FROM favorites ORDER BY save_time DESC LIMIT 30"
-            )?;
+            let mut stmt =
+                conn.prepare("SELECT title, year FROM favorites ORDER BY save_time DESC LIMIT 30")?;
 
             let rows = stmt.query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -916,7 +1013,8 @@ impl RecommendationEngine {
                 }
             }
             Ok::<_, rusqlite::Error>(())
-        }).map_err(|e| e.to_string())?;
+        })
+        .map_err(|e| e.to_string())?;
 
         // 使用 ContentAnalyzer 分析用户偏好的分类
         for title in &watched_titles {
@@ -935,11 +1033,23 @@ impl RecommendationEngine {
     fn discover_global_content(
         &self,
         db: &Db,
-        profile: &UserProfile
-    ) -> Result<Vec<(String, Option<String>, Option<String>, Option<String>, String)>, String> {
+        profile: &UserProfile,
+    ) -> Result<
+        Vec<(
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            String,
+        )>,
+        String,
+    > {
         let mut discovered = Vec::new();
 
-        eprintln!("discover_global_content: 用户已观看 {} 个视频", profile.watched_titles.len());
+        eprintln!(
+            "discover_global_content: 用户已观看 {} 个视频",
+            profile.watched_titles.len()
+        );
         eprintln!("  已观看列表: {:?}", profile.watched_titles);
 
         // 策略1：从 content_pool 中获取所有未看过的新内容
@@ -950,7 +1060,7 @@ impl RecommendationEngine {
                  WHERE title NOT IN (SELECT title FROM play_records)
                  AND title NOT IN (SELECT title FROM favorites)
                  ORDER BY created_at DESC
-                 LIMIT 100"
+                 LIMIT 100",
             )?;
 
             let rows: Vec<(String, String, String, String, String)> = stmt
@@ -971,7 +1081,14 @@ impl RecommendationEngine {
 
         eprintln!("  SQL 查询返回 {} 条记录", pool_content.len());
         if pool_content.len() > 0 {
-            eprintln!("  前3条: {:?}", pool_content.iter().take(3).map(|(t, _, _, _, s)| format!("{} ({})", t, s)).collect::<Vec<_>>());
+            eprintln!(
+                "  前3条: {:?}",
+                pool_content
+                    .iter()
+                    .take(3)
+                    .map(|(t, _, _, _, s)| format!("{} ({})", t, s))
+                    .collect::<Vec<_>>()
+            );
         }
 
         for (title, year, cover, desc, source) in pool_content {
@@ -1022,7 +1139,9 @@ impl RecommendationEngine {
         Ok(history
             .into_iter()
             .map(|(title, source, year, cover, total_episodes)| {
-                let mut video = self.analyzer.analyze_video(&title, Some(&year), Some(&cover), None, &source);
+                let mut video =
+                    self.analyzer
+                        .analyze_video(&title, Some(&year), Some(&cover), None, &source);
 
                 // 根据集数判断分类
                 if video.category == crate::commands::content_analyzer::VideoCategory::Unknown {
@@ -1067,7 +1186,9 @@ impl RecommendationEngine {
         Ok(favorites
             .into_iter()
             .map(|(title, source, year, cover, total_episodes)| {
-                let mut video = self.analyzer.analyze_video(&title, Some(&year), Some(&cover), None, &source);
+                let mut video =
+                    self.analyzer
+                        .analyze_video(&title, Some(&year), Some(&cover), None, &source);
 
                 // 根据集数判断分类
                 if video.category == crate::commands::content_analyzer::VideoCategory::Unknown {
@@ -1104,7 +1225,8 @@ impl RecommendationEngine {
         Ok(searches
             .into_iter()
             .map(|keyword| {
-                self.analyzer.analyze_video(&keyword, None, None, None, "搜索历史")
+                self.analyzer
+                    .analyze_video(&keyword, None, None, None, "搜索历史")
             })
             .collect())
     }
@@ -1133,7 +1255,8 @@ impl RecommendationEngine {
         Ok(incomplete
             .into_iter()
             .map(|(title, source, year, cover)| {
-                self.analyzer.analyze_video(&title, Some(&year), Some(&cover), None, &source)
+                self.analyzer
+                    .analyze_video(&title, Some(&year), Some(&cover), None, &source)
             })
             .collect())
     }
@@ -1141,8 +1264,17 @@ impl RecommendationEngine {
     fn discover_from_content_pool(
         &self,
         db: &Db,
-        profile: &UserProfile
-    ) -> Result<Vec<(String, Option<String>, Option<String>, Option<String>, String)>, String> {
+        profile: &UserProfile,
+    ) -> Result<
+        Vec<(
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            String,
+        )>,
+        String,
+    > {
         let mut discovered = Vec::new();
 
         // 获取用户已观看的标题，用于排除
@@ -1156,7 +1288,7 @@ impl RecommendationEngine {
                  WHERE title NOT IN (SELECT title FROM play_records)
                  AND title NOT IN (SELECT title FROM favorites)
                  ORDER BY created_at DESC
-                 LIMIT 50"
+                 LIMIT 50",
             )?;
 
             let rows: Vec<(String, String, String, String, String)> = stmt
@@ -1194,8 +1326,17 @@ impl RecommendationEngine {
     fn discover_from_image_cache(
         &self,
         db: &Db,
-        profile: &UserProfile
-    ) -> Result<Vec<(String, Option<String>, Option<String>, Option<String>, String)>, String> {
+        profile: &UserProfile,
+    ) -> Result<
+        Vec<(
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            String,
+        )>,
+        String,
+    > {
         let mut discovered = Vec::new();
 
         // 获取用户已观看的标题
@@ -1211,7 +1352,7 @@ impl RecommendationEngine {
                  AND title NOT IN (SELECT title FROM play_records)
                  AND title NOT IN (SELECT title FROM favorites)
                  ORDER BY last_accessed DESC
-                 LIMIT 50"
+                 LIMIT 50",
             )?;
 
             let rows: Vec<(String, String, String, String)> = stmt
@@ -1236,7 +1377,11 @@ impl RecommendationEngine {
                     if year.is_empty() { None } else { Some(year) },
                     Some(cover_url),
                     None,
-                    if source.is_empty() { "图片缓存".to_string() } else { source },
+                    if source.is_empty() {
+                        "图片缓存".to_string()
+                    } else {
+                        source
+                    },
                 ));
             }
         }
@@ -1257,7 +1402,6 @@ impl RecommendationEngine {
                 }
             }
         }
-
 
         // 获取用户统计
         let user_stats = self.get_user_stats(db)?;
@@ -1282,7 +1426,8 @@ impl RecommendationEngine {
 
             recommendations.append(&mut personalized.into_iter().take(thirty_percent_p).collect());
             recommendations.append(&mut intelligent.into_iter().take(thirty_percent_i).collect());
-            recommendations.append(&mut category_based.into_iter().take(twenty_percent_c).collect());
+            recommendations
+                .append(&mut category_based.into_iter().take(twenty_percent_c).collect());
             recommendations.append(&mut cold_start.into_iter().take(twenty_percent_h).collect());
         } else {
             // 丰富历史：40% 智能推荐 + 30% 个性化 + 20% 分类推荐 + 10% 热门
@@ -1312,7 +1457,13 @@ impl RecommendationEngine {
         recommendations.truncate(6);
 
         for (i, item) in recommendations.iter().enumerate() {
-            eprintln!("  {}. {} (来源: {}, 分数: {:.2})", i+1, item.title, item.source_name, item.score);
+            eprintln!(
+                "  {}. {} (来源: {}, 分数: {:.2})",
+                i + 1,
+                item.title,
+                item.source_name,
+                item.score
+            );
         }
 
         // 更新缓存
@@ -1363,8 +1514,14 @@ pub async fn get_recommendations(
     eprintln!("\n========== 推荐结果 ==========");
     eprintln!("返回 {} 个推荐", result.len());
     for (i, item) in result.iter().take(10).enumerate() {
-        eprintln!("  {}. {} (来源: {}, 年份: {}, 分数: {:.2})",
-            i+1, item.title, item.source_name, item.year, item.score);
+        eprintln!(
+            "  {}. {} (来源: {}, 年份: {}, 分数: {:.2})",
+            i + 1,
+            item.title,
+            item.source_name,
+            item.year,
+            item.score
+        );
     }
     eprintln!("==============================\n");
 
@@ -1376,6 +1533,10 @@ pub async fn get_recommendations(
 pub fn clear_recommendation_cache(engine: State<'_, RecommendationEngine>) -> Result<(), String> {
     engine.clear_cache();
     Ok(())
+}
+
+pub(crate) fn invalidate_recommendation_cache(engine: &RecommendationEngine) {
+    engine.clear_cache();
 }
 
 /// 添加内容到内容池
@@ -1489,16 +1650,17 @@ pub fn update_image_cache_metadata(
     rating: Option<f64>,
 ) -> Result<(), String> {
     // 智能推断 category（如果没有提供）
-    let inferred_category = if category.is_none() || category.as_ref().map(|c| c.is_empty()).unwrap_or(true) {
-        if let Some(ref t) = title {
-            let src = source_name.as_deref().unwrap_or("");
-            infer_category(t, src)
+    let inferred_category =
+        if category.is_none() || category.as_ref().map(|c| c.is_empty()).unwrap_or(true) {
+            if let Some(ref t) = title {
+                let src = source_name.as_deref().unwrap_or("");
+                infer_category(t, src)
+            } else {
+                None
+            }
         } else {
-            None
-        }
-    } else {
-        category
-    };
+            category
+        };
 
     db.with_conn(|conn| {
         conn.execute(
@@ -1509,14 +1671,7 @@ pub fn update_image_cache_metadata(
                  category = COALESCE(?5, category),
                  rating = COALESCE(?6, rating)
              WHERE url = ?1",
-            rusqlite::params![
-                url,
-                title,
-                source_name,
-                year,
-                inferred_category,
-                rating,
-            ],
+            rusqlite::params![url, title, source_name, year, inferred_category, rating,],
         )?;
         Ok(())
     })
@@ -1809,16 +1964,14 @@ mod tests {
     #[test]
     fn test_deduplicate_single_item() {
         let engine = RecommendationEngine::new();
-        let items = vec![
-            RecommendationItem {
-                title: "Single".to_string(),
-                source_name: "Source".to_string(),
-                year: "2024".to_string(),
-                cover: "".to_string(),
-                score: 8.0,
-                reason: RecommendationReason::Popular,
-            },
-        ];
+        let items = vec![RecommendationItem {
+            title: "Single".to_string(),
+            source_name: "Source".to_string(),
+            year: "2024".to_string(),
+            cover: "".to_string(),
+            score: 8.0,
+            reason: RecommendationReason::Popular,
+        }];
 
         let result = engine.deduplicate_recommendations(items);
         assert_eq!(result.len(), 1);
@@ -1834,10 +1987,7 @@ mod tests {
 
     #[test]
     fn test_video_category_enum_variants() {
-        let categories = vec![
-            VideoCategory::Movie,
-            VideoCategory::Anime,
-        ];
+        let categories = vec![VideoCategory::Movie, VideoCategory::Anime];
 
         assert_eq!(categories.len(), 2);
     }
@@ -1944,5 +2094,53 @@ mod tests {
             RecommendationReason::Popular => assert!(true),
             _ => assert!(false, "Default should be Popular"),
         }
+    }
+
+    #[test]
+    fn test_invalidate_recommendation_cache_clears_all_layers() {
+        let engine = RecommendationEngine::new();
+
+        {
+            let mut user_cache = engine.user_stats_cache.lock().unwrap();
+            *user_cache = Some(UserHistoryStats {
+                total_records: 3,
+                favorite_count: 2,
+                search_count: 1,
+                last_update: Instant::now(),
+            });
+        }
+
+        {
+            let mut global_cache = engine.global_stats_cache.lock().unwrap();
+            *global_cache = Some(GlobalStats {
+                popular_keywords: vec![("anime".to_string(), 2)],
+                popular_titles: vec![("Test".to_string(), 1)],
+                last_update: Instant::now(),
+            });
+        }
+
+        {
+            let mut recommendation_cache = engine.recommendation_cache.lock().unwrap();
+            recommendation_cache.insert(
+                "default".to_string(),
+                (
+                    vec![RecommendationItem {
+                        title: "Test".to_string(),
+                        source_name: "Source".to_string(),
+                        year: "2024".to_string(),
+                        cover: String::new(),
+                        score: 8.5,
+                        reason: RecommendationReason::Popular,
+                    }],
+                    Instant::now(),
+                ),
+            );
+        }
+
+        invalidate_recommendation_cache(&engine);
+
+        assert!(engine.user_stats_cache.lock().unwrap().is_none());
+        assert!(engine.global_stats_cache.lock().unwrap().is_none());
+        assert!(engine.recommendation_cache.lock().unwrap().is_empty());
     }
 }

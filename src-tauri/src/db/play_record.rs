@@ -1,9 +1,10 @@
 // 播放记录
+use crate::commands::recommendation::{invalidate_recommendation_cache, RecommendationEngine};
 use crate::db::db_client::Db;
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 pub struct PlayRecord {
@@ -48,7 +49,11 @@ pub fn get_all_play_records(db: State<'_, Db>) -> Result<Vec<PlayRecord>, String
 }
 
 #[tauri::command]
-pub fn save_play_record(db: State<'_, Db>, record: PlayRecord) -> Result<(), String> {
+pub fn save_play_record(
+    app: AppHandle,
+    db: State<'_, Db>,
+    record: PlayRecord,
+) -> Result<(), String> {
     db.with_conn(|conn| {
         conn.execute(
             "INSERT OR REPLACE INTO play_records (key, title, source_name, year, cover, episode_index, total_episodes, play_time, total_time, save_time, search_title) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
@@ -66,7 +71,11 @@ pub fn save_play_record(db: State<'_, Db>, record: PlayRecord) -> Result<(), Str
             record.search_title,
         ])?;
     Ok(())
-})
+})?;
+    let engine = app.state::<RecommendationEngine>();
+    invalidate_recommendation_cache(&engine);
+    let _ = app.emit("playRecordsUpdated", ());
+    Ok(())
 }
 
 #[tauri::command]
@@ -75,6 +84,8 @@ pub fn delete_play_record(app: AppHandle, db: State<'_, Db>, key: String) -> Res
         conn.execute("DELETE FROM play_records WHERE key = ?1", params![key])?;
         Ok(())
     })?;
+    let engine = app.state::<RecommendationEngine>();
+    invalidate_recommendation_cache(&engine);
     let _ = app.emit("playRecordsUpdated", ());
     Ok(())
 }
@@ -85,6 +96,8 @@ pub fn clear_all_play_records(app: AppHandle, db: State<'_, Db>) -> Result<(), S
         conn.execute("DELETE FROM play_records", [])?;
         Ok(())
     })?;
+    let engine = app.state::<RecommendationEngine>();
+    invalidate_recommendation_cache(&engine);
     let _ = app.emit("playRecordsUpdated", ());
     Ok(())
 }

@@ -1,3 +1,4 @@
+use crate::commands::recommendation::{invalidate_recommendation_cache, RecommendationEngine};
 use crate::storage::StorageManager;
 use image::{GenericImageView, ImageOutputFormat};
 use moka::future::Cache;
@@ -14,10 +15,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::Cursor;
+use std::net::IpAddr;
 use std::sync::{Arc, OnceLock};
 use tauri::{Emitter, Manager, State};
 use tokio::sync::Semaphore;
 use tokio::time::{timeout, Duration};
+use url::Url;
 use uuid::Uuid;
 
 /// 缓存统计信息
@@ -598,6 +601,76 @@ struct TickTimingDecision {
     next_last_skip_check_at_ms: i64,
 }
 
+fn allow_lan_sources_from_config(config: &Value) -> bool {
+    config
+        .get("PlayerConfig")
+        .and_then(|player_config| player_config.get("allow_lan_sources"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+}
+
+fn is_local_hostname(host: &str) -> bool {
+    let normalized = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    normalized == "localhost"
+        || normalized.ends_with(".localhost")
+        || normalized.ends_with(".local")
+        || normalized.ends_with(".internal")
+        || normalized.ends_with(".home.arpa")
+        || !normalized.contains('.')
+}
+
+fn is_local_or_private_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(addr) => {
+            addr.is_private()
+                || addr.is_loopback()
+                || addr.is_link_local()
+                || addr.is_broadcast()
+                || addr.is_documentation()
+                || addr.is_unspecified()
+        }
+        IpAddr::V6(addr) => {
+            addr.is_loopback()
+                || addr.is_unique_local()
+                || addr.is_unicast_link_local()
+                || addr.is_unspecified()
+        }
+    }
+}
+
+fn validate_remote_url(url: &str, allow_lan_sources: bool) -> Result<Url, String> {
+    let parsed = Url::parse(url).map_err(|e| format!("Invalid URL: {}", e))?;
+
+    match parsed.scheme() {
+        "http" | "https" => {}
+        scheme => return Err(format!("Unsupported URL scheme: {}", scheme)),
+    }
+
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("URLs with embedded credentials are not allowed".to_string());
+    }
+
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "URL must include a host".to_string())?;
+
+    if !allow_lan_sources {
+        if let Ok(ip) = host.parse::<IpAddr>() {
+            if is_local_or_private_ip(ip) {
+                return Err("LAN and localhost URLs are disabled".to_string());
+            }
+        } else if is_local_hostname(host) {
+            return Err("LAN and localhost URLs are disabled".to_string());
+        }
+    }
+
+    Ok(parsed)
+}
+
+fn validate_remote_url_against_config(url: &str, config: &Value) -> Result<Url, String> {
+    validate_remote_url(url, allow_lan_sources_from_config(config))
+}
+
 pub(crate) fn resolve_enabled_source(config: &Value, source_key: &str) -> Option<ApiSite> {
     config
         .get("SourceConfig")
@@ -609,7 +682,7 @@ pub(crate) fn resolve_enabled_source(config: &Value, source_key: &str) -> Option
                 if key != source_key || disabled {
                     return None;
                 }
-                Some(ApiSite {
+                let site = ApiSite {
                     key: key.to_string(),
                     api: s.get("api")?.as_str()?.to_string(),
                     name: s.get("name")?.as_str()?.to_string(),
@@ -618,7 +691,9 @@ pub(crate) fn resolve_enabled_source(config: &Value, source_key: &str) -> Option
                         .and_then(|v| v.as_str())
                         .map(|v| v.to_string()),
                     is_adult: s.get("is_adult").and_then(|v| v.as_bool()),
-                })
+                };
+                validate_remote_url_against_config(&site.api, config).ok()?;
+                Some(site)
             })
         })
 }
@@ -809,7 +884,7 @@ const YELLOW_WORDS: &[&str] = &[
     "swag",
     "av",
     "三级片",
-        "日本有码",
+    "日本有码",
     "SWAG",
     "网红主播",
     "色情片",
@@ -886,9 +961,11 @@ pub(crate) async fn search_with_cache_hit(
                     if s.get("disabled").and_then(|d| d.as_bool()).unwrap_or(false) {
                         return None;
                     }
+                    let api = s.get("api")?.as_str()?.to_string();
+                    validate_remote_url_against_config(&api, config).ok()?;
                     Some(ApiSite {
                         key: s.get("key")?.as_str()?.to_string(),
-                        api: s.get("api")?.as_str()?.to_string(),
+                        api,
                         name: s.get("name")?.as_str()?.to_string(),
                         detail: s
                             .get("detail")
@@ -1163,30 +1240,8 @@ pub async fn get_video_detail(
     storage: State<'_, StorageManager>,
 ) -> Result<SearchResult, String> {
     let data = storage.get_data()?;
-    let config = &data.config;
-
-    let api_site =
-        if let Some(source_config) = config.get("SourceConfig").and_then(|v| v.as_array()) {
-            source_config
-                .iter()
-                .find(|s| s.get("key").and_then(|v| v.as_str()) == Some(&source))
-                .and_then(|s| {
-                    Some(ApiSite {
-                        key: s.get("key")?.as_str()?.to_string(),
-                        api: s.get("api")?.as_str()?.to_string(),
-                        name: s.get("name")?.as_str()?.to_string(),
-                        detail: s
-                            .get("detail")
-                            .and_then(|v| v.as_str())
-                            .map(|v| v.to_string()),
-                        is_adult: s.get("is_adult").and_then(|v| v.as_bool()),
-                    })
-                })
-        } else {
-            None
-        };
-
-    let site = api_site.ok_or_else(|| "Source not found".to_string())?;
+    let site = resolve_enabled_source(&data.config, &source)
+        .ok_or_else(|| format!("Source not found or disabled: {}", source))?;
     let client = get_video_client();
 
     let url = format!("{}?ac=videolist&ids={}", site.api, id);
@@ -1249,31 +1304,8 @@ pub async fn get_video_detail_optimized(
     also_search_similar: Option<bool>,
 ) -> Result<GetVideoDetailOptimizedResponse, String> {
     let data = storage.get_data()?;
-    let config = &data.config;
-
-    // 立即获取指定源的详情
-    let api_site =
-        if let Some(source_config) = config.get("SourceConfig").and_then(|v| v.as_array()) {
-            source_config
-                .iter()
-                .find(|s| s.get("key").and_then(|v| v.as_str()) == Some(&source))
-                .and_then(|s| {
-                    Some(ApiSite {
-                        key: s.get("key")?.as_str()?.to_string(),
-                        api: s.get("api")?.as_str()?.to_string(),
-                        name: s.get("name")?.as_str()?.to_string(),
-                        detail: s
-                            .get("detail")
-                            .and_then(|v| v.as_str())
-                            .map(|v| v.to_string()),
-                        is_adult: s.get("is_adult").and_then(|v| v.as_bool()),
-                    })
-                })
-        } else {
-            None
-        };
-
-    let site = api_site.ok_or_else(|| "Source not found".to_string())?;
+    let site = resolve_enabled_source(&data.config, &source)
+        .ok_or_else(|| format!("Source not found or disabled: {}", source))?;
     let client = get_video_client();
     let url = format!("{}?ac=videolist&ids={}", site.api, id);
 
@@ -1406,8 +1438,12 @@ pub async fn proxy_image(
     year: Option<String>,
     category: Option<String>,
     rating: Option<f64>,
+    storage: State<'_, StorageManager>,
     cache_manager: State<'_, crate::db::image_cache::ImageCacheManager>,
 ) -> Result<Vec<u8>, String> {
+    let data = storage.get_data()?;
+    validate_remote_url_against_config(&url, &data.config)?;
+
     // 1. 先尝试从 SQLite 缓存获取
     match cache_manager.get(&url) {
         Ok(Some(data)) => {
@@ -1457,8 +1493,7 @@ pub async fn proxy_image(
 
     // 3. 压缩图片
     let compressed_bytes = tokio::task::spawn_blocking(move || {
-        let img =
-            image::load_from_memory(&bytes).map_err(|e| format!("图片解码失败: {}", e))?;
+        let img = image::load_from_memory(&bytes).map_err(|e| format!("图片解码失败: {}", e))?;
         let (width, height) = img.dimensions();
         let processed_img = if width > 800 {
             img.resize(
@@ -1497,58 +1532,6 @@ pub async fn proxy_image(
     Ok(compressed_bytes)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct FetchResponse {
-    pub status: u16,
-    pub body: String,
-}
-
-#[tauri::command]
-pub async fn fetch_url(
-    url: String,
-    method: Option<String>,
-    headers_opt: Option<std::collections::HashMap<String, String>>,
-) -> Result<FetchResponse, String> {
-    // 使用全局 Client
-    let client = get_video_client();
-    let method_str = method.unwrap_or_else(|| "GET".to_string());
-    let req_method = match method_str.to_uppercase().as_str() {
-        "POST" => reqwest::Method::POST,
-        "HEAD" => reqwest::Method::HEAD,
-        _ => reqwest::Method::GET,
-    };
-    let request_builder = client.request(req_method, &url);
-
-    let mut final_headers = HeaderMap::new();
-
-    if let Some(h) = headers_opt {
-        for (k, v) in h {
-            if let Ok(name) = reqwest::header::HeaderName::from_bytes(k.as_bytes()) {
-                if let Ok(value) = HeaderValue::from_str(&v) {
-                    final_headers.insert(name, value);
-                }
-            }
-        }
-    }
-
-    if !final_headers.contains_key(USER_AGENT) {
-        final_headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"));
-    }
-
-    if url.contains("doubanio.com") || url.contains("douban.com") {
-        final_headers.insert(REFERER, HeaderValue::from_static("https://www.douban.com/"));
-    }
-
-    let resp = request_builder
-        .headers(final_headers)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    let status = resp.status().as_u16();
-    let body = resp.text().await.map_err(|e| e.to_string())?;
-
-    Ok(FetchResponse { status, body })
-}
 // 带重试和指数退避的请求 重试3次
 async fn fetch_with_retry(
     url: &str,
@@ -1603,8 +1586,12 @@ pub async fn fetch_binary(
     url: String,
     method: Option<String>,
     headers_opt: Option<std::collections::HashMap<String, String>>,
+    storage: State<'_, StorageManager>,
     cache_manager: State<'_, VideoCacheManager>,
 ) -> Result<FetchBinaryResponse, String> {
+    let data = storage.get_data()?;
+    validate_remote_url_against_config(&url, &data.config)?;
+
     let method_str = method.unwrap_or_else(|| "GET".to_string());
     let is_get = method_str.to_uppercase() == "GET";
 
@@ -1682,7 +1669,11 @@ pub async fn fetch_m3u8(
     url: String,
     enable_ad_block: Option<bool>,
     headers_opt: Option<std::collections::HashMap<String, String>>,
+    storage: State<'_, StorageManager>,
 ) -> Result<String, String> {
+    let data = storage.get_data()?;
+    validate_remote_url_against_config(&url, &data.config)?;
+
     // 准备 HTTP 请求头
     let mut final_headers = HeaderMap::new();
     if let Some(h) = headers_opt {
@@ -1813,11 +1804,7 @@ async fn prefetch_next_segments(
                             cache_clone
                                 .insert(next_url_clone.clone(), data.to_vec())
                                 .await;
-                            log::debug!(
-                                "✅ 预取成功: {} ({} bytes)",
-                                next_url_clone,
-                                data.len()
-                            );
+                            log::debug!("✅ 预取成功: {} ({} bytes)", next_url_clone, data.len());
                         }
                         break;
                     }
@@ -2310,6 +2297,8 @@ pub fn save_play_progress(
 ) -> Result<bool, String> {
     let saved = save_play_progress_inner(&db, request)?;
     if saved {
+        let engine = app.state::<RecommendationEngine>();
+        invalidate_recommendation_cache(&engine);
         let _ = app.emit("playRecordsUpdated", ());
     }
     Ok(saved)
@@ -2950,6 +2939,40 @@ mod tests {
     }
 
     #[test]
+    fn validate_remote_url_rejects_non_http_schemes() {
+        let result = validate_remote_url("file:///tmp/test.m3u8", false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_remote_url_rejects_lan_hosts_when_disabled() {
+        let result = validate_remote_url("http://192.168.1.20/video.m3u8", false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_remote_url_allows_lan_hosts_when_enabled() {
+        let result = validate_remote_url("http://192.168.1.20/video.m3u8", true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn resolve_enabled_source_filters_lan_source_when_disallowed() {
+        let config = serde_json::json!({
+            "PlayerConfig": {
+                "allow_lan_sources": false
+            },
+            "SourceConfig": [
+                { "key": "lan", "api": "http://192.168.1.10/api.php/provide/vod", "name": "LAN", "disabled": false },
+                { "key": "public", "api": "https://vod.example.com/api.php/provide/vod", "name": "Public", "disabled": false }
+            ]
+        });
+
+        assert!(resolve_enabled_source(&config, "lan").is_none());
+        assert!(resolve_enabled_source(&config, "public").is_some());
+    }
+
+    #[test]
     fn parse_source_categories_handles_number_and_string_type_id() {
         let body = r#"{
             "class": [
@@ -3127,12 +3150,7 @@ mod tests {
             make_result("Exact Title Extra", "2020", 12, "s4", "4"),
         ];
 
-        let filtered = filter_sources_for_fallback(
-            &results,
-            "Exact Title",
-            Some("2020"),
-            None,
-        );
+        let filtered = filter_sources_for_fallback(&results, "Exact Title", Some("2020"), None);
 
         assert!(filtered.len() > 0);
         let sources: Vec<String> = filtered.iter().map(|r| r.source.clone()).collect();
@@ -3193,15 +3211,27 @@ mod tests {
     #[test]
     fn derive_search_type_filter_tv_range() {
         // Test TV: total > 1
-        assert_eq!(derive_search_type_filter(Some(2)), Some(SearchTypeFilter::Tv));
-        assert_eq!(derive_search_type_filter(Some(10)), Some(SearchTypeFilter::Tv));
-        assert_eq!(derive_search_type_filter(Some(100)), Some(SearchTypeFilter::Tv));
+        assert_eq!(
+            derive_search_type_filter(Some(2)),
+            Some(SearchTypeFilter::Tv)
+        );
+        assert_eq!(
+            derive_search_type_filter(Some(10)),
+            Some(SearchTypeFilter::Tv)
+        );
+        assert_eq!(
+            derive_search_type_filter(Some(100)),
+            Some(SearchTypeFilter::Tv)
+        );
     }
 
     #[test]
     fn derive_search_type_filter_movie_range() {
         // Test Movie: total == 1
-        assert_eq!(derive_search_type_filter(Some(1)), Some(SearchTypeFilter::Movie));
+        assert_eq!(
+            derive_search_type_filter(Some(1)),
+            Some(SearchTypeFilter::Movie)
+        );
     }
 
     #[test]

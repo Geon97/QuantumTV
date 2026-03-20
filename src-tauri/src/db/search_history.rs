@@ -1,8 +1,9 @@
 // 搜索历史
+use crate::commands::recommendation::{invalidate_recommendation_cache, RecommendationEngine};
 use crate::db::db_client::Db;
 use rusqlite::params;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[tauri::command]
 pub fn add_search_history(
@@ -21,6 +22,8 @@ pub fn add_search_history(
         )?;
         Ok(())
     })?;
+    let engine = app.state::<RecommendationEngine>();
+    invalidate_recommendation_cache(&engine);
     let _ = app.emit("searchHistoryUpdated", ());
     Ok(())
 }
@@ -30,6 +33,8 @@ pub fn clear_search_history(app: AppHandle, db: State<'_, Db>) -> Result<(), Str
         conn.execute("DELETE FROM search_history", [])?;
         Ok(())
     })?;
+    let engine = app.state::<RecommendationEngine>();
+    invalidate_recommendation_cache(&engine);
     let _ = app.emit("searchHistoryUpdated", ());
     Ok(())
 }
@@ -46,6 +51,8 @@ pub fn delete_search_history(
         )?;
         Ok(())
     })?;
+    let engine = app.state::<RecommendationEngine>();
+    invalidate_recommendation_cache(&engine);
     let _ = app.emit("searchHistoryUpdated", ());
     Ok(())
 }
@@ -238,7 +245,11 @@ mod tests {
     fn delete_search_history_only_removes_target_keyword() {
         let db = setup_test_db();
 
-        for (keyword, save_time) in &[("anime", 1000000i64), ("movie", 2000000i64), ("drama", 3000000i64)] {
+        for (keyword, save_time) in &[
+            ("anime", 1000000i64),
+            ("movie", 2000000i64),
+            ("drama", 3000000i64),
+        ] {
             db.with_conn(|conn| {
                 conn.execute(
                     "INSERT INTO search_history (keyword, save_time) VALUES (?1, ?2)",
@@ -284,8 +295,7 @@ mod tests {
     fn clear_search_history_removes_all_keywords() {
         let db = setup_test_db();
 
-        for (keyword, save_time) in &[("anime", 1000000), ("movie", 2000000), ("drama", 3000000)]
-        {
+        for (keyword, save_time) in &[("anime", 1000000), ("movie", 2000000), ("drama", 3000000)] {
             db.with_conn(|conn| {
                 conn.execute(
                     "INSERT INTO search_history (keyword, save_time) VALUES (?1, ?2)",

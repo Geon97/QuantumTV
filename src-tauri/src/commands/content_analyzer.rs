@@ -6,7 +6,6 @@
 /// 3. 内容质量评分系统
 /// 4. 视频相似度计算
 /// 5. 年份、类型、演员等信息解析
-
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -29,12 +28,12 @@ pub struct VideoMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[allow(dead_code)]
 pub enum VideoCategory {
-    Movie,      // 电影
-    TvSeries,   // 电视剧
-    Anime,      // 动漫
-    Variety,    // 综艺
-    Documentary,// 纪录片
-    Unknown,    // 未知
+    Movie,       // 电影
+    TvSeries,    // 电视剧
+    Anime,       // 动漫
+    Variety,     // 综艺
+    Documentary, // 纪录片
+    Unknown,     // 未知
 }
 
 /// 内容质量评分因素
@@ -153,9 +152,8 @@ impl ContentAnalyzer {
 
         // 停用词
         let stop_words: HashSet<String> = vec![
-            "的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都", "一", "一个",
-            "上", "也", "很", "到", "说", "要", "去", "你", "会", "着", "没有", "看", "好",
-            "自己", "这",
+            "的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都", "一", "一个", "上",
+            "也", "很", "到", "说", "要", "去", "你", "会", "着", "没有", "看", "好", "自己", "这",
         ]
         .into_iter()
         .map(|s| s.to_string())
@@ -203,11 +201,7 @@ impl ContentAnalyzer {
 
     /// 分类视频
     pub fn classify_video(&self, title: &str, description: Option<&str>) -> VideoCategory {
-        let text = format!(
-            "{} {}",
-            title,
-            description.unwrap_or("")
-        ).to_lowercase();
+        let text = format!("{} {}", title, description.unwrap_or("")).to_lowercase();
 
         let mut scores: HashMap<VideoCategory, usize> = HashMap::new();
 
@@ -453,7 +447,13 @@ impl ContentAnalyzer {
     /// 批量分析视频
     pub fn batch_analyze(
         &self,
-        videos: Vec<(String, Option<String>, Option<String>, Option<String>, String)>,
+        videos: Vec<(
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            String,
+        )>,
     ) -> Vec<VideoMetadata> {
         videos
             .into_iter()
@@ -566,23 +566,14 @@ mod tests {
     fn test_calculate_similarity() {
         let analyzer = ContentAnalyzer::new();
 
-        let similarity = analyzer.calculate_similarity(
-            "肖申克的救赎",
-            "肖申克的救赎 1994"
-        );
+        let similarity = analyzer.calculate_similarity("肖申克的救赎", "肖申克的救赎 1994");
         assert!(similarity > 0.3); // 降低阈值，因为添加了年份
 
-        let similarity = analyzer.calculate_similarity(
-            "肖申克的救赎",
-            "阿甘正传"
-        );
+        let similarity = analyzer.calculate_similarity("肖申克的救赎", "阿甘正传");
         assert!(similarity < 0.5);
 
         // 完全相同的标题
-        let similarity = analyzer.calculate_similarity(
-            "肖申克的救赎",
-            "肖申克的救赎"
-        );
+        let similarity = analyzer.calculate_similarity("肖申克的救赎", "肖申克的救赎");
         assert_eq!(similarity, 1.0);
     }
 
@@ -595,7 +586,7 @@ mod tests {
             Some("1994"),
             Some("https://example.com/cover.jpg"),
             Some("经典电影"),
-            "高清影院"
+            "高清影院",
         );
 
         assert_eq!(metadata.title, "肖申克的救赎 (1994)");
@@ -615,11 +606,7 @@ mod tests {
             "阿甘正传".to_string(),
         ];
 
-        let similar = analyzer.find_similar_videos(
-            "肖申克的救赎",
-            &candidates,
-            0.5
-        );
+        let similar = analyzer.find_similar_videos("肖申克的救赎", &candidates, 0.5);
 
         assert_eq!(similar.len(), 2);
     }
@@ -664,8 +651,17 @@ mod tests {
     fn test_metadata_completeness() {
         let analyzer = ContentAnalyzer::new();
 
-        assert_eq!(analyzer.calculate_metadata_completeness(true, true, true), 1.0);
-        assert_eq!(analyzer.calculate_metadata_completeness(true, true, false), 2.0 / 3.0);
-        assert_eq!(analyzer.calculate_metadata_completeness(false, false, false), 0.0);
+        assert_eq!(
+            analyzer.calculate_metadata_completeness(true, true, true),
+            1.0
+        );
+        assert_eq!(
+            analyzer.calculate_metadata_completeness(true, true, false),
+            2.0 / 3.0
+        );
+        assert_eq!(
+            analyzer.calculate_metadata_completeness(false, false, false),
+            0.0
+        );
     }
 }

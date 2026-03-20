@@ -147,7 +147,6 @@ pub fn run() {
             commands::video::initialize_player_view,
             commands::video::get_cache_stats,
             commands::video::proxy_image,
-            commands::video::fetch_url,
             commands::video::fetch_binary,
             commands::video::fetch_m3u8,
             commands::video::get_douban_data,

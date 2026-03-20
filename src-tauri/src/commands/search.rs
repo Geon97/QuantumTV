@@ -504,12 +504,8 @@ pub async fn apply_search_filter(
         .ok_or_else(|| "搜索结果未找到，请先执行搜索".to_string())?;
 
     // 聚合模式：应用 filter_agg
-    let aggregated_list = aggregate_search_results_with_filter(
-        results.clone(),
-        &query,
-        None,
-        &filter_agg,
-    );
+    let aggregated_list =
+        aggregate_search_results_with_filter(results.clone(), &query, None, &filter_agg);
     let aggregated_entries = aggregated_list
         .into_iter()
         .map(|(key, group)| (key, compute_group_stats(&group)))
@@ -554,7 +550,8 @@ pub async fn search_page_query(
     cache: State<'_, SearchCacheManager>,
     result_cache: State<'_, SearchResultCache>,
 ) -> Result<SearchPageQueryResponse, String> {
-    let (results, cache_hit) = search_with_cache_hit(query.clone(), app_handle, storage, cache).await?;
+    let (results, cache_hit) =
+        search_with_cache_hit(query.clone(), app_handle, storage, cache).await?;
 
     // 保存搜索结果到缓存
     result_cache.save(&query, results.clone());
@@ -678,7 +675,10 @@ mod tests {
     fn search_result_cache_stats() {
         let cache = SearchResultCache::new();
 
-        cache.save("query1", vec![SearchResult::default(), SearchResult::default()]);
+        cache.save(
+            "query1",
+            vec![SearchResult::default(), SearchResult::default()],
+        );
         cache.save("query2", vec![SearchResult::default()]);
 
         let stats = cache.stats();
@@ -974,7 +974,11 @@ mod tests {
         let save_duration = start.elapsed();
 
         // 验证保存时间合理（应该 < 100ms）
-        assert!(save_duration.as_millis() < 100, "Save took too long: {:?}", save_duration);
+        assert!(
+            save_duration.as_millis() < 100,
+            "Save took too long: {:?}",
+            save_duration
+        );
 
         // 读取大数据集
         let start = std::time::Instant::now();
@@ -982,7 +986,11 @@ mod tests {
         let get_duration = start.elapsed();
 
         // 验证读取时间合理（应该 < 50ms）
-        assert!(get_duration.as_millis() < 50, "Get took too long: {:?}", get_duration);
+        assert!(
+            get_duration.as_millis() < 50,
+            "Get took too long: {:?}",
+            get_duration
+        );
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().len(), 1000);
     }

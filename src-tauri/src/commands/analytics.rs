@@ -6,7 +6,6 @@
 /// 3. 观看趋势分析
 /// 4. 数据报表生成
 /// 5. 时间段分析
-
 use crate::db::db_client::Db;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -16,13 +15,13 @@ use tauri::State;
 /// 用户行为统计
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserBehaviorStats {
-    pub total_watch_time: i64,      // 总观看时长（秒）
-    pub total_videos_watched: i64,  // 观看视频总数
-    pub total_favorites: i64,        // 收藏总数
-    pub total_searches: i64,         // 搜索总数
-    pub avg_watch_time: f64,         // 平均观看时长
-    pub completion_rate: f64,        // 完成率（看完的比例）
-    pub most_active_hour: Option<u8>, // 最活跃时段
+    pub total_watch_time: i64,             // 总观看时长（秒）
+    pub total_videos_watched: i64,         // 观看视频总数
+    pub total_favorites: i64,              // 收藏总数
+    pub total_searches: i64,               // 搜索总数
+    pub avg_watch_time: f64,               // 平均观看时长
+    pub completion_rate: f64,              // 完成率（看完的比例）
+    pub most_active_hour: Option<u8>,      // 最活跃时段
     pub favorite_category: Option<String>, // 最喜欢的分类
 }
 
@@ -41,10 +40,10 @@ pub struct PopularItem {
 /// 观看趋势数据
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WatchTrend {
-    pub date: String,           // 日期（YYYY-MM-DD）
-    pub watch_count: i64,       // 观看次数
-    pub watch_duration: i64,    // 观看时长（秒）
-    pub unique_videos: i64,     // 不同视频数
+    pub date: String,        // 日期（YYYY-MM-DD）
+    pub watch_count: i64,    // 观看次数
+    pub watch_duration: i64, // 观看时长（秒）
+    pub unique_videos: i64,  // 不同视频数
 }
 
 /// 分类统计
@@ -59,9 +58,9 @@ pub struct CategoryStats {
 /// 时段统计
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HourlyStats {
-    pub hour: u8,               // 小时（0-23）
-    pub watch_count: i64,       // 观看次数
-    pub avg_duration: f64,      // 平均时长
+    pub hour: u8,          // 小时（0-23）
+    pub watch_count: i64,  // 观看次数
+    pub avg_duration: f64, // 平均时长
 }
 
 /// 统计分析器
@@ -132,12 +131,10 @@ impl AnalyticsEngine {
                     COALESCE(SUM(play_time), 0) as total_time,
                     COUNT(CASE WHEN play_time >= total_time * 0.9 THEN 1 END) as completed
                  FROM play_records
-                 WHERE total_time > 0"
+                 WHERE total_time > 0",
             )?;
 
-            stmt.query_row([], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
+            stmt.query_row([], |row| Ok((row.get(0)?, row.get(1)?)))
         })?;
 
         let avg_watch_time = if total_videos_watched > 0 {
@@ -180,18 +177,20 @@ impl AnalyticsEngine {
 
     /// 计算最活跃时段
     fn calculate_most_active_hour(&self, db: &Db) -> Result<Option<u8>, String> {
-        let result: Option<i64> = db.with_conn(|conn| {
-            let result = conn.query_row(
-                "SELECT strftime('%H', datetime(save_time, 'unixepoch')) as hour
+        let result: Option<i64> = db
+            .with_conn(|conn| {
+                let result = conn.query_row(
+                    "SELECT strftime('%H', datetime(save_time, 'unixepoch')) as hour
                  FROM play_records
                  GROUP BY hour
                  ORDER BY COUNT(*) DESC
                  LIMIT 1",
-                [],
-                |row| row.get(0)
-            );
-            Ok(result.ok())
-        })?.flatten();
+                    [],
+                    |row| row.get(0),
+                );
+                Ok(result.ok())
+            })?
+            .flatten();
 
         Ok(result.and_then(|h| u8::try_from(h).ok()))
     }
@@ -199,18 +198,20 @@ impl AnalyticsEngine {
     /// 计算最喜欢的分类
     fn calculate_favorite_category(&self, db: &Db) -> Result<Option<String>, String> {
         // 简单实现：基于搜索历史中的关键词
-        let result: Option<String> = db.with_conn(|conn| {
-            let result = conn.query_row(
-                "SELECT keyword
+        let result: Option<String> = db
+            .with_conn(|conn| {
+                let result = conn.query_row(
+                    "SELECT keyword
                  FROM search_history
                  GROUP BY keyword
                  ORDER BY COUNT(*) DESC
                  LIMIT 1",
-                [],
-                |row| row.get(0)
-            );
-            Ok(result.ok())
-        })?.flatten();
+                    [],
+                    |row| row.get(0),
+                );
+                Ok(result.ok())
+            })?
+            .flatten();
 
         Ok(result)
     }
@@ -241,28 +242,30 @@ impl AnalyticsEngine {
                  LEFT JOIN favorites f ON p.title = f.title
                  GROUP BY p.title
                  ORDER BY play_count DESC, favorite_count DESC
-                 LIMIT ?1"
+                 LIMIT ?1",
             )?;
 
-            let rows = stmt.query_map([limit as i64], |row| {
-                let play_count: i64 = row.get(4)?;
-                let favorite_count: i64 = row.get(5)?;
+            let rows = stmt
+                .query_map([limit as i64], |row| {
+                    let play_count: i64 = row.get(4)?;
+                    let favorite_count: i64 = row.get(5)?;
 
-                // 计算热度分数：播放次数 * 0.7 + 收藏次数 * 0.3
-                let popularity_score = (play_count as f64 * 0.7) + (favorite_count as f64 * 0.3);
+                    // 计算热度分数：播放次数 * 0.7 + 收藏次数 * 0.3
+                    let popularity_score =
+                        (play_count as f64 * 0.7) + (favorite_count as f64 * 0.3);
 
-                Ok(PopularItem {
-                    title: row.get(0)?,
-                    source_name: row.get(1)?,
-                    year: row.get(2)?,
-                    cover: row.get(3)?,
-                    play_count,
-                    favorite_count,
-                    popularity_score,
-                })
-            })?
-            .filter_map(|r| r.ok())
-            .collect();
+                    Ok(PopularItem {
+                        title: row.get(0)?,
+                        source_name: row.get(1)?,
+                        year: row.get(2)?,
+                        cover: row.get(3)?,
+                        play_count,
+                        favorite_count,
+                        popularity_score,
+                    })
+                })?
+                .filter_map(|r| r.ok())
+                .collect();
 
             Ok(rows)
         })?;
@@ -291,7 +294,8 @@ impl AnalyticsEngine {
         let cutoff_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs() as i64 - (days * 24 * 3600);
+            .as_secs() as i64
+            - (days * 24 * 3600);
 
         let trends: Vec<WatchTrend> = db.with_conn(|conn| {
             let mut stmt = conn.prepare(
@@ -303,19 +307,20 @@ impl AnalyticsEngine {
                  FROM play_records
                  WHERE save_time > ?1
                  GROUP BY date
-                 ORDER BY date DESC"
+                 ORDER BY date DESC",
             )?;
 
-            let rows = stmt.query_map([cutoff_time], |row| {
-                Ok(WatchTrend {
-                    date: row.get(0)?,
-                    watch_count: row.get(1)?,
-                    watch_duration: row.get(2)?,
-                    unique_videos: row.get(3)?,
-                })
-            })?
-            .filter_map(|r| r.ok())
-            .collect();
+            let rows = stmt
+                .query_map([cutoff_time], |row| {
+                    Ok(WatchTrend {
+                        date: row.get(0)?,
+                        watch_count: row.get(1)?,
+                        watch_duration: row.get(2)?,
+                        unique_videos: row.get(3)?,
+                    })
+                })?
+                .filter_map(|r| r.ok())
+                .collect();
 
             Ok(rows)
         })?;
@@ -368,13 +373,11 @@ impl AnalyticsEngine {
                     let mut stmt = conn.prepare(
                         "SELECT COUNT(*), COALESCE(SUM(play_time), 0)
                          FROM play_records
-                         WHERE title LIKE ?1 OR search_title LIKE ?1"
+                         WHERE title LIKE ?1 OR search_title LIKE ?1",
                     )?;
 
                     let pattern = format!("%{}%", keyword);
-                    stmt.query_row([&pattern], |row| {
-                        Ok((row.get(0)?, row.get(1)?))
-                    })
+                    stmt.query_row([&pattern], |row| Ok((row.get(0)?, row.get(1)?)))
                 })?;
 
                 count += c;
@@ -424,19 +427,20 @@ impl AnalyticsEngine {
                     AVG(play_time) as avg_duration
                  FROM play_records
                  GROUP BY hour
-                 ORDER BY hour"
+                 ORDER BY hour",
             )?;
 
-            let rows = stmt.query_map([], |row| {
-                let hour: i64 = row.get(0)?;
-                Ok(HourlyStats {
-                    hour: hour as u8,
-                    watch_count: row.get(1)?,
-                    avg_duration: row.get::<_, f64>(2).unwrap_or(0.0),
-                })
-            })?
-            .filter_map(|r| r.ok())
-            .collect();
+            let rows = stmt
+                .query_map([], |row| {
+                    let hour: i64 = row.get(0)?;
+                    Ok(HourlyStats {
+                        hour: hour as u8,
+                        watch_count: row.get(1)?,
+                        avg_duration: row.get::<_, f64>(2).unwrap_or(0.0),
+                    })
+                })?
+                .filter_map(|r| r.ok())
+                .collect();
 
             Ok(rows)
         })?;
@@ -544,9 +548,7 @@ pub fn generate_analytics_report(
 
 /// 清除统计缓存
 #[tauri::command]
-pub fn clear_analytics_cache(
-    engine: State<'_, AnalyticsEngine>,
-) -> Result<(), String> {
+pub fn clear_analytics_cache(engine: State<'_, AnalyticsEngine>) -> Result<(), String> {
     engine.clear_cache();
     Ok(())
 }

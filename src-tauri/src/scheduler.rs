@@ -6,16 +6,16 @@ use crate::db::db_client::Db;
 use crate::db::image_cache::ImageCacheManager;
 use crate::db::page_cache::PageCacheManager;
 use crate::storage::StorageManager;
-use quantumtv_core::{merge_admin_config_with_defaults, parse_admin_config as parse_admin_config_core};
+use quantumtv_core::{
+    merge_admin_config_with_defaults, parse_admin_config as parse_admin_config_core,
+};
 use serde_json::Value;
 use std::time::Duration;
 use tauri::{Emitter, Manager};
 
 /// Spawn all background interval tasks. Call once from `.setup()`.
 pub fn start_background_tasks(app: tauri::AppHandle) {
-    eprintln!(
-        "[调度器] 已启动: 配置订阅(24h), 图像缓存(24h), 页面缓存(24h), 推荐预热(12h)"
-    );
+    eprintln!("[调度器] 已启动: 配置订阅(24h), 图像缓存(24h), 页面缓存(24h), 推荐预热(12h)");
 
     spawn_subscription_auto_update(app.clone());
     spawn_image_cache_cleanup(app.clone());
@@ -162,10 +162,7 @@ fn spawn_recommendation_preheat(app: tauri::AppHandle) {
             let db = app.state::<Db>();
             match engine.get_recommendations(&db).await {
                 Ok(items) => {
-                    log::info!(
-                        "[调度器:推荐预热] 预热了 {} 个推荐",
-                        items.len()
-                    )
+                    log::info!("[调度器:推荐预热] 预热了 {} 个推荐", items.len())
                 }
                 Err(e) => log::warn!("[调度器:推荐预热] 错误: {}", e),
             }

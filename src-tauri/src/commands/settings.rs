@@ -32,4 +32,3 @@ pub async fn get_settings_bootstrap(
         page_cache_stats,
     })
 }
-

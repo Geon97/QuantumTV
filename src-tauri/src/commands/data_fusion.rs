@@ -690,8 +690,7 @@ mod tests {
 
         let recency_result =
             fusion.fuse_by_recency(vec![high_quality_old.clone(), low_quality_new.clone()]);
-        let quality_result =
-            fusion.fuse_by_quality(vec![high_quality_old, low_quality_new]);
+        let quality_result = fusion.fuse_by_quality(vec![high_quality_old, low_quality_new]);
 
         // 按时间：以最新年份的元数据为基础
         assert_eq!(recency_result.year, Some(2024));

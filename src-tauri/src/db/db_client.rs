@@ -252,7 +252,9 @@ mod tests {
 
         // Verify we can access it
         let result = db.with_conn(|conn| {
-            conn.query_row("SELECT COUNT(*) FROM sqlite_master", [], |row| row.get::<_, i32>(0))
+            conn.query_row("SELECT COUNT(*) FROM sqlite_master", [], |row| {
+                row.get::<_, i32>(0)
+            })
         });
 
         assert!(result.is_ok());
@@ -448,11 +450,7 @@ mod tests {
 
         let hist_count: i32 = db
             .with_conn(|conn| {
-                conn.query_row(
-                    "SELECT COUNT(*) FROM search_history",
-                    [],
-                    |row| row.get(0),
-                )
+                conn.query_row("SELECT COUNT(*) FROM search_history", [], |row| row.get(0))
             })
             .unwrap();
         assert_eq!(hist_count, 1);
@@ -573,11 +571,7 @@ mod tests {
 
         let h_count: i32 = db
             .with_conn(|conn| {
-                conn.query_row(
-                    "SELECT COUNT(*) FROM search_history",
-                    [],
-                    |row| row.get(0),
-                )
+                conn.query_row("SELECT COUNT(*) FROM search_history", [], |row| row.get(0))
             })
             .unwrap();
         assert_eq!(h_count, 0);
