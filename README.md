@@ -2,6 +2,10 @@
 
 > ⚖️ 本项目为开源、本地优先的软件，仅用于学习 Rust / Tauri / 现代 Web 技术与技术研究，不提供任何影视内容。
 
+---
+
+> 当前版本已进入稳定阶段。如遇到问题或有功能建议，请通过 Issue 提交，我会及时跟进。
+
 <div align="center">
   <img src="public/logo.png" alt="QuantumTV Logo" width="120" max-width="150" height="auto">
   <h1>QuantumTV</h1>
