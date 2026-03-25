@@ -16,6 +16,7 @@ import {
   PlayerInitialState,
   PlayerTickDecision,
   SearchResult,
+  SourceHealthStats,
 } from '@/lib/types';
 import { appLayoutClasses } from '@/lib/ui-layout';
 import { generateStorageKey, subscribeToDataUpdates } from '@/lib/utils';
@@ -157,6 +158,9 @@ function PlayPageClient() {
 
   // 换源相关状态
   const [availableSources, setAvailableSources] = useState<SearchResult[]>([]);
+  const [sourceHealthStats, setSourceHealthStats] = useState<
+    SourceHealthStats[]
+  >([]);
   const [sourceSearchLoading, setSourceSearchLoading] = useState(false);
   const [sourceSearchError, setSourceSearchError] = useState<string | null>(
     null,
@@ -604,6 +608,24 @@ function PlayPageClient() {
   useEffect(() => {
     updateVideoUrl(detail, currentEpisodeIndex);
   }, [detail, currentEpisodeIndex]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void invoke<SourceHealthStats[]>('get_all_source_stats')
+      .then((stats) => {
+        if (!cancelled) {
+          setSourceHealthStats(stats);
+        }
+      })
+      .catch((err) => {
+        console.warn('读取源健康状态失败:', err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSource, currentId, availableSources.length]);
 
   // 进入页面时直接获取全部源信息
   useEffect(() => {
@@ -2353,6 +2375,13 @@ function PlayPageClient() {
     </div>
   ) : null;
 
+  const sourceHealthMap = new Map(
+    sourceHealthStats.map((stats) => [stats.source_key, stats] as const),
+  );
+  const currentSourceHealth = currentSource
+    ? sourceHealthMap.get(currentSource)
+    : undefined;
+
   return (
     <PageLayout activePath='/play'>
       <div
@@ -2472,18 +2501,14 @@ function PlayPageClient() {
           </div>
 
           <div
-            className={`grid gap-4 transition-all duration-300 ease-in-out lg:h-[70vh] min-[834px]:h-[72vh] min-[1440px]:h-[78vh] 2xl:h-[80vh] ${
+            className={`grid gap-4 transition-all duration-300 ease-in-out lg:min-h-[70vh] min-[834px]:min-h-[72vh] min-[1440px]:min-h-[78vh] 2xl:min-h-[80vh] ${
               isEpisodeSelectorCollapsed
                 ? 'grid-cols-1'
-                : 'grid-cols-1 md:grid-cols-4'
+                : 'grid-cols-1 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22rem]'
             }`}
           >
             {/* 播放器 */}
-            <div
-              className={`h-full transition-all duration-300 ease-in-out rounded-xl border border-white/0 dark:border-white/30 ${
-                isEpisodeSelectorCollapsed ? 'col-span-1' : 'md:col-span-3'
-              }`}
-            >
+            <div className='h-full transition-all duration-300 ease-in-out rounded-xl border border-white/0 dark:border-white/30'>
               <div className='group/player relative h-[18rem] w-full max-[375px]:h-[16rem] sm:h-[20rem] md:h-[24rem] min-[834px]:h-[26rem] lg:h-full'>
                 <div
                   ref={playerContainerRef}
@@ -2512,8 +2537,8 @@ function PlayPageClient() {
             <div
               className={`h-[18rem] max-[375px]:h-[16rem] sm:h-[20rem] md:h-[24rem] min-[834px]:h-[26rem] lg:h-full md:overflow-hidden transition-all duration-300 ease-in-out ${
                 isEpisodeSelectorCollapsed
-                  ? 'md:col-span-1 lg:hidden lg:opacity-0 lg:scale-95'
-                  : 'md:col-span-1 lg:opacity-100 lg:scale-100'
+                  ? 'lg:hidden lg:opacity-0 lg:scale-95'
+                  : 'lg:opacity-100 lg:scale-100'
               }`}
             >
               <EpisodeSelector
@@ -2530,6 +2555,7 @@ function PlayPageClient() {
                 sourceSearchError={sourceSearchError}
                 precomputedVideoInfo={precomputedVideoInfo}
                 optimizationEnabled={optimizationEnabled}
+                sourceHealthMap={sourceHealthMap}
               />
             </div>
           </div>

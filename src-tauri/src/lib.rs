@@ -60,11 +60,16 @@ pub fn run() {
             app.manage(commands::video::SearchCacheManager::new());
             app.manage(commands::search::SearchResultCache::new());
             app.manage(commands::search::FilterResultCache::new());
-            app.manage(commands::source_intelligence::SourceIntelligenceManager::new());
             app.manage(commands::recommendation::RecommendationEngine::new());
             app.manage(commands::analytics::AnalyticsEngine::new());
             let conn = db_init::init_db(app.handle());
             let db = db_client::Db::new(conn);
+            let source_intelligence_manager =
+                commands::source_intelligence::SourceIntelligenceManager::new();
+            if let Err(error) = source_intelligence_manager.load_from_db(&db) {
+                log::warn!("failed to load source intelligence stats: {}", error);
+            }
+            app.manage(source_intelligence_manager);
 
             // 启动时修复空元数据（回填 image_cache、推断 content_pool category）
             if let Ok(stats) = commands::recommendation::fix_empty_metadata_direct(&db) {

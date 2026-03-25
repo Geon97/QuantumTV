@@ -381,13 +381,35 @@ const CollapsibleTab = ({
 // 可拖拽的源项组件
 interface SortableSourceItemProps {
   source: any;
+  stats?: SourceHealthStats;
   onToggle: () => void;
   onDelete: () => void;
   onEdit: () => void;
 }
 
+interface SourceHealthStats {
+  source_key: string;
+  total_tests: number;
+  successful_tests: number;
+  failed_tests: number;
+  success_rate: number;
+  avg_response_time_ms: number;
+  last_success_time?: number | null;
+  last_failure_time?: number | null;
+  last_available_time?: number | null;
+  consecutive_failures: number;
+  auto_degraded: boolean;
+  recent_results: {
+    success: boolean;
+    response_time_ms: number;
+    error_reason?: string | null;
+    timestamp: number;
+  }[];
+}
+
 const SortableSourceItem = ({
   source,
+  stats,
   onToggle,
   onDelete,
   onEdit,
@@ -435,6 +457,25 @@ const SortableSourceItem = ({
         <p className='text-xs text-gray-500 dark:text-gray-400 truncate'>
           {source.api}
         </p>
+        {stats && (
+          <div className='mt-1 flex flex-wrap items-center gap-1.5 text-[11px]'>
+            <span
+              className={`px-1.5 py-0.5 rounded ${
+                stats.auto_degraded
+                  ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                  : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+              }`}
+            >
+              {stats.auto_degraded ? '已自动降级' : '健康'}
+            </span>
+            <span className='px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'>
+              成功率 {stats.success_rate.toFixed(0)}%
+            </span>
+            <span className='px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'>
+              均响 {stats.avg_response_time_ms || '--'}ms
+            </span>
+          </div>
+        )}
       </div>
 
       <div className='flex items-center gap-2'>
@@ -480,6 +521,7 @@ interface SourceConfigProps {
 const SourceConfig = ({ config, onUpdate, showAlert }: SourceConfigProps) => {
   const [editingSource, setEditingSource] = useState<any | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [sourceStats, setSourceStats] = useState<SourceHealthStats[]>([]);
   const [newSource, setNewSource] = useState({
     key: '',
     name: '',
@@ -496,6 +538,43 @@ const SourceConfig = ({ config, onUpdate, showAlert }: SourceConfigProps) => {
   );
 
   const sources = config?.SourceConfig || [];
+  const sourceStatsMap = new Map(
+    sourceStats.map((stats) => [stats.source_key, stats] as const),
+  );
+  const sourceHealthRows = [...sources]
+    .map((source) => ({
+      source,
+      stats: sourceStatsMap.get(source.key),
+    }))
+    .sort((a, b) => {
+      const aTime = a.stats?.avg_response_time_ms || Number.MAX_SAFE_INTEGER;
+      const bTime = b.stats?.avg_response_time_ms || Number.MAX_SAFE_INTEGER;
+
+      return (
+        Number(Boolean(a.stats?.auto_degraded)) -
+          Number(Boolean(b.stats?.auto_degraded)) ||
+        aTime - bTime ||
+        a.source.name.localeCompare(b.source.name)
+      );
+    });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void invoke<SourceHealthStats[]>('get_all_source_stats')
+      .then((stats) => {
+        if (!cancelled) {
+          setSourceStats(stats);
+        }
+      })
+      .catch((error) => {
+        console.warn('读取视频源健康状态失败:', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [config]);
 
   const handleDragEnd = (event: any) => {
     const { active, over } = event;
@@ -616,6 +695,7 @@ const SourceConfig = ({ config, onUpdate, showAlert }: SourceConfigProps) => {
         <p className='text-sm text-gray-600 dark:text-gray-400'>
           共 {sources.length} 个视频源，
           {sources.filter((s) => !s.disabled).length} 个已启用
+          {sourceHealthRows.length > 1 ? '，列表按平均响应时间排序' : ''}
         </p>
         <button
           onClick={() => setIsAddModalOpen(true)}
@@ -625,7 +705,6 @@ const SourceConfig = ({ config, onUpdate, showAlert }: SourceConfigProps) => {
           添加源
         </button>
       </div>
-
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -633,14 +712,15 @@ const SourceConfig = ({ config, onUpdate, showAlert }: SourceConfigProps) => {
         onDragEnd={handleDragEnd}
       >
         <SortableContext
-          items={sources.map((s) => s.key)}
+          items={sourceHealthRows.map(({ source }) => source.key)}
           strategy={verticalListSortingStrategy}
         >
           <div className='space-y-2'>
-            {sources.map((source) => (
+            {sourceHealthRows.map(({ source, stats }) => (
               <SortableSourceItem
                 key={source.key}
                 source={source}
+                stats={stats}
                 onToggle={() => handleToggle(source.key)}
                 onDelete={() => handleDelete(source.key)}
                 onEdit={() => handleEdit(source)}

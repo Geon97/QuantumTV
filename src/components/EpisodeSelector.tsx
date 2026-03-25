@@ -10,7 +10,11 @@ import React, {
   useState,
 } from 'react';
 
-import { SearchResult, SourceTestResult } from '@/lib/types';
+import {
+  SearchResult,
+  SourceHealthStats,
+  SourceTestResult,
+} from '@/lib/types';
 import { useProxyImage } from '@/hooks/useProxyImage';
 
 // 定义视频信息类型
@@ -62,6 +66,7 @@ interface EpisodeSelectorProps {
   precomputedVideoInfo?: Map<string, VideoInfo>;
   /** 是否启用优选和测速功能 */
   optimizationEnabled?: boolean;
+  sourceHealthMap?: ReadonlyMap<string, SourceHealthStats>;
 }
 
 /**
@@ -82,6 +87,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   sourceSearchError = null,
   precomputedVideoInfo,
   optimizationEnabled = true,
+  sourceHealthMap,
 }) => {
   const router = useRouter();
   const pageCount = Math.ceil(totalEpisodes / episodesPerPage);
@@ -150,6 +156,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     try {
       const result = await invoke<SourceTestResult>('test_video_source_command', {
         m3u8Url: episodeUrl,
+        sourceKey: source.source,
       });
 
       // 转换字段名：Rust 使用 snake_case，前端使用 camelCase
@@ -372,7 +379,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   );
 
   return (
-    <div className='md:ml-2 px-4 py-0 h-full rounded-xl bg-black/10 dark:bg-white/5 flex flex-col border border-white/0 dark:border-white/30 overflow-hidden'>
+    <div className='md:ml-2 px-3 sm:px-4 py-0 h-full rounded-2xl bg-black/10 dark:bg-white/5 flex flex-col border border-white/0 dark:border-white/20 overflow-hidden'>
       {/* 主要的 Tab 切换 - 无缝融入设计 */}
       <div className='flex mb-1 -mx-6 shrink-0'>
         {totalEpisodes > 1 && (
@@ -561,32 +568,33 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                     const isCurrentSource =
                       source.source?.toString() === currentSource?.toString() &&
                       source.id?.toString() === currentId?.toString();
+                    const sourceHealth = sourceHealthMap?.get(source.source);
                     return (
                       <div
                         key={`${source.source}-${source.id}`}
                         onClick={() =>
                           !isCurrentSource && handleSourceClick(source)
                         }
-                        className={`flex items-start gap-3 px-2 py-3 rounded-lg transition-all select-none duration-200 relative
+                        className={`flex items-start gap-3 px-2.5 py-3 sm:px-3 rounded-xl transition-all select-none duration-200 relative border
                       ${
                         isCurrentSource
-                          ? 'bg-green-500/10 dark:bg-green-500/20 border-green-500/30 border'
-                          : 'hover:bg-gray-200/50 dark:hover:bg-white/10 hover:scale-[1.02] cursor-pointer'
+                          ? 'bg-green-500/10 dark:bg-green-500/20 border-green-500/30'
+                          : 'border-transparent hover:bg-gray-200/50 dark:hover:bg-white/10 hover:scale-[1.01] cursor-pointer'
                       }`.trim()}
                       >
                         {/* 封面 */}
-                        <div className='shrink-0 w-12 h-20 bg-gray-300 dark:bg-gray-600 rounded overflow-hidden'>
+                        <div className='shrink-0 w-12 h-[4.5rem] sm:h-20 sm:w-14 bg-gray-300 dark:bg-gray-600 rounded-lg overflow-hidden'>
                           {source.episodes && source.episodes.length > 0 && (
                             <SourcePoster poster={source.poster} title={source.title} />
                           )}
                         </div>
 
                         {/* 信息区域 */}
-                        <div className='flex-1 min-w-0 flex flex-col justify-between h-20'>
+                        <div className='flex-1 min-w-0 flex flex-col justify-between min-h-[4.5rem] sm:h-20'>
                           {/* 标题和分辨率 - 顶部 */}
-                          <div className='flex items-start justify-between gap-3 h-6'>
+                          <div className='flex items-start justify-between gap-2 min-h-6'>
                             <div className='flex-1 min-w-0 relative group/title'>
-                              <h3 className='font-medium text-base truncate text-gray-900 dark:text-gray-100 leading-none'>
+                              <h3 className='font-medium text-sm sm:text-base truncate text-gray-900 dark:text-gray-100 leading-tight'>
                                 {source.title}
                               </h3>
                               {/* 标题级别的 tooltip - 第一个元素不显示 */}
@@ -637,10 +645,29 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                           </div>
 
                           {/* 源名称和集数信息 - 垂直居中 */}
-                          <div className='flex items-center justify-between'>
+                          <div className='flex flex-wrap items-center gap-2'>
                             <span className='text-xs px-2 py-1 border border-gray-500/60 rounded text-gray-700 dark:text-gray-300'>
                               {source.source_name}
                             </span>
+                            {sourceHealth && (
+                              <>
+                                <span
+                                  className={`text-[11px] px-2 py-1 rounded ${
+                                    sourceHealth.auto_degraded
+                                      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                                      : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                                  }`}
+                                >
+                                  {sourceHealth.auto_degraded ? '已降级' : '健康'}
+                                </span>
+                                <span className='text-[11px] text-gray-500 dark:text-gray-400'>
+                                  成功率 {sourceHealth.success_rate.toFixed(0)}%
+                                </span>
+                                <span className='text-[11px] text-gray-500 dark:text-gray-400'>
+                                  均响 {sourceHealth.avg_response_time_ms || '--'}ms
+                                </span>
+                              </>
+                            )}
                             {source.episodes.length > 1 && (
                               <span className='text-xs text-gray-500 dark:text-gray-400 font-medium'>
                                 {source.episodes.length} 集
@@ -649,14 +676,14 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                           </div>
 
                           {/* 网络信息 - 底部 */}
-                          <div className='flex items-end h-6'>
+                          <div className='flex items-end min-h-6'>
                             {(() => {
                               const sourceKey = `${source.source}-${source.id}`;
                               const videoInfo = videoInfoMap.get(sourceKey);
                               if (videoInfo) {
                                 if (!videoInfo.hasError) {
                                   return (
-                                    <div className='flex items-end gap-3 text-xs'>
+                                    <div className='flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] sm:text-xs'>
                                       <div className='text-green-600 dark:text-green-400 font-medium text-xs'>
                                         {videoInfo.loadSpeed}
                                       </div>

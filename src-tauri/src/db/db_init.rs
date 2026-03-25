@@ -178,6 +178,31 @@ pub fn init_db(app: &tauri::AppHandle) -> Connection {
         "#,
     )
     .expect("failed to create content_pool table");
+    // 视频源智能统计表
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS source_intelligence_stats (
+            source_key TEXT PRIMARY KEY,
+            total_tests INTEGER NOT NULL DEFAULT 0,
+            successful_tests INTEGER NOT NULL DEFAULT 0,
+            total_response_time_ms INTEGER NOT NULL DEFAULT 0,
+            last_success_time INTEGER,
+            last_failure_time INTEGER,
+            last_available_time INTEGER,
+            consecutive_failures INTEGER NOT NULL DEFAULT 0,
+            auto_degraded INTEGER NOT NULL DEFAULT 0,
+            recent_results_json TEXT NOT NULL DEFAULT '[]',
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_source_intelligence_avg_time
+            ON source_intelligence_stats(auto_degraded, total_response_time_ms, successful_tests);
+
+        CREATE INDEX IF NOT EXISTS idx_source_intelligence_updated_at
+            ON source_intelligence_stats(updated_at DESC);
+        "#,
+    )
+    .expect("failed to create source_intelligence_stats table");
 
     // 数据库迁移：为 image_cache 表添加新字段（如果不存在）
     if user_version < 1 {

@@ -89,6 +89,26 @@ export interface PlayerInitialState {
   optimization_enabled: boolean;
 }
 
+export interface SourceHealthStats {
+  source_key: string;
+  total_tests: number;
+  successful_tests: number;
+  failed_tests: number;
+  success_rate: number;
+  avg_response_time_ms: number;
+  last_success_time?: number | null;
+  last_failure_time?: number | null;
+  last_available_time?: number | null;
+  consecutive_failures: number;
+  auto_degraded: boolean;
+  recent_results: {
+    success: boolean;
+    response_time_ms: number;
+    error_reason?: string | null;
+    timestamp: number;
+  }[];
+}
+
 export interface ChangePlaySourceResponse {
   detail: SearchResult;
   target_episode_index: number;

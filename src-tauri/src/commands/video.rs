@@ -1,10 +1,13 @@
 use crate::commands::recommendation::{invalidate_recommendation_cache, RecommendationEngine};
+use crate::commands::source_intelligence::SourceIntelligenceManager;
 use crate::storage::StorageManager;
 use image::{GenericImageView, ImageOutputFormat};
 use moka::future::Cache;
 use quantumtv_core::playback::{SkipAction, SkipDetection};
 use quantumtv_core::types::SearchResult;
-use quantumtv_core::{prefer_best_source, test_video_source, SourceTestResult};
+use quantumtv_core::{
+    prefer_best_source, test_video_source, SourceTestResult as CoreSourceTestResult,
+};
 use regex::Regex;
 use reqwest::header::{
     HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, RANGE, REFERER, USER_AGENT,
@@ -217,7 +220,7 @@ pub struct InitializePlayerByQueryRequest {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InitializePlayerByQueryResponse {
     pub results: Vec<SearchResult>,
-    pub test_results: Vec<(String, SourceTestResult)>,
+    pub test_results: Vec<(String, CoreSourceTestResult)>,
 }
 
 #[derive(Debug, Clone)]
@@ -336,6 +339,92 @@ fn reorder_results_with_best(best: &SearchResult, results: Vec<SearchResult>) ->
     ordered
 }
 
+fn source_lookup_key(result: &SearchResult) -> String {
+    format!("{}-{}", result.source, result.id)
+}
+
+fn reorder_results_with_source_intelligence(
+    results: Vec<SearchResult>,
+    manager: &SourceIntelligenceManager,
+) -> Vec<SearchResult> {
+    if results.len() <= 1 {
+        return results;
+    }
+
+    let mut source_keys = Vec::new();
+    for result in &results {
+        if !source_keys.iter().any(|key| key == &result.source) {
+            source_keys.push(result.source.clone());
+        }
+    }
+
+    let ranked_keys = manager.rank_sources(source_keys);
+    let rank_map: HashMap<String, usize> = ranked_keys
+        .into_iter()
+        .enumerate()
+        .map(|(index, key)| (key, index))
+        .collect();
+
+    let mut indexed_results: Vec<(usize, SearchResult)> = results.into_iter().enumerate().collect();
+    indexed_results.sort_by(|a, b| {
+        let a_rank = rank_map.get(&a.1.source).copied().unwrap_or(usize::MAX);
+        let b_rank = rank_map.get(&b.1.source).copied().unwrap_or(usize::MAX);
+        a_rank.cmp(&b_rank).then(a.0.cmp(&b.0))
+    });
+
+    indexed_results
+        .into_iter()
+        .map(|(_, result)| result)
+        .collect()
+}
+
+fn has_source_intelligence(results: &[SearchResult], manager: &SourceIntelligenceManager) -> bool {
+    results
+        .iter()
+        .any(|result| manager.has_stats(&result.source))
+}
+
+fn persist_source_test_results(
+    manager: &SourceIntelligenceManager,
+    db: &crate::db::db_client::Db,
+    results: &[SearchResult],
+    test_results: &[(String, CoreSourceTestResult)],
+) {
+    let lookup_map: HashMap<String, String> = results
+        .iter()
+        .map(|result| (source_lookup_key(result), result.source.clone()))
+        .collect();
+
+    for (lookup_key, test_result) in test_results {
+        if let Some(source_key) = lookup_map.get(lookup_key) {
+            let _ = manager.record_runtime_test_result_persisted(
+                db,
+                source_key.clone(),
+                !test_result.has_error,
+                test_result.ping_time,
+                if test_result.has_error {
+                    Some("temporary source test failed".to_string())
+                } else {
+                    None
+                },
+            );
+        }
+    }
+}
+
+fn persist_encountered_sources(
+    manager: &SourceIntelligenceManager,
+    db: &crate::db::db_client::Db,
+    results: &[SearchResult],
+) {
+    let source_keys = results
+        .iter()
+        .map(|result| result.source.clone())
+        .collect::<Vec<_>>();
+
+    let _ = manager.ensure_sources_persisted(db, source_keys);
+}
+
 async fn select_best_source_from_search(
     query: String,
     fallback_year: Option<String>,
@@ -343,6 +432,8 @@ async fn select_best_source_from_search(
     app_handle: tauri::AppHandle,
     storage: State<'_, StorageManager>,
     cache: State<'_, SearchCacheManager>,
+    db: &crate::db::db_client::Db,
+    source_manager: &SourceIntelligenceManager,
 ) -> Result<GetVideoDetailOptimizedResponse, String> {
     let search_results = search(query.clone(), app_handle, storage, cache)
         .await
@@ -352,7 +443,7 @@ async fn select_best_source_from_search(
         return Err("Fallback search returned no results".to_string());
     }
 
-    let candidates = choose_fallback_candidates(
+    let mut candidates = choose_fallback_candidates(
         search_results,
         &query,
         fallback_year.as_deref(),
@@ -363,13 +454,17 @@ async fn select_best_source_from_search(
         return Err("No fallback candidates available".to_string());
     }
 
+    candidates = reorder_results_with_source_intelligence(candidates, source_manager);
+
     let best_source = if candidates.len() == 1 {
+        candidates[0].clone()
+    } else if has_source_intelligence(&candidates, source_manager) {
         candidates[0].clone()
     } else {
         let client = get_video_client();
-        prefer_best_source(client, candidates.clone())
-            .await
-            .map(|(best, _)| best)?
+        let (best, tests) = prefer_best_source(client, candidates.clone()).await?;
+        persist_source_test_results(source_manager, db, &candidates, &tests);
+        best
     };
 
     let other_sources = candidates
@@ -383,6 +478,46 @@ async fn select_best_source_from_search(
         detail: best_source,
         other_sources,
     })
+}
+
+async fn probe_and_persist_source_health(
+    manager: &SourceIntelligenceManager,
+    db: &crate::db::db_client::Db,
+    detail: &SearchResult,
+    episode_index: usize,
+) {
+    let probe_url = detail
+        .episodes
+        .get(episode_index)
+        .or_else(|| detail.episodes.get(0));
+
+    if let Some(url) = probe_url {
+        let client = get_video_client();
+        match test_video_source(client, url).await {
+            Ok(result) => {
+                let _ = manager.record_runtime_test_result_persisted(
+                    db,
+                    detail.source.clone(),
+                    !result.has_error,
+                    result.ping_time,
+                    if result.has_error {
+                        Some("playback probe failed".to_string())
+                    } else {
+                        None
+                    },
+                );
+            }
+            Err(_) => {
+                let _ = manager.record_runtime_test_result_persisted(
+                    db,
+                    detail.source.clone(),
+                    false,
+                    0,
+                    Some("playback probe failed".to_string()),
+                );
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -2180,17 +2315,19 @@ pub async fn get_douban_data(
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PreferBestSourceResponse {
     pub best_source: SearchResult,
-    pub test_results: Vec<(String, SourceTestResult)>,
+    pub test_results: Vec<(String, CoreSourceTestResult)>,
 }
 
 /// 从多个播放源中选择最佳源
 #[tauri::command]
 pub async fn prefer_best_source_command(
     sources: Vec<SearchResult>,
+    db: State<'_, crate::db::db_client::Db>,
+    source_manager: State<'_, SourceIntelligenceManager>,
 ) -> Result<PreferBestSourceResponse, String> {
     let client = get_video_client();
-
-    let (best_source, test_results) = prefer_best_source(client, sources).await?;
+    let (best_source, test_results) = prefer_best_source(client, sources.clone()).await?;
+    persist_source_test_results(&source_manager, &db, &sources, &test_results);
 
     Ok(PreferBestSourceResponse {
         best_source,
@@ -2200,9 +2337,30 @@ pub async fn prefer_best_source_command(
 
 /// 测试单个视频源质量
 #[tauri::command]
-pub async fn test_video_source_command(m3u8_url: String) -> Result<SourceTestResult, String> {
+pub async fn test_video_source_command(
+    m3u8_url: String,
+    source_key: Option<String>,
+    db: State<'_, crate::db::db_client::Db>,
+    source_manager: State<'_, SourceIntelligenceManager>,
+) -> Result<CoreSourceTestResult, String> {
     let client = get_video_client();
-    test_video_source(client, &m3u8_url).await
+    let result = test_video_source(client, &m3u8_url).await?;
+
+    if let Some(source_key) = source_key.filter(|key| !key.trim().is_empty()) {
+        let _ = source_manager.record_runtime_test_result_persisted(
+            &db,
+            source_key,
+            !result.has_error,
+            result.ping_time,
+            if result.has_error {
+                Some("manual source test failed".to_string())
+            } else {
+                None
+            },
+        );
+    }
+
+    Ok(result)
 }
 
 #[tauri::command]
@@ -2211,6 +2369,8 @@ pub async fn initialize_player_by_query(
     app_handle: tauri::AppHandle,
     storage: State<'_, StorageManager>,
     cache: State<'_, SearchCacheManager>,
+    db: State<'_, crate::db::db_client::Db>,
+    source_manager: State<'_, SourceIntelligenceManager>,
 ) -> Result<InitializePlayerByQueryResponse, String> {
     let query = request.query.trim();
     if query.is_empty() {
@@ -2232,10 +2392,17 @@ pub async fn initialize_player_by_query(
         filter_sources_for_fallback(&results, filter_title, filter_year, search_type)
     };
 
+    filtered = reorder_results_with_source_intelligence(filtered, &source_manager);
+    persist_encountered_sources(&source_manager, &db, &filtered);
+
     let mut test_results = Vec::new();
-    if request.prefer_best && filtered.len() > 1 {
+    if request.prefer_best
+        && filtered.len() > 1
+        && !has_source_intelligence(&filtered, &source_manager)
+    {
         let client = get_video_client();
         let (best, tests) = prefer_best_source(client, filtered.clone()).await?;
+        persist_source_test_results(&source_manager, &db, &filtered, &tests);
         test_results = tests;
         filtered = reorder_results_with_best(&best, filtered);
     }
@@ -2247,15 +2414,34 @@ pub async fn initialize_player_by_query(
 }
 
 #[tauri::command]
-pub fn change_play_source(
+pub async fn change_play_source(
     request: ChangePlaySourceRequest,
     db: State<'_, crate::db::db_client::Db>,
+    source_manager: State<'_, SourceIntelligenceManager>,
 ) -> Result<ChangePlaySourceResponse, String> {
-    let detail = request
-        .available_sources
-        .into_iter()
-        .find(|source| source.source == request.new_source && source.id == request.new_id)
-        .ok_or_else(|| "未找到匹配结果".to_string())?;
+    let ordered_sources =
+        reorder_results_with_source_intelligence(request.available_sources, &source_manager);
+    let requested_is_degraded = source_manager.should_skip_source(&request.new_source);
+    let detail = if requested_is_degraded {
+        ordered_sources
+            .iter()
+            .find(|source| source.source != request.new_source)
+            .cloned()
+            .or_else(|| {
+                ordered_sources
+                    .iter()
+                    .find(|source| {
+                        source.source == request.new_source && source.id == request.new_id
+                    })
+                    .cloned()
+            })
+    } else {
+        ordered_sources
+            .iter()
+            .find(|source| source.source == request.new_source && source.id == request.new_id)
+            .cloned()
+    }
+    .ok_or_else(|| "未找到匹配结果".to_string())?;
 
     let old_key = match (
         request.current_source.as_deref(),
@@ -2266,7 +2452,7 @@ pub fn change_play_source(
         }
         _ => None,
     };
-    let new_key = format!("{}+{}", request.new_source, request.new_id);
+    let new_key = format!("{}+{}", detail.source, detail.id);
 
     migrate_play_source_state(
         &db,
@@ -2281,6 +2467,13 @@ pub fn change_play_source(
         request.current_play_time,
         request.resume_time,
     );
+    probe_and_persist_source_health(
+        &source_manager,
+        &db,
+        &detail,
+        resolved.target_episode_index.max(0) as usize,
+    )
+    .await;
 
     Ok(ChangePlaySourceResponse {
         detail,
@@ -2377,6 +2570,7 @@ pub async fn initialize_player_view(
     storage: State<'_, StorageManager>,
     cache: State<'_, SearchCacheManager>,
     db: State<'_, crate::db::db_client::Db>,
+    source_manager: State<'_, SourceIntelligenceManager>,
 ) -> Result<PlayerInitialState, String> {
     // 生成 storage key
     let key = format!("{}+{}", source, id);
@@ -2521,26 +2715,83 @@ pub async fn initialize_player_view(
                 app_handle.clone(),
                 storage.clone(),
                 cache.clone(),
+                &db,
+                &source_manager,
             )
             .await?
         }
     };
 
-    if let Some(record) = play_record_meta.as_ref() {
-        if let Some(query) = fallback_title.clone() {
-            let episode_index = normalize_episode_index(
-                record.episode_index,
-                detail_response.detail.episodes.len(),
-            ) as usize;
-            let test_url = detail_response
-                .detail
-                .episodes
-                .get(episode_index)
-                .or_else(|| detail_response.detail.episodes.get(0));
+    detail_response.other_sources =
+        reorder_results_with_source_intelligence(detail_response.other_sources, &source_manager);
 
-            if let Some(url) = test_url {
-                let client = get_video_client();
-                if test_video_source(client, url).await.is_err() {
+    if source_manager.should_skip_source(&detail_response.detail.source) {
+        if let Some(query) = fallback_title.clone() {
+            if let Ok(fallback) = select_best_source_from_search(
+                query,
+                fallback_year.clone(),
+                search_type,
+                app_handle.clone(),
+                storage.clone(),
+                cache.clone(),
+                &db,
+                &source_manager,
+            )
+            .await
+            {
+                detail_response = fallback;
+            }
+        }
+    }
+
+    let probe_episode_index = play_record_meta
+        .as_ref()
+        .map(|record| {
+            normalize_episode_index(record.episode_index, detail_response.detail.episodes.len())
+        })
+        .unwrap_or(0)
+        .max(0) as usize;
+
+    let probe_result = {
+        let probe_url = detail_response
+            .detail
+            .episodes
+            .get(probe_episode_index)
+            .or_else(|| detail_response.detail.episodes.get(0))
+            .cloned();
+
+        if let Some(url) = probe_url {
+            let client = get_video_client();
+            Some(test_video_source(client, &url).await)
+        } else {
+            None
+        }
+    };
+
+    if let Some(result) = probe_result {
+        match result {
+            Ok(result) => {
+                let _ = source_manager.record_runtime_test_result_persisted(
+                    &db,
+                    detail_response.detail.source.clone(),
+                    !result.has_error,
+                    result.ping_time,
+                    if result.has_error {
+                        Some("playback probe failed".to_string())
+                    } else {
+                        None
+                    },
+                );
+            }
+            Err(_) => {
+                let _ = source_manager.record_runtime_test_result_persisted(
+                    &db,
+                    detail_response.detail.source.clone(),
+                    false,
+                    0,
+                    Some("playback probe failed".to_string()),
+                );
+                if let Some(query) = fallback_title.clone() {
                     if let Ok(fallback) = select_best_source_from_search(
                         query,
                         fallback_year.clone(),
@@ -2548,6 +2799,8 @@ pub async fn initialize_player_view(
                         app_handle.clone(),
                         storage.clone(),
                         cache.clone(),
+                        &db,
+                        &source_manager,
                     )
                     .await
                     {
@@ -2557,6 +2810,11 @@ pub async fn initialize_player_view(
             }
         }
     }
+
+    let mut encountered_sources = Vec::with_capacity(1 + detail_response.other_sources.len());
+    encountered_sources.push(detail_response.detail.clone());
+    encountered_sources.extend(detail_response.other_sources.clone());
+    persist_encountered_sources(&source_manager, &db, &encountered_sources);
 
     let play_record = play_record_meta.map(|record| PlayRecordInfo {
         episode_index: normalize_episode_index(
