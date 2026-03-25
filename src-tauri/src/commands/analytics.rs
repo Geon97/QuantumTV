@@ -12,6 +12,15 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::State;
 
+fn hour_to_time_slot(hour: u8) -> &'static str {
+    match hour {
+        0..=5 => "凌晨",
+        6..=11 => "上午",
+        12..=17 => "下午",
+        _ => "晚上",
+    }
+}
+
 /// 用户行为统计
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserBehaviorStats {
@@ -70,6 +79,22 @@ pub struct AnalyticsEngine {
 }
 
 /// 统计缓存
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchInsights {
+    pub preferred_time_slot: Option<String>,
+    pub streak_days: i64,
+    pub recent_favorites: Vec<RecentFavoriteInsight>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecentFavoriteInsight {
+    pub title: String,
+    pub source_name: String,
+    pub year: String,
+    pub cover: String,
+    pub save_time: i64,
+}
+
 #[derive(Debug, Clone)]
 struct AnalyticsCache {
     user_stats: Option<(UserBehaviorStats, Instant)>,
@@ -77,6 +102,7 @@ struct AnalyticsCache {
     watch_trends: Option<(Vec<WatchTrend>, Instant)>,
     category_stats: Option<(Vec<CategoryStats>, Instant)>,
     hourly_stats: Option<(Vec<HourlyStats>, Instant)>,
+    watch_insights: Option<(WatchInsights, Instant)>,
 }
 
 impl AnalyticsCache {
@@ -87,6 +113,7 @@ impl AnalyticsCache {
             watch_trends: None,
             category_stats: None,
             hourly_stats: None,
+            watch_insights: None,
         }
     }
 }
@@ -180,7 +207,7 @@ impl AnalyticsEngine {
         let result: Option<i64> = db
             .with_conn(|conn| {
                 let result = conn.query_row(
-                    "SELECT strftime('%H', datetime(save_time, 'unixepoch')) as hour
+                    "SELECT CAST(strftime('%H', datetime(save_time, 'unixepoch', 'localtime')) AS INTEGER) as hour
                  FROM play_records
                  GROUP BY hour
                  ORDER BY COUNT(*) DESC
@@ -422,7 +449,7 @@ impl AnalyticsEngine {
         let stats: Vec<HourlyStats> = db.with_conn(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT
-                    CAST(strftime('%H', datetime(save_time, 'unixepoch')) AS INTEGER) as hour,
+                    CAST(strftime('%H', datetime(save_time, 'unixepoch', 'localtime')) AS INTEGER) as hour,
                     COUNT(*) as watch_count,
                     AVG(play_time) as avg_duration
                  FROM play_records
@@ -455,6 +482,92 @@ impl AnalyticsEngine {
     }
 
     /// 清除缓存
+    pub fn get_watch_insights(&self, db: &Db) -> Result<WatchInsights, String> {
+        {
+            let cache = self.cache.lock().unwrap();
+            if let Some((insights, timestamp)) = &cache.watch_insights {
+                if timestamp.elapsed() < self.cache_ttl {
+                    return Ok(insights.clone());
+                }
+            }
+        }
+
+        let preferred_time_slot = self
+            .calculate_most_active_hour(db)?
+            .map(|hour| hour_to_time_slot(hour).to_string());
+        let streak_days = self.calculate_watch_streak_days(db)?;
+        let recent_favorites = self.get_recent_favorites(db, 5)?;
+
+        let insights = WatchInsights {
+            preferred_time_slot,
+            streak_days,
+            recent_favorites,
+        };
+
+        {
+            let mut cache = self.cache.lock().unwrap();
+            cache.watch_insights = Some((insights.clone(), Instant::now()));
+        }
+
+        Ok(insights)
+    }
+
+    fn calculate_watch_streak_days(&self, db: &Db) -> Result<i64, String> {
+        let day_numbers: Vec<i64> = db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT DISTINCT
+                    CAST(julianday(date(datetime(save_time, 'unixepoch', 'localtime'))) AS INTEGER) AS day_number
+                 FROM play_records
+                 ORDER BY day_number DESC",
+            )?;
+
+            let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
+            rows.collect::<Result<Vec<i64>, _>>()
+        })?;
+
+        if day_numbers.is_empty() {
+            return Ok(0);
+        }
+
+        let mut streak_days = 1i64;
+        for pair in day_numbers.windows(2) {
+            if pair[0] - pair[1] == 1 {
+                streak_days += 1;
+            } else {
+                break;
+            }
+        }
+
+        Ok(streak_days)
+    }
+
+    fn get_recent_favorites(
+        &self,
+        db: &Db,
+        limit: usize,
+    ) -> Result<Vec<RecentFavoriteInsight>, String> {
+        db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT title, source_name, year, cover, save_time
+                 FROM favorites
+                 ORDER BY save_time DESC
+                 LIMIT ?1",
+            )?;
+
+            let rows = stmt.query_map([limit as i64], |row| {
+                Ok(RecentFavoriteInsight {
+                    title: row.get(0)?,
+                    source_name: row.get(1)?,
+                    year: row.get(2)?,
+                    cover: row.get(3)?,
+                    save_time: row.get(4)?,
+                })
+            })?;
+
+            rows.collect::<Result<Vec<RecentFavoriteInsight>, _>>()
+        })
+    }
+
     pub fn clear_cache(&self) {
         let mut cache = self.cache.lock().unwrap();
         *cache = AnalyticsCache::new();
@@ -537,6 +650,15 @@ pub fn get_hourly_stats(
     engine.get_hourly_stats(&db)
 }
 
+/// 获取轻量观看洞察
+#[tauri::command]
+pub fn get_watch_insights(
+    db: State<'_, Db>,
+    engine: State<'_, AnalyticsEngine>,
+) -> Result<WatchInsights, String> {
+    engine.get_watch_insights(&db)
+}
+
 /// 生成完整统计报表
 #[tauri::command]
 pub fn generate_analytics_report(
@@ -556,6 +678,43 @@ pub fn clear_analytics_cache(engine: State<'_, AnalyticsEngine>) -> Result<(), S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::db_client::Db;
+    use rusqlite::{params, Connection};
+
+    fn setup_insights_test_db() -> Db {
+        let conn = Connection::open_in_memory().expect("open db");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE play_records (
+              key TEXT PRIMARY KEY,
+              title TEXT NOT NULL,
+              source_name TEXT NOT NULL,
+              year TEXT,
+              cover TEXT,
+              episode_index INTEGER,
+              total_episodes INTEGER,
+              play_time INTEGER,
+              total_time INTEGER,
+              save_time INTEGER,
+              search_title TEXT
+            );
+
+            CREATE TABLE favorites (
+              key TEXT PRIMARY KEY,
+              title TEXT NOT NULL,
+              source_name TEXT NOT NULL,
+              year TEXT,
+              cover TEXT,
+              episode_index INTEGER,
+              total_episodes INTEGER,
+              save_time INTEGER,
+              search_title TEXT
+            );
+            "#,
+        )
+        .expect("init analytics tables");
+        Db::new(conn)
+    }
 
     #[test]
     fn test_analytics_engine_creation() {
@@ -672,5 +831,58 @@ mod tests {
 
         let cache = engine.cache.lock().unwrap();
         assert!(cache.user_stats.is_none());
+    }
+
+    #[test]
+    fn test_hour_to_time_slot_covers_boundaries() {
+        assert_eq!(hour_to_time_slot(0), "凌晨");
+        assert_eq!(hour_to_time_slot(6), "上午");
+        assert_eq!(hour_to_time_slot(12), "下午");
+        assert_eq!(hour_to_time_slot(18), "晚上");
+        assert_eq!(hour_to_time_slot(23), "晚上");
+    }
+
+    #[test]
+    fn test_get_watch_insights_returns_streak_and_recent_favorites() {
+        let db = setup_insights_test_db();
+        let engine = AnalyticsEngine::new();
+
+        db.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO play_records (key, title, source_name, year, cover, episode_index, total_episodes, play_time, total_time, save_time, search_title)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, strftime('%s', '2026-03-25 12:00:00'), ?10)",
+                params!["play-1", "剧集 A", "源 A", "2026", "", 1, 12, 1200, 2400, "剧集 A"],
+            )?;
+            conn.execute(
+                "INSERT INTO play_records (key, title, source_name, year, cover, episode_index, total_episodes, play_time, total_time, save_time, search_title)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, strftime('%s', '2026-03-24 13:00:00'), ?10)",
+                params!["play-2", "剧集 B", "源 A", "2026", "", 2, 12, 1200, 2400, "剧集 B"],
+            )?;
+            conn.execute(
+                "INSERT INTO play_records (key, title, source_name, year, cover, episode_index, total_episodes, play_time, total_time, save_time, search_title)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, strftime('%s', '2026-03-23 11:30:00'), ?10)",
+                params!["play-3", "剧集 C", "源 B", "2025", "", 3, 12, 1200, 2400, "剧集 C"],
+            )?;
+            conn.execute(
+                "INSERT INTO favorites (key, title, source_name, year, cover, episode_index, total_episodes, save_time, search_title)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, strftime('%s', '2026-03-25 22:00:00'), ?8)",
+                params!["fav-1", "收藏 A", "源 A", "2026", "cover-a", 1, 12, "收藏 A"],
+            )?;
+            conn.execute(
+                "INSERT INTO favorites (key, title, source_name, year, cover, episode_index, total_episodes, save_time, search_title)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, strftime('%s', '2026-03-24 18:00:00'), ?8)",
+                params!["fav-2", "收藏 B", "源 B", "2025", "cover-b", 1, 1, "收藏 B"],
+            )?;
+            Ok::<(), rusqlite::Error>(())
+        })
+        .expect("seed insights data");
+
+        let insights = engine.get_watch_insights(&db).expect("watch insights");
+
+        assert_eq!(insights.preferred_time_slot.as_deref(), Some("晚上"));
+        assert_eq!(insights.streak_days, 3);
+        assert_eq!(insights.recent_favorites.len(), 2);
+        assert_eq!(insights.recent_favorites[0].title, "收藏 A");
+        assert_eq!(insights.recent_favorites[1].title, "收藏 B");
     }
 }

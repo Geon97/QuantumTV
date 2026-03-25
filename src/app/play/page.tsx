@@ -2378,9 +2378,6 @@ function PlayPageClient() {
   const sourceHealthMap = new Map(
     sourceHealthStats.map((stats) => [stats.source_key, stats] as const),
   );
-  const currentSourceHealth = currentSource
-    ? sourceHealthMap.get(currentSource)
-    : undefined;
 
   return (
     <PageLayout activePath='/play'>

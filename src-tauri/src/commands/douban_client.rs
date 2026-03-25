@@ -1839,7 +1839,6 @@ pub async fn get_douban_page_state(
     // 如果是特定源模式
     if resolved.source_key != "auto" {
         // 获取源分类
-        let data = storage.get_data()?;
         let config = crate::commands::config::get_config_with_db_sources(&storage, &db)?;
         let source = crate::commands::video::resolve_enabled_source(&config, &resolved.source_key)
             .ok_or_else(|| format!("Source not found or disabled: {}", resolved.source_key))?;
@@ -1978,7 +1977,6 @@ pub async fn get_filtered_source_categories(
     }
 
     // 获取源分类
-    let data = storage.get_data()?;
     let config = crate::commands::config::get_config_with_db_sources(&storage, &db)?;
     let source = crate::commands::video::resolve_enabled_source(&config, &source_key)
         .ok_or_else(|| format!("Source not found or disabled: {}", source_key))?;

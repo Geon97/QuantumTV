@@ -243,6 +243,7 @@ pub fn run() {
             commands::analytics::get_watch_trends,
             commands::analytics::get_category_stats,
             commands::analytics::get_hourly_stats,
+            commands::analytics::get_watch_insights,
             commands::analytics::generate_analytics_report,
             commands::analytics::clear_analytics_cache,
         ])
