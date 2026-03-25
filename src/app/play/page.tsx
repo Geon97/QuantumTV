@@ -2382,26 +2382,26 @@ function PlayPageClient() {
   return (
     <PageLayout activePath='/play'>
       <div
-        className={`${appLayoutClasses.pageShell} flex flex-col gap-4 py-4 max-[375px]:py-3.5 min-[834px]:py-6 min-[1440px]:py-8`}
+        className={`${appLayoutClasses.pageShell} flex flex-col gap-4 py-4 max-[375px]:py-3.5 min-[834px]:gap-5 min-[834px]:py-6 min-[1440px]:gap-6 min-[1440px]:py-8`}
       >
         {/* 第一行：影片标题 */}
-        <div className='py-1 flex justify-between items-center gap-2'>
-          <h1 className='truncate text-lg font-semibold text-gray-900 max-[375px]:text-base min-[834px]:text-2xl min-[1440px]:text-[1.75rem] dark:text-gray-100'>
-            {videoTitle || '影片标题'}
+        <div className='py-1 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between min-[834px]:gap-4'>
+          <div className='min-w-0 flex-1'>
+            <h1 className='truncate text-[2rem] font-bold tracking-[-0.03em] text-gray-900 max-[375px]:text-[1.8rem] sm:text-[2.25rem] min-[834px]:text-[2.5rem] min-[1440px]:text-[2.85rem] dark:text-gray-100'>
+              {videoTitle || '影片标题'}
+            </h1>
             {totalEpisodes > 1 && (
-              <span className='text-gray-500 dark:text-gray-400 ml-2 text-base font-normal'>
-                {`> ${
-                  detail?.episodes_titles?.[currentEpisodeIndex] ||
-                  `第${currentEpisodeIndex + 1} 集`
-                }`}
-              </span>
+              <div className='mt-1.5 truncate text-sm font-medium text-gray-500 max-[375px]:text-[0.84rem] sm:text-base min-[834px]:mt-2 min-[834px]:text-lg dark:text-gray-400'>
+                {detail?.episodes_titles?.[currentEpisodeIndex] ||
+                  `${currentEpisodeIndex + 1} 集`}
+              </div>
             )}
-          </h1>
+          </div>
 
           {/* 移动端跳过设置按钮 */}
           <button
             onClick={() => setIsSkipConfigPanelOpen(true)}
-            className={`tap-target lg:hidden shrink-0 flex items-center gap-1.5 px-3 py-1.5 max-[375px]:px-2.5 min-[834px]:px-4 rounded-full text-xs min-[834px]:text-sm font-medium transition-all duration-200 ${
+            className={`tap-target xl:hidden self-start shrink-0 flex items-center gap-1.5 px-3.5 py-2 max-[375px]:px-3 min-[834px]:px-4 rounded-full text-xs min-[834px]:text-sm font-medium transition-all duration-200 ${
               skipConfig.enable
                 ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 ring-1 ring-purple-500/20'
                 : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 ring-1 ring-gray-500/10'
@@ -2424,9 +2424,9 @@ function PlayPageClient() {
           </button>
         </div>
         {/* 第二行：播放器和选集 */}
-        <div className='space-y-2'>
-          {/* 折叠控制和跳过设置 - 仅在 lg 及以上屏幕显示 */}
-          <div className='hidden lg:flex items-center justify-between'>
+        <div className='space-y-2.5 min-[834px]:space-y-4'>
+          {/* 折叠控制和跳过设置 - 仅在 xl 及以上屏幕显示 */}
+          <div className='hidden xl:flex items-center justify-between'>
             {/* 跳过片头片尾设置按钮 */}
             <button
               onClick={() => setIsSkipConfigPanelOpen(true)}
@@ -2498,23 +2498,23 @@ function PlayPageClient() {
           </div>
 
           <div
-            className={`grid gap-4 transition-all duration-300 ease-in-out lg:min-h-[70vh] min-[834px]:min-h-[72vh] min-[1440px]:min-h-[78vh] 2xl:min-h-[80vh] ${
+            className={`grid gap-3 transition-all duration-300 ease-in-out min-[834px]:gap-5 xl:h-[70vh] xl:grid-rows-[minmax(0,1fr)] min-[1440px]:h-[78vh] 2xl:h-[80vh] ${
               isEpisodeSelectorCollapsed
                 ? 'grid-cols-1'
-                : 'grid-cols-1 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22rem]'
+                : 'grid-cols-1 xl:grid-cols-[minmax(0,1fr)_22rem] min-[1440px]:grid-cols-[minmax(0,1fr)_24rem] 2xl:grid-cols-[minmax(0,1fr)_25rem]'
             }`}
           >
             {/* 播放器 */}
-            <div className='h-full transition-all duration-300 ease-in-out rounded-xl border border-white/0 dark:border-white/30'>
-              <div className='group/player relative h-[18rem] w-full max-[375px]:h-[16rem] sm:h-[20rem] md:h-[24rem] min-[834px]:h-[26rem] lg:h-full'>
+            <div className='min-h-0 h-full transition-all duration-300 ease-in-out rounded-xl border border-white/0 dark:border-white/30'>
+              <div className='group/player relative -mx-3 h-[18.5rem] min-h-[18.5rem] w-[calc(100%+1.5rem)] overflow-hidden rounded-[1.25rem] max-[375px]:-mx-2.5 max-[375px]:h-[16.5rem] max-[375px]:min-h-[16.5rem] max-[375px]:w-[calc(100%+1.25rem)] sm:mx-0 sm:h-auto sm:min-h-[17rem] sm:w-full sm:rounded-[1.15rem] md:min-h-[20rem] min-[834px]:min-h-[24rem] xl:h-full xl:min-h-[32rem] min-[1440px]:min-h-[38rem]'>
                 <div
                   ref={playerContainerRef}
-                  className='quantum-plyr-shell bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
+                  className='quantum-plyr-shell bg-black w-full h-full rounded-[1.25rem] overflow-hidden shadow-lg sm:rounded-[1.15rem]'
                 ></div>
 
                 {/* 加载中的提示 */}
                 {isVideoLoading && (
-                  <div className='absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm rounded-xl'>
+                  <div className='absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm rounded-[1.25rem] sm:rounded-[1.15rem]'>
                     <div className='flex flex-col items-center gap-3'>
                       {/* <div className='w-10 h-10 border-4 border-green-500 border-t-transparent rounded-full animate-spin' /> */}
                       <span className='text-white/80 text-sm'>
@@ -2532,10 +2532,10 @@ function PlayPageClient() {
 
             {/* 选集和换源 - 在移动端始终显示，在 lg 及以上可折叠 */}
             <div
-              className={`h-[18rem] max-[375px]:h-[16rem] sm:h-[20rem] md:h-[24rem] min-[834px]:h-[26rem] lg:h-full md:overflow-hidden transition-all duration-300 ease-in-out ${
+              className={`min-h-[23rem] max-h-[27rem] max-[375px]:min-h-[21rem] max-[375px]:max-h-[25rem] sm:min-h-[22rem] sm:max-h-[25rem] md:min-h-[24rem] md:max-h-[27rem] min-[834px]:min-h-[27rem] min-[834px]:max-h-[32rem] xl:h-full xl:min-h-0 xl:max-h-full overflow-hidden transition-all duration-300 ease-in-out ${
                 isEpisodeSelectorCollapsed
-                  ? 'lg:hidden lg:opacity-0 lg:scale-95'
-                  : 'lg:opacity-100 lg:scale-100'
+                  ? 'xl:hidden xl:opacity-0 xl:scale-95'
+                  : 'xl:opacity-100 xl:scale-100'
               }`}
             >
               <EpisodeSelector
@@ -2559,12 +2559,12 @@ function PlayPageClient() {
         </div>
 
         {/* 详情展示 */}
-        <div className='grid grid-cols-1 gap-4 lg:grid-cols-5 lg:gap-6'>
+        <div className='grid grid-cols-1 gap-4 min-[834px]:gap-5 xl:grid-cols-5 xl:gap-6'>
           {/* 文字区 */}
-          <div className='lg:col-span-3'>
-            <div className='flex min-h-0 flex-col p-5 max-[375px]:p-4 min-[834px]:p-6 min-[1440px]:p-7'>
+          <div className='xl:col-span-3'>
+            <div className='flex min-h-0 flex-col rounded-2xl bg-white/50 p-5 backdrop-blur-sm max-[375px]:p-4 min-[834px]:p-6 min-[1440px]:p-7 dark:bg-white/5'>
               {/* 标题 */}
-              <h1 className='mb-2 flex w-full shrink-0 items-center text-center text-xl font-bold tracking-wide text-slate-900 dark:text-gray-100 sm:text-2xl lg:text-left lg:text-3xl'>
+              <h1 className='mb-2 flex w-full shrink-0 items-center text-left text-[1.7rem] font-bold tracking-[-0.025em] text-slate-900 dark:text-gray-100 sm:text-[1.95rem] min-[834px]:text-[2.15rem] min-[1440px]:text-[2.35rem]'>
                 {videoTitle || '影片标题'}
                 <button
                   onClick={(e) => {
@@ -2613,8 +2613,8 @@ function PlayPageClient() {
           </div>
 
           {/* 封面展示 */}
-          <div className='hidden lg:order-first lg:col-span-2 lg:block'>
-            <div className='px-0 py-4 lg:pr-6'>
+          <div className='hidden xl:order-first xl:col-span-2 xl:block'>
+            <div className='px-0 py-2 xl:pr-6'>
               <div className='relative bg-gray-300 dark:bg-gray-700 aspect-2/3 flex items-center justify-center rounded-xl overflow-hidden'>
                 {videoCover ? (
                   <>

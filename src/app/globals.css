@@ -710,6 +710,75 @@ html:not(.dark)::view-transition-new(root) {
     background: var(--border-muted);
   }
 
+  .source-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(113, 113, 122, 0.45) transparent;
+    scrollbar-gutter: stable;
+  }
+
+  .source-scrollbar::-webkit-scrollbar {
+    width: 9px;
+  }
+
+  .source-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .source-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(113, 113, 122, 0.42);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  .source-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(82, 82, 91, 0.62);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  html.dark .source-scrollbar {
+    scrollbar-color: rgba(161, 161, 170, 0.42) transparent;
+  }
+
+  html.dark .source-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(161, 161, 170, 0.34);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  html.dark .source-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(212, 212, 216, 0.48);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  @media (min-width: 1280px) {
+    .source-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .source-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(113, 113, 122, 0.28);
+      border-width: 1px;
+    }
+
+    .source-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(82, 82, 91, 0.45);
+      border-width: 1px;
+    }
+
+    html.dark .source-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(161, 161, 170, 0.24);
+      border-width: 1px;
+    }
+
+    html.dark .source-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(212, 212, 216, 0.38);
+      border-width: 1px;
+    }
+  }
+
   /* === Text Gradient === */
   .text-gradient-primary {
     background: linear-gradient(135deg, #8b5cf6 0%, #d946ef 50%, #ec4899 100%);
