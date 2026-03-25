@@ -56,17 +56,21 @@ pub fn init_db(app: &tauri::AppHandle) -> Connection {
 
     let conn = Connection::open(db_path).expect("failed to open database");
 
-    // 打开外键支持
-    conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+    conn.execute_batch(
+        r#"
+        PRAGMA foreign_keys = ON;
+        PRAGMA journal_mode = DELETE;
+        PRAGMA synchronous = NORMAL;
+        PRAGMA busy_timeout = 10000;
+        "#,
+    )
+    .unwrap();
 
-    // 检查数据库版本并执行迁移
     let user_version: i32 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap_or(0);
 
-    // 创建基础表（如果不存在）
     conn.execute_batch(
-        // 播放记录表
         r#"
         CREATE TABLE IF NOT EXISTS play_records (
           key TEXT PRIMARY KEY,
@@ -86,7 +90,6 @@ pub fn init_db(app: &tauri::AppHandle) -> Connection {
     .expect("failed to create play_records table");
 
     conn.execute_batch(
-        // 收藏表
         r#"
         CREATE TABLE IF NOT EXISTS favorites (
           key TEXT PRIMARY KEY,
@@ -104,7 +107,6 @@ pub fn init_db(app: &tauri::AppHandle) -> Connection {
     .expect("failed to create favorites table");
 
     conn.execute_batch(
-        // 搜索历史表
         r#"
         CREATE TABLE IF NOT EXISTS search_history (
           keyword TEXT PRIMARY KEY,
@@ -115,7 +117,6 @@ pub fn init_db(app: &tauri::AppHandle) -> Connection {
     .expect("failed to create search_history table");
 
     conn.execute_batch(
-        // 跳过片头片尾配置表
         r#"
         CREATE TABLE IF NOT EXISTS skip_configs (
           key TEXT PRIMARY KEY,
@@ -128,7 +129,6 @@ pub fn init_db(app: &tauri::AppHandle) -> Connection {
     .expect("failed to create skip_configs table");
 
     conn.execute_batch(
-        // 图片缓存表
         r#"
         CREATE TABLE IF NOT EXISTS image_cache (
             url TEXT PRIMARY KEY,
@@ -153,7 +153,6 @@ pub fn init_db(app: &tauri::AppHandle) -> Connection {
     .expect("failed to create image_cache table");
 
     conn.execute_batch(
-        // 内容池表：存储全局可推荐的内容
         r#"
         CREATE TABLE IF NOT EXISTS content_pool (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -178,11 +177,35 @@ pub fn init_db(app: &tauri::AppHandle) -> Connection {
         "#,
     )
     .expect("failed to create content_pool table");
-    // 视频源智能统计表
+
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS video_sources (
+            source_key TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            api TEXT NOT NULL,
+            detail TEXT NOT NULL DEFAULT '',
+            from_type TEXT NOT NULL DEFAULT 'custom',
+            disabled INTEGER NOT NULL DEFAULT 0,
+            is_adult INTEGER NOT NULL DEFAULT 0,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_video_sources_sort_order
+            ON video_sources(sort_order ASC, updated_at DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_video_sources_disabled
+            ON video_sources(disabled, sort_order ASC);
+        "#,
+    )
+    .expect("failed to create video_sources table");
+
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS source_intelligence_stats (
-            source_key TEXT PRIMARY KEY,
+            source_key TEXT PRIMARY KEY REFERENCES video_sources(source_key) ON DELETE CASCADE,
             total_tests INTEGER NOT NULL DEFAULT 0,
             successful_tests INTEGER NOT NULL DEFAULT 0,
             total_response_time_ms INTEGER NOT NULL DEFAULT 0,
@@ -204,9 +227,7 @@ pub fn init_db(app: &tauri::AppHandle) -> Connection {
     )
     .expect("failed to create source_intelligence_stats table");
 
-    // 数据库迁移：为 image_cache 表添加新字段（如果不存在）
     if user_version < 1 {
-        // 检查 image_cache 表是否有新字段
         let has_title_column: bool = conn
             .query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('image_cache') WHERE name='title'",
@@ -219,7 +240,6 @@ pub fn init_db(app: &tauri::AppHandle) -> Connection {
             .unwrap_or(false);
 
         if !has_title_column {
-            // 添加新字段
             conn.execute_batch(
                 r#"
                 ALTER TABLE image_cache ADD COLUMN title TEXT;
@@ -231,7 +251,6 @@ pub fn init_db(app: &tauri::AppHandle) -> Connection {
             )
             .expect("failed to add columns to image_cache table");
 
-            // 创建新索引
             conn.execute_batch(
                 r#"
                 CREATE INDEX IF NOT EXISTS idx_access_count ON image_cache(access_count);
@@ -241,8 +260,12 @@ pub fn init_db(app: &tauri::AppHandle) -> Connection {
             .expect("failed to create indexes on image_cache table");
         }
 
-        // 更新数据库版本
         conn.execute("PRAGMA user_version = 1", [])
+            .expect("failed to update database version");
+    }
+
+    if user_version < 2 {
+        conn.execute("PRAGMA user_version = 2", [])
             .expect("failed to update database version");
     }
 

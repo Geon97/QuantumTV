@@ -64,6 +64,11 @@ pub fn run() {
             app.manage(commands::analytics::AnalyticsEngine::new());
             let conn = db_init::init_db(app.handle());
             let db = db_client::Db::new(conn);
+            if let Err(error) =
+                commands::config::initialize_source_storage(&app.state::<StorageManager>(), &db)
+            {
+                log::warn!("failed to initialize source storage: {}", error);
+            }
             let source_intelligence_manager =
                 commands::source_intelligence::SourceIntelligenceManager::new();
             if let Err(error) = source_intelligence_manager.load_from_db(&db) {

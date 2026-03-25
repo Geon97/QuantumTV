@@ -1840,9 +1840,9 @@ pub async fn get_douban_page_state(
     if resolved.source_key != "auto" {
         // 获取源分类
         let data = storage.get_data()?;
-        let source =
-            crate::commands::video::resolve_enabled_source(&data.config, &resolved.source_key)
-                .ok_or_else(|| format!("Source not found or disabled: {}", resolved.source_key))?;
+        let config = crate::commands::config::get_config_with_db_sources(&storage, &db)?;
+        let source = crate::commands::video::resolve_enabled_source(&config, &resolved.source_key)
+            .ok_or_else(|| format!("Source not found or disabled: {}", resolved.source_key))?;
 
         let url = crate::commands::video::source_url(&source.api, "?ac=list");
         let body = crate::commands::video::get_video_client()
@@ -1971,6 +1971,7 @@ pub async fn get_filtered_source_categories(
     source_key: String,
     content_type: String,
     storage: tauri::State<'_, StorageManager>,
+    db: tauri::State<'_, Db>,
 ) -> Result<Vec<DoubanSourceCategory>, String> {
     if source_key == "auto" {
         return Ok(Vec::new());
@@ -1978,7 +1979,8 @@ pub async fn get_filtered_source_categories(
 
     // 获取源分类
     let data = storage.get_data()?;
-    let source = crate::commands::video::resolve_enabled_source(&data.config, &source_key)
+    let config = crate::commands::config::get_config_with_db_sources(&storage, &db)?;
+    let source = crate::commands::video::resolve_enabled_source(&config, &source_key)
         .ok_or_else(|| format!("Source not found or disabled: {}", source_key))?;
 
     let url = crate::commands::video::source_url(&source.api, "?ac=list");

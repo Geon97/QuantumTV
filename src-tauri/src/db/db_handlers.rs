@@ -1,3 +1,4 @@
+use crate::commands::source_intelligence::SourceIntelligenceManager;
 use crate::db::db_client::Db;
 use tauri::State;
 
@@ -28,14 +29,24 @@ pub fn export_json(db: State<'_, Db>) -> Result<Vec<u8>, String> {
 }
 
 #[tauri::command]
-pub fn import_json(db: State<'_, Db>, data: String) -> Result<(), String> {
-    db.import_json(data)
+pub fn import_json(
+    db: State<'_, Db>,
+    source_manager: State<'_, SourceIntelligenceManager>,
+    data: String,
+) -> Result<(), String> {
+    db.import_json(data)?;
+    source_manager.load_from_db(&db)
 }
 
 #[tauri::command]
-pub fn import_json_bytes(db: State<'_, Db>, data: Vec<u8>) -> Result<(), String> {
+pub fn import_json_bytes(
+    db: State<'_, Db>,
+    source_manager: State<'_, SourceIntelligenceManager>,
+    data: Vec<u8>,
+) -> Result<(), String> {
     let decoded = decode_json_bytes(&data)?;
-    db.import_json(decoded)
+    db.import_json(decoded)?;
+    source_manager.load_from_db(&db)
 }
 
 #[tauri::command]

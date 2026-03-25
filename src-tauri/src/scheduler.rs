@@ -1,7 +1,9 @@
 use crate::commands::config::{
-    fetch_subscription_text, format_rfc3339_utc_now, validate_subscription_json,
+    fetch_subscription_text, format_rfc3339_utc_now, persist_source_config_values,
+    strip_source_config, sync_source_intelligence_cache, validate_subscription_json,
 };
 use crate::commands::recommendation::RecommendationEngine;
+use crate::commands::source_intelligence::SourceIntelligenceManager;
 use crate::db::db_client::Db;
 use crate::db::image_cache::ImageCacheManager;
 use crate::db::page_cache::PageCacheManager;
@@ -40,6 +42,8 @@ fn spawn_subscription_auto_update(app: tauri::AppHandle) {
 
 async fn run_subscription_update(app: &tauri::AppHandle) -> Result<(), String> {
     let storage = app.state::<StorageManager>();
+    let db = app.state::<Db>();
+    let source_manager = app.state::<SourceIntelligenceManager>();
     let data = storage.get_data()?;
     let config = merge_admin_config_with_defaults(&data.config);
 
@@ -89,7 +93,6 @@ async fn run_subscription_update(app: &tauri::AppHandle) -> Result<(), String> {
     let mut new_config = merge_admin_config_with_defaults(&data.config);
     if let Some(obj) = new_config.as_object_mut() {
         obj.insert("ConfigFile".to_string(), Value::String(text));
-        obj.insert("SourceConfig".to_string(), Value::Array(sources));
         obj.insert("CustomCategories".to_string(), Value::Array(categories));
 
         let sub = obj
@@ -106,7 +109,9 @@ async fn run_subscription_update(app: &tauri::AppHandle) -> Result<(), String> {
         }
     }
 
-    storage.update_config(new_config)?;
+    persist_source_config_values(&db, &sources)?;
+    storage.update_config(strip_source_config(&new_config))?;
+    sync_source_intelligence_cache(&source_manager, &db)?;
     let _ = app.emit("configUpdated", ());
     log::info!("[调度器:配置订阅] 配置更新成功");
     Ok(())

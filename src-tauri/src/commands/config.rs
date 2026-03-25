@@ -1,11 +1,15 @@
+use crate::commands::source_intelligence::SourceIntelligenceManager;
+use crate::db::db_client::Db;
 use crate::storage::StorageManager;
 use quantumtv_core::adult;
 use quantumtv_core::default_admin_config_value;
 use quantumtv_core::merge_admin_config_with_defaults;
 use quantumtv_core::normalize_source_config as normalize_source_config_core;
 use quantumtv_core::parse_admin_config as parse_admin_config_core;
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::State;
@@ -145,9 +149,329 @@ pub fn get_config_data() -> &'static AdminConfig {
 }
 
 #[tauri::command]
-pub async fn get_config(state: State<'_, StorageManager>) -> Result<Value, String> {
-    let data = state.get_data()?;
-    Ok(data.config)
+pub async fn get_config(
+    state: State<'_, StorageManager>,
+    db: State<'_, Db>,
+) -> Result<Value, String> {
+    get_config_with_db_sources(&state, &db)
+}
+
+fn current_unix_timestamp() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
+pub(crate) fn strip_source_config(config: &Value) -> Value {
+    let mut stripped = merge_admin_config_with_defaults(config);
+    if let Some(obj) = stripped.as_object_mut() {
+        obj.remove("SourceConfig");
+    }
+    stripped
+}
+
+fn merge_config_with_sources(config: &Value, sources: Vec<Value>) -> Value {
+    let mut merged = merge_admin_config_with_defaults(config);
+    if let Some(obj) = merged.as_object_mut() {
+        obj.insert("SourceConfig".to_string(), Value::Array(sources));
+    }
+    merged
+}
+
+pub(crate) fn load_source_config_values(db: &Db) -> Result<Vec<Value>, String> {
+    db.with_conn(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT source_key, name, api, detail, from_type, disabled, is_adult
+             FROM video_sources
+             ORDER BY sort_order ASC, updated_at DESC, source_key ASC",
+        )?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(serde_json::json!({
+                    "key": row.get::<_, String>(0)?,
+                    "name": row.get::<_, String>(1)?,
+                    "api": row.get::<_, String>(2)?,
+                    "detail": row.get::<_, String>(3)?,
+                    "from": row.get::<_, String>(4)?,
+                    "disabled": row.get::<_, i32>(5)? != 0,
+                    "is_adult": row.get::<_, i32>(6)? != 0,
+                }))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(rows)
+    })
+}
+
+pub(crate) fn persist_source_config_values(
+    db: &Db,
+    sources: &[Value],
+) -> Result<Vec<String>, String> {
+    #[derive(Clone)]
+    struct SourceRow {
+        key: String,
+        name: String,
+        api: String,
+        detail: String,
+        from_type: String,
+        disabled: bool,
+        is_adult: bool,
+        sort_order: i64,
+    }
+
+    let rows = sources
+        .iter()
+        .enumerate()
+        .map(|(index, source)| {
+            let default_from = source
+                .get("from")
+                .and_then(|value| value.as_str())
+                .unwrap_or("custom");
+            let normalized = normalize_source_config_core(source, default_from)?;
+
+            Ok(SourceRow {
+                key: extract_non_empty_string(&normalized, "key")
+                    .ok_or_else(|| "缺少源标识".to_string())?,
+                name: extract_non_empty_string(&normalized, "name")
+                    .ok_or_else(|| "缺少源名称".to_string())?,
+                api: extract_non_empty_string(&normalized, "api")
+                    .ok_or_else(|| "缺少 API 地址".to_string())?,
+                detail: normalized
+                    .get("detail")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                from_type: normalized
+                    .get("from")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("custom")
+                    .to_string(),
+                disabled: normalized
+                    .get("disabled")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false),
+                is_adult: normalized
+                    .get("is_adult")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false),
+                sort_order: index as i64,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    let now = current_unix_timestamp();
+    let source_keys = rows.iter().map(|row| row.key.clone()).collect::<Vec<_>>();
+
+    db.with_conn(|conn| {
+        let existing_created_at = {
+            let mut stmt = conn.prepare("SELECT source_key, created_at FROM video_sources")?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })?;
+            rows.collect::<Result<HashMap<_, _>, _>>()?
+        };
+
+        let tx = conn.unchecked_transaction()?;
+        for row in &rows {
+            let created_at = existing_created_at.get(&row.key).copied().unwrap_or(now);
+            tx.execute(
+                "INSERT INTO video_sources (
+                    source_key,
+                    name,
+                    api,
+                    detail,
+                    from_type,
+                    disabled,
+                    is_adult,
+                    sort_order,
+                    created_at,
+                    updated_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                ON CONFLICT(source_key) DO UPDATE SET
+                    name = excluded.name,
+                    api = excluded.api,
+                    detail = excluded.detail,
+                    from_type = excluded.from_type,
+                    disabled = excluded.disabled,
+                    is_adult = excluded.is_adult,
+                    sort_order = excluded.sort_order,
+                    updated_at = excluded.updated_at",
+                params![
+                    &row.key,
+                    &row.name,
+                    &row.api,
+                    &row.detail,
+                    &row.from_type,
+                    if row.disabled { 1 } else { 0 },
+                    if row.is_adult { 1 } else { 0 },
+                    row.sort_order,
+                    created_at,
+                    now,
+                ],
+            )?;
+        }
+
+        if rows.is_empty() {
+            tx.execute("DELETE FROM video_sources", [])?;
+        } else {
+            let placeholders = (1..=source_keys.len())
+                .map(|index| format!("?{}", index))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "DELETE FROM video_sources WHERE source_key NOT IN ({})",
+                placeholders
+            );
+            tx.execute(
+                &sql,
+                rusqlite::params_from_iter(source_keys.iter().map(|key| key.as_str())),
+            )?;
+        }
+
+        tx.commit()?;
+        Ok(())
+    })?;
+
+    Ok(source_keys)
+}
+
+fn source_stats_has_cascade_fk(db: &Db) -> Result<bool, String> {
+    db.with_conn(|conn| {
+        let mut stmt = conn.prepare("PRAGMA foreign_key_list('source_intelligence_stats')")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?;
+
+        for row in rows {
+            let (table_name, on_delete, from_column) = row?;
+            if table_name == "video_sources"
+                && from_column == "source_key"
+                && on_delete.eq_ignore_ascii_case("CASCADE")
+            {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    })
+}
+
+fn rebuild_source_stats_with_fk(db: &Db) -> Result<(), String> {
+    if source_stats_has_cascade_fk(db)? {
+        return Ok(());
+    }
+
+    db.with_conn(|conn| {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(
+            r#"
+            DROP TABLE IF EXISTS source_intelligence_stats_new;
+
+            CREATE TABLE source_intelligence_stats_new (
+                source_key TEXT PRIMARY KEY REFERENCES video_sources(source_key) ON DELETE CASCADE,
+                total_tests INTEGER NOT NULL DEFAULT 0,
+                successful_tests INTEGER NOT NULL DEFAULT 0,
+                total_response_time_ms INTEGER NOT NULL DEFAULT 0,
+                last_success_time INTEGER,
+                last_failure_time INTEGER,
+                last_available_time INTEGER,
+                consecutive_failures INTEGER NOT NULL DEFAULT 0,
+                auto_degraded INTEGER NOT NULL DEFAULT 0,
+                recent_results_json TEXT NOT NULL DEFAULT '[]',
+                updated_at INTEGER NOT NULL
+            );
+
+            INSERT INTO source_intelligence_stats_new (
+                source_key,
+                total_tests,
+                successful_tests,
+                total_response_time_ms,
+                last_success_time,
+                last_failure_time,
+                last_available_time,
+                consecutive_failures,
+                auto_degraded,
+                recent_results_json,
+                updated_at
+            )
+            SELECT
+                source_key,
+                total_tests,
+                successful_tests,
+                total_response_time_ms,
+                last_success_time,
+                last_failure_time,
+                last_available_time,
+                consecutive_failures,
+                auto_degraded,
+                recent_results_json,
+                updated_at
+            FROM source_intelligence_stats
+            WHERE source_key IN (SELECT source_key FROM video_sources);
+
+            DROP TABLE source_intelligence_stats;
+            ALTER TABLE source_intelligence_stats_new RENAME TO source_intelligence_stats;
+
+            CREATE INDEX IF NOT EXISTS idx_source_intelligence_avg_time
+                ON source_intelligence_stats(auto_degraded, total_response_time_ms, successful_tests);
+
+            CREATE INDEX IF NOT EXISTS idx_source_intelligence_updated_at
+                ON source_intelligence_stats(updated_at DESC);
+            "#,
+        )?;
+        tx.commit()?;
+        Ok(())
+    })
+}
+
+pub(crate) fn sync_source_intelligence_cache(
+    source_manager: &SourceIntelligenceManager,
+    db: &Db,
+) -> Result<(), String> {
+    source_manager.load_from_db(db)
+}
+
+pub(crate) fn get_config_with_db_sources(
+    storage: &StorageManager,
+    db: &Db,
+) -> Result<Value, String> {
+    let data = storage.get_data()?;
+    let sources = load_source_config_values(db)?;
+    Ok(merge_config_with_sources(&data.config, sources))
+}
+
+pub(crate) fn initialize_source_storage(storage: &StorageManager, db: &Db) -> Result<(), String> {
+    let data = storage.get_data()?;
+    let merged_config = merge_admin_config_with_defaults(&data.config);
+    let source_count: i64 = db.with_conn(|conn| {
+        conn.query_row("SELECT COUNT(*) FROM video_sources", [], |row| row.get(0))
+    })?;
+
+    if source_count == 0 {
+        let sources = merged_config
+            .get("SourceConfig")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if !sources.is_empty() {
+            persist_source_config_values(db, &sources)?;
+        }
+    }
+
+    rebuild_source_stats_with_fk(db)?;
+
+    let stripped = strip_source_config(&data.config);
+    if stripped != data.config {
+        storage.update_config(stripped)?;
+    }
+
+    Ok(())
 }
 
 /// 解析管理端订阅配置（Rust 端统一解析逻辑）
@@ -283,6 +607,7 @@ pub struct SubscriptionPullResponse {
 pub async fn pull_subscription_config(
     subscription_url: String,
     state: State<'_, StorageManager>,
+    db: State<'_, Db>,
 ) -> Result<SubscriptionPullResponse, String> {
     let url = subscription_url.trim();
     if url.is_empty() {
@@ -311,11 +636,12 @@ pub async fn pull_subscription_config(
         );
     }
 
-    state.update_config(config.clone())?;
+    let stripped = strip_source_config(&config);
+    state.update_config(stripped.clone())?;
 
     Ok(SubscriptionPullResponse {
         raw_json: text,
-        config,
+        config: merge_config_with_sources(&stripped, load_source_config_values(&db)?),
     })
 }
 
@@ -326,6 +652,8 @@ pub async fn save_subscription_config(
     raw_json: Option<String>,
     auto_update: Option<bool>,
     state: State<'_, StorageManager>,
+    db: State<'_, Db>,
+    source_manager: State<'_, SourceIntelligenceManager>,
 ) -> Result<Value, String> {
     let raw_json =
         resolve_subscription_json(subscription_url.as_deref(), raw_json.as_deref()).await?;
@@ -347,7 +675,6 @@ pub async fn save_subscription_config(
 
     if let Some(obj) = config.as_object_mut() {
         obj.insert("ConfigFile".to_string(), Value::String(raw_json));
-        obj.insert("SourceConfig".to_string(), Value::Array(sources));
         obj.insert("CustomCategories".to_string(), Value::Array(categories));
 
         let sub = obj
@@ -365,8 +692,14 @@ pub async fn save_subscription_config(
         }
     }
 
-    state.update_config(config.clone())?;
-    Ok(config)
+    persist_source_config_values(&db, &sources)?;
+    let stripped = strip_source_config(&config);
+    state.update_config(stripped.clone())?;
+    sync_source_intelligence_cache(&source_manager, &db)?;
+    Ok(merge_config_with_sources(
+        &stripped,
+        load_source_config_values(&db)?,
+    ))
 }
 
 /// 更新视频源配置
@@ -374,16 +707,18 @@ pub async fn save_subscription_config(
 pub async fn update_source_config(
     sources: Vec<Value>,
     state: State<'_, StorageManager>,
+    db: State<'_, Db>,
+    source_manager: State<'_, SourceIntelligenceManager>,
 ) -> Result<Value, String> {
     let data = state.get_data()?;
-    let mut config = merge_admin_config_with_defaults(&data.config);
-
-    if let Some(obj) = config.as_object_mut() {
-        obj.insert("SourceConfig".to_string(), Value::Array(sources));
-    }
-
-    state.update_config(config.clone())?;
-    Ok(config)
+    persist_source_config_values(&db, &sources)?;
+    let stripped = strip_source_config(&data.config);
+    state.update_config(stripped.clone())?;
+    sync_source_intelligence_cache(&source_manager, &db)?;
+    Ok(merge_config_with_sources(
+        &stripped,
+        load_source_config_values(&db)?,
+    ))
 }
 
 /// 更新自定义分类配置
@@ -391,6 +726,7 @@ pub async fn update_source_config(
 pub async fn update_custom_categories(
     categories: Vec<Value>,
     state: State<'_, StorageManager>,
+    db: State<'_, Db>,
 ) -> Result<Value, String> {
     let data = state.get_data()?;
     let mut config = merge_admin_config_with_defaults(&data.config);
@@ -399,8 +735,12 @@ pub async fn update_custom_categories(
         obj.insert("CustomCategories".to_string(), Value::Array(categories));
     }
 
-    state.update_config(config.clone())?;
-    Ok(config)
+    let stripped = strip_source_config(&config);
+    state.update_config(stripped.clone())?;
+    Ok(merge_config_with_sources(
+        &stripped,
+        load_source_config_values(&db)?,
+    ))
 }
 
 /// 从 JSON 导入完整配置并保存
@@ -408,10 +748,23 @@ pub async fn update_custom_categories(
 pub async fn save_admin_config_from_json(
     raw_json: String,
     state: State<'_, StorageManager>,
+    db: State<'_, Db>,
+    source_manager: State<'_, SourceIntelligenceManager>,
 ) -> Result<Value, String> {
     let parsed_config = parse_admin_config_core(&raw_json)?;
-    state.update_config(parsed_config.clone())?;
-    Ok(parsed_config)
+    let sources = parsed_config
+        .get("SourceConfig")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    persist_source_config_values(&db, &sources)?;
+    let stripped = strip_source_config(&parsed_config);
+    state.update_config(stripped.clone())?;
+    sync_source_intelligence_cache(&source_manager, &db)?;
+    Ok(merge_config_with_sources(
+        &stripped,
+        load_source_config_values(&db)?,
+    ))
 }
 
 /// 更新订阅设置（仅 URL/AutoUpdate）
@@ -420,6 +773,7 @@ pub async fn update_subscription_settings(
     subscription_url: Option<String>,
     auto_update: bool,
     state: State<'_, StorageManager>,
+    db: State<'_, Db>,
 ) -> Result<Value, String> {
     let data = state.get_data()?;
     let mut config = merge_admin_config_with_defaults(&data.config);
@@ -438,16 +792,29 @@ pub async fn update_subscription_settings(
         sub_obj.insert("AutoUpdate".to_string(), Value::Bool(auto_update));
     }
 
-    state.update_config(config.clone())?;
-    Ok(config)
+    let stripped = strip_source_config(&config);
+    state.update_config(stripped.clone())?;
+    Ok(merge_config_with_sources(
+        &stripped,
+        load_source_config_values(&db)?,
+    ))
 }
 
 /// 获取配置（自动补全默认字段）
 #[tauri::command]
-pub async fn get_config_with_defaults(state: State<'_, StorageManager>) -> Result<Value, String> {
+pub async fn get_config_with_defaults(
+    state: State<'_, StorageManager>,
+    db: State<'_, Db>,
+) -> Result<Value, String> {
     match state.get_data() {
-        Ok(data) => Ok(merge_admin_config_with_defaults(&data.config)),
-        Err(_) => Ok(default_admin_config_value()),
+        Ok(data) => Ok(merge_config_with_sources(
+            &data.config,
+            load_source_config_values(&db)?,
+        )),
+        Err(_) => Ok(merge_config_with_sources(
+            &default_admin_config_value(),
+            load_source_config_values(&db)?,
+        )),
     }
 }
 
@@ -677,11 +1044,25 @@ fn apply_custom_category_action(
 pub async fn admin_apply_source_config(
     action: SourceConfigAction,
     state: State<'_, StorageManager>,
+    db: State<'_, Db>,
+    source_manager: State<'_, SourceIntelligenceManager>,
 ) -> Result<Value, String> {
-    let data = state.get_data()?;
-    let updated = apply_source_config_action(&data.config, action)?;
-    state.update_config(updated.clone())?;
-    Ok(updated)
+    let current =
+        merge_config_with_sources(&state.get_data()?.config, load_source_config_values(&db)?);
+    let updated = apply_source_config_action(&current, action)?;
+    let sources = updated
+        .get("SourceConfig")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    persist_source_config_values(&db, &sources)?;
+    let stripped = strip_source_config(&updated);
+    state.update_config(stripped.clone())?;
+    sync_source_intelligence_cache(&source_manager, &db)?;
+    Ok(merge_config_with_sources(
+        &stripped,
+        load_source_config_values(&db)?,
+    ))
 }
 
 /// Admin: apply custom category action in Rust, update storage and return config.
@@ -689,11 +1070,16 @@ pub async fn admin_apply_source_config(
 pub async fn admin_apply_custom_category(
     action: CustomCategoryAction,
     state: State<'_, StorageManager>,
+    db: State<'_, Db>,
 ) -> Result<Value, String> {
     let data = state.get_data()?;
     let updated = apply_custom_category_action(&data.config, action)?;
-    state.update_config(updated.clone())?;
-    Ok(updated)
+    let stripped = strip_source_config(&updated);
+    state.update_config(stripped.clone())?;
+    Ok(merge_config_with_sources(
+        &stripped,
+        load_source_config_values(&db)?,
+    ))
 }
 
 /// 规范化单个视频源配置（Rust 端统一成人检测与字段补全）
@@ -707,13 +1093,32 @@ pub async fn normalize_source_config(
 }
 
 #[tauri::command]
-pub async fn save_config(config: Value, state: State<'_, StorageManager>) -> Result<(), String> {
-    state.update_config(config)
+pub async fn save_config(
+    config: Value,
+    state: State<'_, StorageManager>,
+    db: State<'_, Db>,
+    source_manager: State<'_, SourceIntelligenceManager>,
+) -> Result<(), String> {
+    let merged = merge_admin_config_with_defaults(&config);
+    let sources = merged
+        .get("SourceConfig")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    persist_source_config_values(&db, &sources)?;
+    state.update_config(strip_source_config(&merged))?;
+    sync_source_intelligence_cache(&source_manager, &db)
 }
 
 #[tauri::command]
-pub async fn reset_config(state: State<'_, StorageManager>) -> Result<(), String> {
-    state.reset_config()
+pub async fn reset_config(
+    state: State<'_, StorageManager>,
+    db: State<'_, Db>,
+    source_manager: State<'_, SourceIntelligenceManager>,
+) -> Result<(), String> {
+    state.reset_config()?;
+    persist_source_config_values(&db, &[])?;
+    sync_source_intelligence_cache(&source_manager, &db)
 }
 
 fn player_config_from_config(config: &Value) -> PlayerConfig {
@@ -1189,12 +1594,14 @@ pub async fn is_adult_source(names: Vec<String>) -> Vec<bool> {
 mod tests {
     use super::{
         apply_custom_category_action, apply_player_config_patch, apply_source_config_action,
-        apply_user_preferences_patch, format_rfc3339_utc_from_secs, player_config_from_config,
+        apply_user_preferences_patch, format_rfc3339_utc_from_secs, load_source_config_values,
+        persist_source_config_values, player_config_from_config, rebuild_source_stats_with_fk,
         resolve_subscription_json, runtime_config_from_config,
         runtime_custom_categories_from_config, should_use_local_source_config,
         user_preferences_from_config, validate_subscription_json, CustomCategoryAction,
         PlayerConfig, PlayerConfigPatch, SourceConfigAction, UserPreferences, UserPreferencesPatch,
     };
+    use rusqlite::params;
     use serde_json::json;
 
     #[test]
@@ -1494,5 +1901,107 @@ mod tests {
             .and_then(|v| v.as_bool())
             .unwrap();
         assert!(disabled);
+    }
+
+    fn setup_source_db() -> crate::db::db_client::Db {
+        let conn = rusqlite::Connection::open_in_memory().expect("open in-memory db");
+        conn.execute_batch(
+            r#"
+            PRAGMA foreign_keys = ON;
+
+            CREATE TABLE video_sources (
+                source_key TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                api TEXT NOT NULL,
+                detail TEXT NOT NULL DEFAULT '',
+                from_type TEXT NOT NULL DEFAULT 'custom',
+                disabled INTEGER NOT NULL DEFAULT 0,
+                is_adult INTEGER NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE source_intelligence_stats (
+                source_key TEXT PRIMARY KEY,
+                total_tests INTEGER NOT NULL DEFAULT 0,
+                successful_tests INTEGER NOT NULL DEFAULT 0,
+                total_response_time_ms INTEGER NOT NULL DEFAULT 0,
+                last_success_time INTEGER,
+                last_failure_time INTEGER,
+                last_available_time INTEGER,
+                consecutive_failures INTEGER NOT NULL DEFAULT 0,
+                auto_degraded INTEGER NOT NULL DEFAULT 0,
+                recent_results_json TEXT NOT NULL DEFAULT '[]',
+                updated_at INTEGER NOT NULL
+            );
+            "#,
+        )
+        .expect("init source db schema");
+
+        crate::db::db_client::Db::new(conn)
+    }
+
+    #[test]
+    fn persist_source_config_values_keeps_order_in_db() {
+        let db = setup_source_db();
+        let sources = vec![
+            serde_json::json!({ "key": "b", "name": "B", "api": "https://b.example.com" }),
+            serde_json::json!({ "key": "a", "name": "A", "api": "https://a.example.com" }),
+        ];
+
+        persist_source_config_values(&db, &sources).unwrap();
+
+        let loaded = load_source_config_values(&db).unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].get("key").and_then(|v| v.as_str()), Some("b"));
+        assert_eq!(loaded[1].get("key").and_then(|v| v.as_str()), Some("a"));
+    }
+
+    #[test]
+    fn rebuild_source_stats_with_fk_enables_cascade_delete() {
+        let db = setup_source_db();
+        persist_source_config_values(
+            &db,
+            &[serde_json::json!({ "key": "s1", "name": "Source 1", "api": "https://s1.example.com" })],
+        )
+        .unwrap();
+
+        db.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO source_intelligence_stats (
+                    source_key,
+                    total_tests,
+                    successful_tests,
+                    total_response_time_ms,
+                    updated_at
+                ) VALUES (?1, 3, 2, 400, 1)",
+                params!["s1"],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        rebuild_source_stats_with_fk(&db).unwrap();
+
+        db.with_conn(|conn| {
+            conn.execute(
+                "DELETE FROM video_sources WHERE source_key = ?1",
+                params!["s1"],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        let stat_count: i64 = db
+            .with_conn(|conn| {
+                conn.query_row(
+                    "SELECT COUNT(*) FROM source_intelligence_stats WHERE source_key = ?1",
+                    params!["s1"],
+                    |row| row.get(0),
+                )
+            })
+            .unwrap();
+        assert_eq!(stat_count, 0);
     }
 }

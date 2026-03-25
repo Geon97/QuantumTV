@@ -580,9 +580,11 @@ const SourceConfig = ({ config, onUpdate, showAlert }: SourceConfigProps) => {
     const { active, over } = event;
     if (active.id !== over?.id && over?.id) {
       void invoke<AdminConfig>('admin_apply_source_config', {
-        action: 'reorder',
-        activeKey: active.id,
-        overKey: over.id,
+        action: {
+          action: 'reorder',
+          activeKey: active.id,
+          overKey: over.id,
+        },
       })
         .then(onUpdate)
         .catch((error) => {
@@ -600,8 +602,10 @@ const SourceConfig = ({ config, onUpdate, showAlert }: SourceConfigProps) => {
 
   const handleToggle = (key: string) => {
     void invoke<AdminConfig>('admin_apply_source_config', {
-      action: 'toggle',
-      key,
+      action: {
+        action: 'toggle',
+        key,
+      },
     })
       .then(onUpdate)
       .catch((error) => {
@@ -618,8 +622,10 @@ const SourceConfig = ({ config, onUpdate, showAlert }: SourceConfigProps) => {
 
   const handleDelete = (key: string) => {
     void invoke<AdminConfig>('admin_apply_source_config', {
-      action: 'delete',
-      key,
+      action: {
+        action: 'delete',
+        key,
+      },
     })
       .then((newConfig) => {
         onUpdate(newConfig);
@@ -645,8 +651,10 @@ const SourceConfig = ({ config, onUpdate, showAlert }: SourceConfigProps) => {
 
     try {
       const newConfig = await invoke<AdminConfig>('admin_apply_source_config', {
-        action: 'add',
-        source: newSource,
+        action: {
+          action: 'add',
+          source: newSource,
+        },
       });
       onUpdate(newConfig);
       setNewSource({ key: '', name: '', api: '', detail: '', is_adult: false });
@@ -672,8 +680,10 @@ const SourceConfig = ({ config, onUpdate, showAlert }: SourceConfigProps) => {
 
     try {
       const newConfig = await invoke<AdminConfig>('admin_apply_source_config', {
-        action: 'edit',
-        source: editingSource,
+        action: {
+          action: 'edit',
+          source: editingSource,
+        },
       });
       onUpdate(newConfig);
       setEditingSource(null);
@@ -936,8 +946,10 @@ const CategoryConfig = ({
 
   const handleToggle = (index: number) => {
     void invoke<AdminConfig>('admin_apply_custom_category', {
-      action: 'toggle',
-      index,
+      action: {
+        action: 'toggle',
+        index,
+      },
     })
       .then(onUpdate)
       .catch((error) => {
@@ -954,8 +966,10 @@ const CategoryConfig = ({
 
   const handleDelete = (index: number) => {
     void invoke<AdminConfig>('admin_apply_custom_category', {
-      action: 'delete',
-      index,
+      action: {
+        action: 'delete',
+        index,
+      },
     })
       .then((newConfig) => {
         onUpdate(newConfig);
@@ -979,8 +993,10 @@ const CategoryConfig = ({
       return;
     }
     void invoke<AdminConfig>('admin_apply_custom_category', {
-      action: 'add',
-      category: newCategory,
+      action: {
+        action: 'add',
+        category: newCategory,
+      },
     })
       .then((newConfig) => {
         onUpdate(newConfig);

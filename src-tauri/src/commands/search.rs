@@ -548,10 +548,11 @@ pub async fn search_page_query(
     app_handle: tauri::AppHandle,
     storage: State<'_, StorageManager>,
     cache: State<'_, SearchCacheManager>,
+    db: State<'_, Db>,
     result_cache: State<'_, SearchResultCache>,
 ) -> Result<SearchPageQueryResponse, String> {
     let (results, cache_hit) =
-        search_with_cache_hit(query.clone(), app_handle, storage, cache).await?;
+        search_with_cache_hit(query.clone(), app_handle, storage, cache, &db).await?;
 
     // 保存搜索结果到缓存
     result_cache.save(&query, results.clone());
@@ -575,14 +576,14 @@ pub async fn search_page_open(
     cache: State<'_, SearchCacheManager>,
     result_cache: State<'_, SearchResultCache>,
 ) -> Result<SearchPageOpenResponse, String> {
-    let search_history = get_search_history(db)?;
+    let search_history = get_search_history(db.clone())?;
     let preferences = get_user_preferences(storage.clone()).await?;
 
     let trimmed_query = query.unwrap_or_default().trim().to_string();
     let (results, cache_hit) = if trimmed_query.is_empty() {
         (Vec::new(), false)
     } else {
-        search_with_cache_hit(trimmed_query.clone(), app_handle, storage, cache).await?
+        search_with_cache_hit(trimmed_query.clone(), app_handle, storage, cache, &db).await?
     };
 
     // 保存搜索结果到缓存

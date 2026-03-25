@@ -562,8 +562,23 @@ mod tests {
         let conn = Connection::open_in_memory().expect("open in-memory db");
         conn.execute_batch(
             r#"
-            CREATE TABLE source_intelligence_stats (
+            PRAGMA foreign_keys = ON;
+
+            CREATE TABLE video_sources (
                 source_key TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                api TEXT NOT NULL,
+                detail TEXT NOT NULL DEFAULT '',
+                from_type TEXT NOT NULL DEFAULT 'custom',
+                disabled INTEGER NOT NULL DEFAULT 0,
+                is_adult INTEGER NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE source_intelligence_stats (
+                source_key TEXT PRIMARY KEY REFERENCES video_sources(source_key) ON DELETE CASCADE,
                 total_tests INTEGER NOT NULL DEFAULT 0,
                 successful_tests INTEGER NOT NULL DEFAULT 0,
                 total_response_time_ms INTEGER NOT NULL DEFAULT 0,
@@ -579,6 +594,18 @@ mod tests {
         )
         .expect("init source intelligence schema");
         Db::new(conn)
+    }
+
+    fn seed_source(db: &Db, source_key: &str) {
+        db.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO video_sources (source_key, name, api, detail, from_type, disabled, is_adult, sort_order, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, '', 'custom', 0, 0, 0, 1, 1)",
+                params![source_key, source_key, format!("https://{}.example.com", source_key)],
+            )?;
+            Ok(())
+        })
+        .unwrap();
     }
 
     fn make_result(
@@ -802,6 +829,7 @@ mod tests {
     #[test]
     fn test_persist_and_load_source_stats() {
         let db = setup_test_db();
+        seed_source(&db, "source1");
         let manager = SourceIntelligenceManager::new();
 
         manager
@@ -830,6 +858,7 @@ mod tests {
     #[test]
     fn test_clear_all_stats_persisted() {
         let db = setup_test_db();
+        seed_source(&db, "source1");
         let manager = SourceIntelligenceManager::new();
 
         manager
@@ -845,6 +874,7 @@ mod tests {
     #[test]
     fn test_ensure_source_persisted_creates_empty_stats() {
         let db = setup_test_db();
+        seed_source(&db, "source1");
         let manager = SourceIntelligenceManager::new();
 
         manager

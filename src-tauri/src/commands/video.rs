@@ -1,3 +1,4 @@
+use crate::commands::config::get_config_with_db_sources;
 use crate::commands::recommendation::{invalidate_recommendation_cache, RecommendationEngine};
 use crate::commands::source_intelligence::SourceIntelligenceManager;
 use crate::storage::StorageManager;
@@ -435,7 +436,7 @@ async fn select_best_source_from_search(
     db: &crate::db::db_client::Db,
     source_manager: &SourceIntelligenceManager,
 ) -> Result<GetVideoDetailOptimizedResponse, String> {
-    let search_results = search(query.clone(), app_handle, storage, cache)
+    let (search_results, _) = search_with_cache_hit(query.clone(), app_handle, storage, cache, db)
         .await
         .map_err(|e| format!("Fallback search failed: {}", e))?;
 
@@ -1069,14 +1070,14 @@ pub(crate) async fn search_with_cache_hit(
     app_handle: tauri::AppHandle,
     storage: State<'_, StorageManager>,
     cache: State<'_, SearchCacheManager>,
+    db: &crate::db::db_client::Db,
 ) -> Result<(Vec<SearchResult>, bool), String> {
     // 首先尝试从缓存获取结果
     if let Some(cached_results) = cache.get(&query).await {
         return Ok((cached_results, true));
     }
 
-    let data = storage.get_data()?;
-    let config = &data.config;
+    let config = get_config_with_db_sources(&storage, db)?;
 
     // 读取 FluidSearch 配置，判断是否启用流式搜索（从 UserPreferences 读取）
     let fluid_search = config
@@ -1097,7 +1098,7 @@ pub(crate) async fn search_with_cache_hit(
                         return None;
                     }
                     let api = s.get("api")?.as_str()?.to_string();
-                    validate_remote_url_against_config(&api, config).ok()?;
+                    validate_remote_url_against_config(&api, &config).ok()?;
                     Some(ApiSite {
                         key: s.get("key")?.as_str()?.to_string(),
                         api,
@@ -1363,8 +1364,10 @@ pub async fn search(
     app_handle: tauri::AppHandle,
     storage: State<'_, StorageManager>,
     cache: State<'_, SearchCacheManager>,
+    db: State<'_, crate::db::db_client::Db>,
 ) -> Result<Vec<SearchResult>, String> {
-    let (results, _cache_hit) = search_with_cache_hit(query, app_handle, storage, cache).await?;
+    let (results, _cache_hit) =
+        search_with_cache_hit(query, app_handle, storage, cache, &db).await?;
     Ok(results)
 }
 
@@ -1373,9 +1376,10 @@ pub async fn get_video_detail(
     source: String,
     id: String,
     storage: State<'_, StorageManager>,
+    db: State<'_, crate::db::db_client::Db>,
 ) -> Result<SearchResult, String> {
-    let data = storage.get_data()?;
-    let site = resolve_enabled_source(&data.config, &source)
+    let config = get_config_with_db_sources(&storage, &db)?;
+    let site = resolve_enabled_source(&config, &source)
         .ok_or_else(|| format!("Source not found or disabled: {}", source))?;
     let client = get_video_client();
 
@@ -1436,10 +1440,11 @@ pub async fn get_video_detail_optimized(
     id: String,
     storage: State<'_, StorageManager>,
     cache: State<'_, SearchCacheManager>,
+    db: State<'_, crate::db::db_client::Db>,
     also_search_similar: Option<bool>,
 ) -> Result<GetVideoDetailOptimizedResponse, String> {
-    let data = storage.get_data()?;
-    let site = resolve_enabled_source(&data.config, &source)
+    let config = get_config_with_db_sources(&storage, &db)?;
+    let site = resolve_enabled_source(&config, &source)
         .ok_or_else(|| format!("Source not found or disabled: {}", source))?;
     let client = get_video_client();
     let url = format!("{}?ac=videolist&ids={}", site.api, id);
@@ -1516,9 +1521,10 @@ pub async fn get_video_detail_optimized(
 pub async fn get_source_categories(
     source_key: String,
     storage: State<'_, StorageManager>,
+    db: State<'_, crate::db::db_client::Db>,
 ) -> Result<Vec<SourceCategoryItem>, String> {
-    let data = storage.get_data()?;
-    let source = resolve_enabled_source(&data.config, &source_key)
+    let config = get_config_with_db_sources(&storage, &db)?;
+    let source = resolve_enabled_source(&config, &source_key)
         .ok_or_else(|| format!("Source not found or disabled: {}", source_key))?;
 
     let url = source_url(&source.api, "?ac=class");
@@ -1542,9 +1548,10 @@ pub async fn get_source_videos_by_type(
     type_id: String,
     page: Option<u32>,
     storage: State<'_, StorageManager>,
+    db: State<'_, crate::db::db_client::Db>,
 ) -> Result<Vec<ApiSearchItem>, String> {
-    let data = storage.get_data()?;
-    let source = resolve_enabled_source(&data.config, &source_key)
+    let config = get_config_with_db_sources(&storage, &db)?;
+    let source = resolve_enabled_source(&config, &source_key)
         .ok_or_else(|| format!("Source not found or disabled: {}", source_key))?;
     let page = page.unwrap_or(1).max(1);
     let encoded_type = urlencoding::encode(type_id.trim());
@@ -2377,7 +2384,8 @@ pub async fn initialize_player_by_query(
         return Err("Missing query".to_string());
     }
 
-    let results = search(query.to_string(), app_handle, storage, cache).await?;
+    let (results, _) =
+        search_with_cache_hit(query.to_string(), app_handle, storage, cache, &db).await?;
     let filter_title = request.filter_title.trim();
     let filter_year = request
         .year
@@ -2502,6 +2510,7 @@ pub async fn player_tick(
     request: PlayerTickRequest,
     storage: State<'_, StorageManager>,
     cache: State<'_, SearchCacheManager>,
+    db: State<'_, crate::db::db_client::Db>,
 ) -> Result<PlayerTickDecision, String> {
     let timing = decide_tick_timing(&request);
 
@@ -2530,6 +2539,7 @@ pub async fn player_tick(
                 request.total_duration,
                 storage,
                 cache,
+                db,
             )
             .await?
             .did_preload;
@@ -2583,6 +2593,7 @@ pub async fn initialize_player_view(
             id.clone(),
             storage.clone(),
             cache.clone(),
+            db.clone(),
             Some(true)
         ),
         // 2. 读取播放记录

@@ -10,6 +10,37 @@ struct ExportData {
     favorites: Vec<Favorite>,
     search_history: Vec<SearchHistory>,
     skip_configs: Vec<SkipConfig>,
+    video_sources: Vec<VideoSourceExport>,
+    source_intelligence_stats: Vec<SourceIntelligenceStatsExport>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct VideoSourceExport {
+    source_key: String,
+    name: String,
+    api: String,
+    detail: String,
+    from_type: String,
+    disabled: i32,
+    is_adult: i32,
+    sort_order: i32,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SourceIntelligenceStatsExport {
+    source_key: String,
+    total_tests: i64,
+    successful_tests: i64,
+    total_response_time_ms: i64,
+    last_success_time: Option<i64>,
+    last_failure_time: Option<i64>,
+    last_available_time: Option<i64>,
+    consecutive_failures: i32,
+    auto_degraded: i32,
+    recent_results_json: String,
+    updated_at: i64,
 }
 
 pub struct Db {
@@ -42,6 +73,16 @@ impl Db {
                 let mut favorites = conn.prepare("SELECT * FROM favorites")?;
                 let mut search_history = conn.prepare("SELECT * FROM search_history")?;
                 let mut skip_configs = conn.prepare("SELECT * FROM skip_configs")?;
+                let mut video_sources = conn.prepare(
+                    "SELECT source_key, name, api, detail, from_type, disabled, is_adult, sort_order, created_at, updated_at
+                     FROM video_sources
+                     ORDER BY sort_order ASC, updated_at DESC, source_key ASC",
+                )?;
+                let mut source_stats = conn.prepare(
+                    "SELECT source_key, total_tests, successful_tests, total_response_time_ms, last_success_time, last_failure_time,
+                            last_available_time, consecutive_failures, auto_degraded, recent_results_json, updated_at
+                     FROM source_intelligence_stats",
+                )?;
                 let play_records_iter = play_records.query_map([], |row| {
                     Ok(PlayRecord {
                         key: row.get(0)?,
@@ -84,6 +125,35 @@ impl Db {
                         outro_time: row.get(3)?,
                     })
                 })?;
+                let video_sources_iter = video_sources.query_map([], |row| {
+                    Ok(VideoSourceExport {
+                        source_key: row.get(0)?,
+                        name: row.get(1)?,
+                        api: row.get(2)?,
+                        detail: row.get(3)?,
+                        from_type: row.get(4)?,
+                        disabled: row.get(5)?,
+                        is_adult: row.get(6)?,
+                        sort_order: row.get(7)?,
+                        created_at: row.get(8)?,
+                        updated_at: row.get(9)?,
+                    })
+                })?;
+                let source_stats_iter = source_stats.query_map([], |row| {
+                    Ok(SourceIntelligenceStatsExport {
+                        source_key: row.get(0)?,
+                        total_tests: row.get(1)?,
+                        successful_tests: row.get(2)?,
+                        total_response_time_ms: row.get(3)?,
+                        last_success_time: row.get(4)?,
+                        last_failure_time: row.get(5)?,
+                        last_available_time: row.get(6)?,
+                        consecutive_failures: row.get(7)?,
+                        auto_degraded: row.get(8)?,
+                        recent_results_json: row.get(9)?,
+                        updated_at: row.get(10)?,
+                    })
+                })?;
                 let play_records =
                     play_records_iter.collect::<Result<Vec<PlayRecord>, rusqlite::Error>>()?;
                 let favorites =
@@ -92,11 +162,17 @@ impl Db {
                     search_history_iter.collect::<Result<Vec<SearchHistory>, rusqlite::Error>>()?;
                 let skip_configs =
                     skip_configs_iter.collect::<Result<Vec<SkipConfig>, rusqlite::Error>>()?;
+                let video_sources = video_sources_iter
+                    .collect::<Result<Vec<VideoSourceExport>, rusqlite::Error>>()?;
+                let source_intelligence_stats = source_stats_iter
+                    .collect::<Result<Vec<SourceIntelligenceStatsExport>, rusqlite::Error>>()?;
                 Ok(ExportData {
                     play_records,
                     favorites,
                     search_history,
                     skip_configs,
+                    video_sources,
+                    source_intelligence_stats,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -113,61 +189,116 @@ impl Db {
         let favorites_data = export_data.favorites;
         let search_history_data = export_data.search_history;
         let skip_configs_data = export_data.skip_configs;
+        let video_sources_data = export_data.video_sources;
+        let source_stats_data = export_data.source_intelligence_stats;
         self.with_conn(|conn| {
-            let mut stmt = conn.prepare("INSERT OR IGNORE INTO play_records (key, title, source_name, year, cover, episode_index, total_episodes, play_time, total_time, save_time, search_title) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)")?;
-            for record in play_record_data {
-                stmt.execute(params![
-                    record.key,
-                    record.title,
-                    record.source_name,
-                    record.year,
-                    record.cover,
-                    record.episode_index,
-                    record.total_episodes,
-                    record.play_time,
-                    record.total_time,
-                    record.save_time,
-                    record.search_title,
-                ])?;
+            conn.execute_batch("PRAGMA busy_timeout = 10000;")?;
+            let tx = conn.unchecked_transaction()?;
+
+            {
+                let mut source_stmt = tx.prepare(
+                    "INSERT OR REPLACE INTO video_sources
+                     (source_key, name, api, detail, from_type, disabled, is_adult, sort_order, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                )?;
+                for source in video_sources_data {
+                    source_stmt.execute(params![
+                        source.source_key,
+                        source.name,
+                        source.api,
+                        source.detail,
+                        source.from_type,
+                        source.disabled,
+                        source.is_adult,
+                        source.sort_order,
+                        source.created_at,
+                        source.updated_at,
+                    ])?;
+                }
             }
-            Ok(())
-        })?;
-        self.with_conn(|conn| {
-            let mut stmt = conn.prepare("INSERT OR IGNORE INTO favorites (key, title, source_name, year, cover, episode_index, total_episodes, save_time, search_title) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)")?;
-            for record in favorites_data {
-                stmt.execute(params![
-                    record.key,
-                    record.title,
-                    record.source_name,
-                    record.year,
-                    record.cover,
-                    record.episode_index,
-                    record.total_episodes,
-                    record.save_time,
-                    record.search_title,
-                ])?;
+
+            {
+                let mut stmt = tx.prepare("INSERT OR IGNORE INTO play_records (key, title, source_name, year, cover, episode_index, total_episodes, play_time, total_time, save_time, search_title) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)")?;
+                for record in play_record_data {
+                    stmt.execute(params![
+                        record.key,
+                        record.title,
+                        record.source_name,
+                        record.year,
+                        record.cover,
+                        record.episode_index,
+                        record.total_episodes,
+                        record.play_time,
+                        record.total_time,
+                        record.save_time,
+                        record.search_title,
+                    ])?;
+                }
             }
-            Ok(())
-        })?;
-        self.with_conn(|conn| {
-            let mut stmt = conn.prepare(
-                "INSERT OR IGNORE INTO search_history (keyword, save_time) VALUES (?1, ?2)",
-            )?;
-            for record in search_history_data {
-                stmt.execute(params![record.keyword, record.save_time,])?;
+
+            {
+                let mut stmt = tx.prepare("INSERT OR IGNORE INTO favorites (key, title, source_name, year, cover, episode_index, total_episodes, save_time, search_title) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)")?;
+                for record in favorites_data {
+                    stmt.execute(params![
+                        record.key,
+                        record.title,
+                        record.source_name,
+                        record.year,
+                        record.cover,
+                        record.episode_index,
+                        record.total_episodes,
+                        record.save_time,
+                        record.search_title,
+                    ])?;
+                }
             }
-            Ok(())
-        })?;
-        self.with_conn(|conn| {
-            let mut stmt = conn.prepare("INSERT OR IGNORE INTO skip_configs (key, enable, intro_time, outro_time) VALUES (?1, ?2, ?3, ?4)")?;
-            for record in skip_configs_data {
-                stmt.execute(params![
-                    record.key,
-                    record.enable,
-                    record.intro_time,
-                    record.outro_time,
-                ])?;
+
+            {
+                let mut stmt = tx.prepare(
+                    "INSERT OR IGNORE INTO search_history (keyword, save_time) VALUES (?1, ?2)",
+                )?;
+                for record in search_history_data {
+                    stmt.execute(params![record.keyword, record.save_time,])?;
+                }
             }
+
+            {
+                let mut stmt = tx.prepare("INSERT OR IGNORE INTO skip_configs (key, enable, intro_time, outro_time) VALUES (?1, ?2, ?3, ?4)")?;
+                for record in skip_configs_data {
+                    stmt.execute(params![
+                        record.key,
+                        record.enable,
+                        record.intro_time,
+                        record.outro_time,
+                    ])?;
+                }
+            }
+
+            {
+                let mut stats_stmt = tx.prepare(
+                    "INSERT OR REPLACE INTO source_intelligence_stats
+                     (source_key, total_tests, successful_tests, total_response_time_ms, last_success_time, last_failure_time,
+                      last_available_time, consecutive_failures, auto_degraded, recent_results_json, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                )?;
+                for stat in source_stats_data {
+                    stats_stmt.execute(params![
+                        stat.source_key,
+                        stat.total_tests,
+                        stat.successful_tests,
+                        stat.total_response_time_ms,
+                        stat.last_success_time,
+                        stat.last_failure_time,
+                        stat.last_available_time,
+                        stat.consecutive_failures,
+                        stat.auto_degraded,
+                        stat.recent_results_json,
+                        stat.updated_at,
+                    ])?;
+                }
+            }
+
+            tx.commit()?;
             Ok(())
         })?;
         Ok(())
@@ -180,6 +311,7 @@ impl Db {
             conn.execute("DELETE FROM search_history", [])?;
             conn.execute("DELETE FROM skip_configs", [])?;
             conn.execute("DELETE FROM content_pool", [])?;
+            conn.execute("DELETE FROM source_intelligence_stats", [])?;
             Ok(())
         })
     }
@@ -232,6 +364,33 @@ mod tests {
               enable INTEGER DEFAULT 0,
               intro_time REAL DEFAULT 0,
               outro_time REAL DEFAULT 0
+            );
+
+            CREATE TABLE video_sources (
+              source_key TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              api TEXT NOT NULL,
+              detail TEXT NOT NULL DEFAULT '',
+              from_type TEXT NOT NULL DEFAULT 'custom',
+              disabled INTEGER NOT NULL DEFAULT 0,
+              is_adult INTEGER NOT NULL DEFAULT 0,
+              sort_order INTEGER NOT NULL DEFAULT 0,
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE source_intelligence_stats (
+              source_key TEXT PRIMARY KEY,
+              total_tests INTEGER NOT NULL DEFAULT 0,
+              successful_tests INTEGER NOT NULL DEFAULT 0,
+              total_response_time_ms INTEGER NOT NULL DEFAULT 0,
+              last_success_time INTEGER,
+              last_failure_time INTEGER,
+              last_available_time INTEGER,
+              consecutive_failures INTEGER NOT NULL DEFAULT 0,
+              auto_degraded INTEGER NOT NULL DEFAULT 0,
+              recent_results_json TEXT NOT NULL DEFAULT '[]',
+              updated_at INTEGER NOT NULL
             );
 
             CREATE TABLE content_pool (
@@ -310,6 +469,8 @@ mod tests {
         assert_eq!(export_data.favorites.len(), 0);
         assert_eq!(export_data.search_history.len(), 0);
         assert_eq!(export_data.skip_configs.len(), 0);
+        assert_eq!(export_data.video_sources.len(), 0);
+        assert_eq!(export_data.source_intelligence_stats.len(), 0);
     }
 
     #[test]
@@ -371,6 +532,21 @@ mod tests {
         })
         .unwrap();
 
+        db.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO video_sources (source_key, name, api, detail, from_type, disabled, is_adult, sort_order, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, '', 'custom', 0, 0, 0, 1, 1)",
+                params!["vs1", "Source 1", "https://source1.example.com"],
+            )?;
+            conn.execute(
+                "INSERT INTO source_intelligence_stats (source_key, total_tests, successful_tests, total_response_time_ms, updated_at)
+                 VALUES (?1, 3, 2, 1500, 1)",
+                params!["vs1"],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
         let json_data = db.export_json().unwrap();
         let json_str = String::from_utf8(json_data).unwrap();
         let export_data: ExportData = serde_json::from_str(&json_str).unwrap();
@@ -379,6 +555,8 @@ mod tests {
         assert_eq!(export_data.favorites.len(), 1);
         assert_eq!(export_data.search_history.len(), 1);
         assert_eq!(export_data.skip_configs.len(), 1);
+        assert_eq!(export_data.video_sources.len(), 1);
+        assert_eq!(export_data.source_intelligence_stats.len(), 1);
     }
 
     #[test]
@@ -427,6 +605,35 @@ mod tests {
                     "intro_time": 10.5,
                     "outro_time": -5.0
                 }
+            ],
+            "video_sources": [
+                {
+                    "source_key": "vs1",
+                    "name": "Source 1",
+                    "api": "https://source1.example.com",
+                    "detail": "",
+                    "from_type": "custom",
+                    "disabled": 0,
+                    "is_adult": 0,
+                    "sort_order": 0,
+                    "created_at": 1,
+                    "updated_at": 1
+                }
+            ],
+            "source_intelligence_stats": [
+                {
+                    "source_key": "vs1",
+                    "total_tests": 3,
+                    "successful_tests": 2,
+                    "total_response_time_ms": 1500,
+                    "last_success_time": null,
+                    "last_failure_time": null,
+                    "last_available_time": null,
+                    "consecutive_failures": 0,
+                    "auto_degraded": 0,
+                    "recent_results_json": "[]",
+                    "updated_at": 1
+                }
             ]
         }"#;
 
@@ -461,6 +668,24 @@ mod tests {
             })
             .unwrap();
         assert_eq!(skip_count, 1);
+
+        let source_count: i32 = db
+            .with_conn(|conn| {
+                conn.query_row("SELECT COUNT(*) FROM video_sources", [], |row| row.get(0))
+            })
+            .unwrap();
+        assert_eq!(source_count, 1);
+
+        let stats_count: i32 = db
+            .with_conn(|conn| {
+                conn.query_row(
+                    "SELECT COUNT(*) FROM source_intelligence_stats",
+                    [],
+                    |row| row.get(0),
+                )
+            })
+            .unwrap();
+        assert_eq!(stats_count, 1);
     }
 
     #[test]
@@ -495,7 +720,9 @@ mod tests {
             ],
             "favorites": [],
             "search_history": [],
-            "skip_configs": []
+            "skip_configs": [],
+            "video_sources": [],
+            "source_intelligence_stats": []
         }"#;
 
         db.import_json(json_data.to_string()).unwrap();
@@ -653,7 +880,9 @@ mod tests {
             "play_records": [],
             "favorites": [],
             "search_history": [],
-            "skip_configs": []
+            "skip_configs": [],
+            "video_sources": [],
+            "source_intelligence_stats": []
         }"#;
 
         let result = db.import_json(json_data.to_string());
