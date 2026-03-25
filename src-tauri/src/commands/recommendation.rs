@@ -296,7 +296,6 @@ impl RecommendationEngine {
             // 年份匹配加分
             if !year.is_empty() && preferred_years.contains(&year) {
                 score += 1.5;
-                eprintln!("    {} 年份匹配 +1.5", title);
             }
 
             // 分类匹配加分 - 智能分类识别
@@ -344,7 +343,6 @@ impl RecommendationEngine {
 
             if preferred_categories.contains(&db_category) {
                 score += 2.0;
-                eprintln!("    {} 分类匹配 +2.0 (分类: {:?})", title, db_category);
             }
 
             // 与用户历史内容计算相似度
