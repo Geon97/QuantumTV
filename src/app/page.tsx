@@ -34,6 +34,7 @@ import {
   useContentPoolSync,
 } from '@/hooks/useContentPoolSync';
 import { useImagePreload } from '@/hooks/useImagePreload';
+import { useScrollRestoration } from '@/hooks/useScrollRestoration';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
@@ -73,6 +74,9 @@ function HomeClient() {
 
   // 自动预加载（延迟 500ms，避免阻塞首屏渲染）
   useImagePreload(allImageUrls, !loading);
+
+  // 进入播放器页后再返回，恢复上次浏览位置
+  useScrollRestoration({ ready: !loading });
 
   useEffect(() => {
     const loadHomeBootstrap = async () => {

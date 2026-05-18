@@ -14,6 +14,7 @@ import {
   useContentPoolSync,
 } from '@/hooks/useContentPoolSync';
 import { useImagePreload } from '@/hooks/useImagePreload';
+import { useScrollRestoration } from '@/hooks/useScrollRestoration';
 
 import PageLayout from '@/components/PageLayout';
 import SearchResultFilter, {
@@ -233,6 +234,13 @@ function SearchPageClient() {
     searchImageUrls,
     !isLoading && (aggregatedGroups.size > 0 || filteredAllResults.length > 0),
   );
+
+  // 进入播放器页后再返回，恢复上次浏览位置
+  useScrollRestoration({
+    ready:
+      !isLoading &&
+      (aggregatedGroups.size > 0 || filteredAllResults.length > 0),
+  });
   useEffect(() => {
     if (!qParam) {
       setShowResults(false);

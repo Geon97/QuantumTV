@@ -17,6 +17,7 @@ import {
   useContentPoolSync,
 } from '@/hooks/useContentPoolSync';
 import { useImagePreload } from '@/hooks/useImagePreload';
+import { useScrollRestoration } from '@/hooks/useScrollRestoration';
 import { useSourceFilter } from '@/hooks/useSourceFilter';
 
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
@@ -143,6 +144,14 @@ function DoubanPageClient() {
   // 源分类数据（用于直接查询源接口）
   const [sourceData, setSourceData] = useState<DoubanItem[]>([]);
   const [isLoadingSourceData, setIsLoadingSourceData] = useState(false);
+
+  // 进入播放器页后再返回，恢复上次浏览位置
+  useScrollRestoration({
+    ready:
+      !loading &&
+      !isLoadingSourceData &&
+      (doubanData.length > 0 || sourceData.length > 0),
+  });
 
   // 获取自定义分类数据
   useEffect(() => {
