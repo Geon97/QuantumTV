@@ -2572,14 +2572,30 @@ function PlayPageClient() {
         </div>
 
         {/* 详情展示 */}
-        <div className='grid grid-cols-1 gap-4 min-[834px]:gap-5 xl:grid-cols-5 xl:gap-6'>
-          {/* 文字区 */}
-          <div className='xl:col-span-3'>
-            <div className='flex min-h-0 flex-col rounded-2xl bg-white/50 p-5 backdrop-blur-sm max-[375px]:p-4 min-[834px]:p-6 min-[1440px]:p-7 dark:bg-white/5'>
-              {/* 关键信息行 */}
-              <div className='mb-4 flex shrink-0 flex-wrap items-center gap-3 text-sm min-[834px]:text-base min-[1440px]:text-[1.05rem] text-slate-700 dark:text-gray-300'>
+        <section className='grid grid-cols-1 gap-4 min-[834px]:gap-5 lg:grid-cols-5 lg:gap-6 min-[1440px]:gap-8'>
+          {/* 封面：sm 起以小卡显示，lg+ 回到左侧 2/5 大卡 */}
+          <div className='hidden sm:block lg:order-first lg:col-span-2'>
+            <div className='relative mx-auto aspect-2/3 max-w-[12rem] overflow-hidden rounded-xl bg-gray-300 dark:bg-gray-700 sm:max-w-[16rem] lg:mx-0 lg:max-w-none xl:mr-6'>
+              {videoCover ? (
+                <img
+                  src={proxiedCoverUrl}
+                  alt={videoTitle}
+                  className='h-full w-full object-cover'
+                />
+              ) : (
+                <span className='absolute inset-0 flex items-center justify-center text-gray-600 dark:text-gray-400'>
+                  封面图片
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* 元信息 + 简介 */}
+          <div className='lg:col-span-3'>
+            <div className='rounded-2xl bg-white/50 p-5 backdrop-blur-sm max-[375px]:p-4 lg:p-6 min-[1440px]:p-7 dark:bg-white/5'>
+              <div className='mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm min-[834px]:text-base min-[1440px]:text-[1.05rem] text-slate-700 dark:text-gray-300'>
                 {detail?.class && (
-                  <span className='text-green-600 dark:text-green-400 font-semibold'>
+                  <span className='font-semibold text-green-600 dark:text-green-400'>
                     {detail.class}
                   </span>
                 )}
@@ -2589,7 +2605,7 @@ function PlayPageClient() {
                   </span>
                 )}
                 {detail?.source_name && (
-                  <span className='border border-gray-400 dark:border-gray-500 px-2 py-px rounded text-gray-700 dark:text-gray-300'>
+                  <span className='rounded border border-gray-400 px-2 py-px text-gray-700 dark:border-gray-500 dark:text-gray-300'>
                     {detail.source_name}
                   </span>
                 )}
@@ -2599,39 +2615,14 @@ function PlayPageClient() {
                   </span>
                 )}
               </div>
-              {/* 剧情简介 */}
               {detail?.desc && (
-                <div
-                  className='mt-0 text-base leading-relaxed text-slate-700 dark:text-gray-300 overflow-y-auto pr-2 flex-1 min-h-0 scrollbar-hide'
-                  style={{ whiteSpace: 'pre-line' }}
-                >
+                <p className='whitespace-pre-line text-base leading-relaxed text-slate-700 dark:text-gray-300'>
                   {detail.desc}
-                </div>
+                </p>
               )}
             </div>
           </div>
-
-          {/* 封面展示 */}
-          <div className='hidden xl:order-first xl:col-span-2 xl:block'>
-            <div className='px-0 py-2 xl:pr-6'>
-              <div className='relative bg-gray-300 dark:bg-gray-700 aspect-2/3 flex items-center justify-center rounded-xl overflow-hidden'>
-                {videoCover ? (
-                  <>
-                    <img
-                      src={proxiedCoverUrl}
-                      alt={videoTitle}
-                      className='w-full h-full object-cover'
-                    />
-                  </>
-                ) : (
-                  <span className='text-gray-600 dark:text-gray-400'>
-                    封面图片
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        </section>
       </div>
 
       {swipeSeekOverlayPortalHost &&
