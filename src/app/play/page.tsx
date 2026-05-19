@@ -2397,7 +2397,7 @@ function PlayPageClient() {
                   e.stopPropagation();
                   handleToggleFavorite();
                 }}
-                className='shrink-0 transition-opacity hover:opacity-80'
+                className='tap-target shrink-0 transition-opacity hover:opacity-80'
                 aria-label={favorited ? '取消收藏' : '添加收藏'}
               >
                 <FavoriteIcon filled={favorited} />
