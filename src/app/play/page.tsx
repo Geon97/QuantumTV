@@ -19,7 +19,7 @@ import {
   SourceHealthStats,
 } from '@/lib/types';
 import { appLayoutClasses } from '@/lib/ui-layout';
-import { generateStorageKey, subscribeToDataUpdates } from '@/lib/utils';
+import { cn, generateStorageKey, subscribeToDataUpdates } from '@/lib/utils';
 import { useProxyImage } from '@/hooks/useProxyImage';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
@@ -2384,34 +2384,52 @@ function PlayPageClient() {
       <div
         className={`${appLayoutClasses.pageShell} flex flex-col gap-4 py-4 max-[375px]:py-3.5 min-[834px]:gap-5 min-[834px]:py-6 min-[1440px]:gap-6 min-[1440px]:py-8`}
       >
-        {/* 第一行：影片标题 */}
-        <div className='py-1 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between min-[834px]:gap-4'>
+        {/* 第一行：影片标题 + 收藏 + 跳过设置 */}
+        <div className='py-1 flex items-start justify-between gap-3 min-[834px]:gap-4'>
           <div className='min-w-0 flex-1'>
-            <h1 className='truncate text-[2rem] font-bold tracking-[-0.03em] text-gray-900 max-[375px]:text-[1.8rem] sm:text-[2.25rem] min-[834px]:text-[2.5rem] min-[1440px]:text-[2.85rem] dark:text-gray-100'>
-              {videoTitle || '影片标题'}
-            </h1>
+            <div className='flex items-center gap-2 min-w-0'>
+              <h1 className='truncate text-2xl font-bold tracking-[-0.03em] text-gray-900 max-[375px]:text-xl sm:text-3xl lg:text-[2.25rem] xl:text-[2.5rem] min-[1440px]:text-[2.75rem] dark:text-gray-100'>
+                {videoTitle || '影片标题'}
+              </h1>
+              <button
+                type='button'
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleFavorite();
+                }}
+                className='shrink-0 transition-opacity hover:opacity-80'
+                aria-label={favorited ? '取消收藏' : '添加收藏'}
+              >
+                <FavoriteIcon filled={favorited} />
+              </button>
+            </div>
             {totalEpisodes > 1 && (
-              <div className='mt-1.5 truncate text-sm font-medium text-gray-500 max-[375px]:text-[0.84rem] sm:text-base min-[834px]:mt-2 min-[834px]:text-lg dark:text-gray-400'>
+              <div className='mt-1.5 truncate text-sm font-medium text-gray-500 max-[375px]:text-[0.84rem] sm:text-base lg:mt-2 lg:text-lg dark:text-gray-400'>
                 {detail?.episodes_titles?.[currentEpisodeIndex] ||
-                  `${currentEpisodeIndex + 1} 集`}
+                  `第 ${currentEpisodeIndex + 1} 集`}
               </div>
             )}
           </div>
 
-          {/* 移动端跳过设置按钮 */}
+          {/* 跳过设置按钮（断点驱动尺寸/视觉密度） */}
           <button
+            type='button'
             onClick={() => setIsSkipConfigPanelOpen(true)}
-            className={`tap-target xl:hidden self-start shrink-0 flex items-center gap-1.5 px-3.5 py-2 max-[375px]:px-3 min-[834px]:px-4 rounded-full text-xs min-[834px]:text-sm font-medium transition-all duration-200 ${
+            title='设置跳过片头片尾'
+            className={cn(
+              'tap-target group relative flex shrink-0 items-center gap-1.5 self-start rounded-full px-3.5 py-2 text-xs font-medium transition-all duration-200',
+              'lg:rounded-xl lg:px-4 lg:py-2 lg:text-sm lg:shadow-md lg:hover:shadow-lg lg:hover:scale-105',
               skipConfig.enable
-                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 ring-1 ring-purple-500/20'
-                : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 ring-1 ring-gray-500/10'
-            }`}
+                ? 'bg-purple-100 text-purple-700 ring-1 ring-purple-500/30 dark:bg-purple-900/40 dark:text-purple-300 lg:bg-gradient-to-r lg:from-purple-600 lg:via-pink-500 lg:to-indigo-600 lg:text-white lg:ring-0'
+                : 'bg-gray-100 text-gray-600 ring-1 ring-gray-500/10 dark:bg-gray-800 dark:text-gray-400 lg:bg-gradient-to-r lg:from-gray-100 lg:to-gray-200 lg:dark:from-gray-700 lg:dark:to-gray-800 lg:text-gray-700 lg:dark:text-gray-300 lg:ring-0',
+            )}
           >
             <svg
-              className='w-3.5 h-3.5'
+              className='h-3.5 w-3.5 lg:h-5 lg:w-5'
               fill='none'
               stroke='currentColor'
               viewBox='0 0 24 24'
+              aria-hidden='true'
             >
               <path
                 strokeLinecap='round'
@@ -2420,44 +2438,19 @@ function PlayPageClient() {
                 d='M13 5l7 7-7 7M5 5l7 7-7 7'
               />
             </svg>
-            <span>{skipConfig.enable ? '已跳过' : '跳过'}</span>
+            <span>{skipConfig.enable ? '跳过已启用' : '跳过设置'}</span>
+            {skipConfig.enable && (
+              <span
+                className='absolute -right-1 -top-1 hidden h-3 w-3 animate-pulse rounded-full bg-green-400 lg:block'
+                aria-hidden='true'
+              />
+            )}
           </button>
         </div>
         {/* 第二行：播放器和选集 */}
         <div className='space-y-2.5 min-[834px]:space-y-4'>
           {/* 折叠控制和跳过设置 - 仅在 xl 及以上屏幕显示 */}
           <div className='hidden xl:flex items-center justify-between'>
-            {/* 跳过片头片尾设置按钮 */}
-            <button
-              onClick={() => setIsSkipConfigPanelOpen(true)}
-              className={`tap-target group relative flex items-center space-x-2 px-4 py-2 rounded-xl bg-linear-to-r transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 ${
-                skipConfig.enable
-                  ? 'from-purple-600 via-pink-500 to-indigo-600 text-white'
-                  : 'from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 text-gray-700 dark:text-gray-300'
-              }`}
-              title='设置跳过片头片尾'
-            >
-              <svg
-                className='w-5 h-5'
-                fill='none'
-                stroke='currentColor'
-                viewBox='0 0 24 24'
-              >
-                <path
-                  strokeLinecap='round'
-                  strokeLinejoin='round'
-                  strokeWidth={2}
-                  d='M13 5l7 7-7 7M5 5l7 7-7 7'
-                />
-              </svg>
-              <span className='text-sm font-medium'>
-                {skipConfig.enable ? '✨ 跳过已启用' : '⚙️ 跳过设置'}
-              </span>
-              {skipConfig.enable && (
-                <div className='absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full animate-pulse'></div>
-              )}
-            </button>
-
             <button
               onClick={() =>
                 setIsEpisodeSelectorCollapsed(!isEpisodeSelectorCollapsed)
@@ -2563,20 +2556,6 @@ function PlayPageClient() {
           {/* 文字区 */}
           <div className='xl:col-span-3'>
             <div className='flex min-h-0 flex-col rounded-2xl bg-white/50 p-5 backdrop-blur-sm max-[375px]:p-4 min-[834px]:p-6 min-[1440px]:p-7 dark:bg-white/5'>
-              {/* 标题 */}
-              <h1 className='mb-2 flex w-full shrink-0 items-center text-left text-[1.7rem] font-bold tracking-[-0.025em] text-slate-900 dark:text-gray-100 sm:text-[1.95rem] min-[834px]:text-[2.15rem] min-[1440px]:text-[2.35rem]'>
-                {videoTitle || '影片标题'}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleToggleFavorite();
-                  }}
-                  className='ml-3 shrink-0 hover:opacity-80 transition-opacity'
-                >
-                  <FavoriteIcon filled={favorited} />
-                </button>
-              </h1>
-
               {/* 关键信息行 */}
               <div className='mb-4 flex shrink-0 flex-wrap items-center gap-3 text-sm min-[834px]:text-base min-[1440px]:text-[1.05rem] text-slate-700 dark:text-gray-300'>
                 {detail?.class && (
