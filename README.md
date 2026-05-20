@@ -7,22 +7,7 @@
   <p>用 Rust + Tauri 打造,装机即用,数据只在你自己电脑里。</p>
 
   <p>
-    <a href="https://github.com/Geon97/QuantumTV/releases/latest">
-      <img src="https://img.shields.io/github/v/release/Geon97/QuantumTV?label=下载最新版&logo=github&color=24C8E0" alt="下载最新版" />
-    </a>
-    <a href="https://github.com/Geon97/QuantumTV/releases">
-      <img src="https://img.shields.io/github/downloads/Geon97/QuantumTV/total?label=总下载量&color=brightgreen" alt="downloads" />
-    </a>
-    <a href="https://github.com/Geon97/QuantumTV/stargazers">
-      <img src="https://img.shields.io/github/stars/Geon97/QuantumTV?style=flat&color=yellow" alt="stars" />
-    </a>
-    <a href="LICENSE">
-      <img src="https://img.shields.io/badge/License-MIT-green" alt="License" />
-    </a>
-  </p>
-
-  <p>
-    <a href="https://github.com/Geon97/QuantumTV/releases/latest"><strong>⬇️ 下载桌面版</strong></a> ·
+    <a href="https://github.com/Geon97/QuantumTV/releases/latest">下载最新版</a> ·
     <a href="#-快速开始">快速开始</a> ·
     <a href="#-功能特性">功能特性</a> ·
     <a href="#-tvbox-配置">TVBox</a> ·
