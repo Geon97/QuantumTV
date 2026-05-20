@@ -267,7 +267,11 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
     );
 
     const handleClick = useCallback(() => {
-      if (from === 'douban' || from === 'recommendation' || (isAggregate && !actualSource && !actualId)) {
+      if (
+        from === 'douban' ||
+        from === 'recommendation' ||
+        (isAggregate && !actualSource && !actualId)
+      ) {
         const url = `/play?title=${encodeURIComponent(actualTitle.trim())}${
           actualYear ? `&year=${actualYear}` : ''
         }${actualSearchType ? `&stype=${actualSearchType}` : ''}${isAggregate ? '&prefer=true' : ''}${actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''}`;
@@ -763,28 +767,30 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                     }}
                   />
                 )}
-                {config.showHeart && from !== 'search' && from !== 'recommendation' && (
-                  <Heart
-                    onClick={handleToggleFavorite}
-                    size={20}
-                    className={`transition-all duration-300 ease-out ${
-                      favorited
-                        ? 'fill-red-600 stroke-red-600'
-                        : 'fill-transparent stroke-white hover:stroke-red-400'
-                    } hover:scale-[1.1]`}
-                    style={
-                      {
-                        WebkitUserSelect: 'none',
-                        userSelect: 'none',
-                        WebkitTouchCallout: 'none',
-                      } as React.CSSProperties
-                    }
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      return false;
-                    }}
-                  />
-                )}
+                {config.showHeart &&
+                  from !== 'search' &&
+                  from !== 'recommendation' && (
+                    <Heart
+                      onClick={handleToggleFavorite}
+                      size={20}
+                      className={`transition-all duration-300 ease-out ${
+                        favorited
+                          ? 'fill-red-600 stroke-red-600'
+                          : 'fill-transparent stroke-white hover:stroke-red-400'
+                      } hover:scale-[1.1]`}
+                      style={
+                        {
+                          WebkitUserSelect: 'none',
+                          userSelect: 'none',
+                          WebkitTouchCallout: 'none',
+                        } as React.CSSProperties
+                      }
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        return false;
+                      }}
+                    />
+                  )}
               </div>
             )}
 
