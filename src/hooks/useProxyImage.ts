@@ -63,7 +63,7 @@ export function useProxyImage(originalUrl: string, metadata?: ImageMetadata): {
 
   useEffect(() => {
     const handleResume = () => {
-      // 清理失效的请求缓存和预加载状态
+      // 清理失效的请求缓存（防止 AppLifecycleWatcher 阈值未触发的情况）
       clearPendingRequests();
       setResumeKey((k) => k + 1);
     };

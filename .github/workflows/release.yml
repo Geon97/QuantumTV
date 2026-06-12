@@ -5,7 +5,8 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 permissions:
   contents: write
 
@@ -17,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.1.0
         with:
           tag_name: ${{ github.ref_name }}
           name: QuantumTV ${{ github.ref_name }}
@@ -60,7 +61,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.3.0
 
       # ---------------- Clean ----------------
       - name: Clean build artifacts (Unix)
@@ -128,9 +129,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4.10.0
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       # ---------------- Build ----------------
@@ -151,7 +152,7 @@ jobs:
       # ---------------- Upload ----------------
       - name: Upload Desktop Artifacts (macOS)
         if: runner.os == 'macOS'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.1.0
         with:
           files: |
             src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
@@ -161,7 +162,7 @@ jobs:
 
       - name: Upload Desktop Artifacts (Linux)
         if: runner.os == 'Linux'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.1.0
         with:
           files: |
             src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
@@ -172,7 +173,7 @@ jobs:
 
       - name: Upload Desktop Artifacts (Windows)
         if: runner.os == 'Windows'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.1.0
         with:
           files: |
             src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
@@ -188,7 +189,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.3.0
 
       - name: Install system deps
         run: |
@@ -220,9 +221,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4.10.0
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install Tauri CLI
@@ -264,7 +265,7 @@ jobs:
              QuantumTV-${{ github.ref_name }}-android-universal.apk
 
       - name: Upload Android APK
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.1.0
         with:
           files: QuantumTV-${{ github.ref_name }}-android-universal.apk
         env:
