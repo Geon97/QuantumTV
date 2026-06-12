@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2.1.0
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: QuantumTV ${{ github.ref_name }}
@@ -61,7 +61,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4.3.0
+      - uses: actions/checkout@v4
 
       # ---------------- Clean ----------------
       - name: Clean build artifacts (Unix)
@@ -129,7 +129,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: actions/setup-node@v4.10.0
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
@@ -152,7 +152,7 @@ jobs:
       # ---------------- Upload ----------------
       - name: Upload Desktop Artifacts (macOS)
         if: runner.os == 'macOS'
-        uses: softprops/action-gh-release@v2.1.0
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
@@ -162,7 +162,7 @@ jobs:
 
       - name: Upload Desktop Artifacts (Linux)
         if: runner.os == 'Linux'
-        uses: softprops/action-gh-release@v2.1.0
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
@@ -173,7 +173,7 @@ jobs:
 
       - name: Upload Desktop Artifacts (Windows)
         if: runner.os == 'Windows'
-        uses: softprops/action-gh-release@v2.1.0
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
@@ -189,7 +189,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4.3.0
+      - uses: actions/checkout@v4
 
       - name: Install system deps
         run: |
@@ -221,7 +221,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: actions/setup-node@v4.10.0
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
@@ -265,7 +265,7 @@ jobs:
              QuantumTV-${{ github.ref_name }}-android-universal.apk
 
       - name: Upload Android APK
-        uses: softprops/action-gh-release@v2.1.0
+        uses: softprops/action-gh-release@v2
         with:
           files: QuantumTV-${{ github.ref_name }}-android-universal.apk
         env:
