@@ -10,10 +10,19 @@ pub struct PageCacheManager {
 }
 
 impl PageCacheManager {
+    /// 从已有连接创建（旧接口，用于测试）
     pub fn new(conn: Connection) -> Self {
         Self {
             conn: Arc::new(std::sync::Mutex::new(conn)),
             ttl_seconds: 24 * 3600, // 24 小时
+        }
+    }
+
+    /// 从共享连接创建（新接口，用于生产环境共享连接）
+    pub fn from_shared(conn: Arc<std::sync::Mutex<Connection>>) -> Self {
+        Self {
+            conn,
+            ttl_seconds: 24 * 3600,
         }
     }
 

@@ -2,7 +2,7 @@ use crate::db::db_init::{Favorite, PlayRecord, SearchHistory, SkipConfig};
 use rusqlite::params;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 #[derive(Serialize, Deserialize)]
 struct ExportData {
@@ -44,16 +44,22 @@ struct SourceIntelligenceStatsExport {
 }
 
 pub struct Db {
-    conn: Mutex<Connection>,
+    conn: Arc<Mutex<Connection>>,
 }
 
 impl Db {
-    // 现有的方法创建示例
+    /// 从已有连接创建（旧接口，用于测试）
     pub fn new(conn: Connection) -> Self {
         Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
         }
     }
+
+    /// 从共享连接创建（新接口，用于生产环境共享连接）
+    pub fn from_shared(conn: Arc<Mutex<Connection>>) -> Self {
+        Self { conn }
+    }
+
     // 访问数据库
     pub fn with_conn<T, F>(&self, f: F) -> Result<T, String>
     where

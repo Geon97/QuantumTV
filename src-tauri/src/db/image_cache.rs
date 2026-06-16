@@ -11,12 +11,23 @@ pub struct ImageCacheManager {
 }
 
 impl ImageCacheManager {
+    /// 从已有连接创建（旧接口，用于测试）
     pub fn new(conn: Connection) -> Self {
         Self {
             conn: Arc::new(std::sync::Mutex::new(conn)),
             max_cache_size: 500 * 1024 * 1024, // 500MB
             max_cache_items: 1000,             // 1000 张图片
             ttl_days: 60,                      // 60 天
+        }
+    }
+
+    /// 从共享连接创建（新接口，用于生产环境共享连接）
+    pub fn from_shared(conn: Arc<std::sync::Mutex<Connection>>) -> Self {
+        Self {
+            conn,
+            max_cache_size: 500 * 1024 * 1024,
+            max_cache_items: 1000,
+            ttl_days: 60,
         }
     }
 
@@ -162,16 +173,44 @@ impl ImageCacheManager {
         )?;
 
         if total_size > self.max_cache_size {
-            // 删除最少使用的缓存（LRU）
-            let to_delete = (total_size - self.max_cache_size) * 2; // 删除超出部分的 2 倍
-            conn.execute(
-                "DELETE FROM image_cache WHERE url IN (
-                    SELECT url FROM image_cache
-                    ORDER BY last_accessed ASC, access_count ASC
-                    LIMIT (SELECT COUNT(*) FROM image_cache WHERE (SELECT SUM(size) FROM image_cache) > ?)
-                )",
-                params![to_delete],
+            // 需要删除的字节数（超出部分的 2 倍，确保清理彻底）
+            let bytes_to_free = (total_size - self.max_cache_size) * 2;
+
+            // 累积删除最少使用的条目，直到释放足够空间
+            // SQLite 不支持在 DELETE 里用窗口函数做 running sum，只能分步：
+            // 1. 查出按 LRU 排序的 url 和 size
+            // 2. 在 Rust 侧累加 size，找到删除边界
+            // 3. 批量删除
+
+            let mut stmt = conn.prepare(
+                "SELECT url, size FROM image_cache ORDER BY last_accessed ASC, access_count ASC",
             )?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })?;
+
+            let mut urls_to_delete = Vec::new();
+            let mut freed = 0i64;
+            for row in rows {
+                let (url, size) = row?;
+                urls_to_delete.push(url);
+                freed += size;
+                if freed >= bytes_to_free {
+                    break;
+                }
+            }
+            drop(stmt);
+
+            if !urls_to_delete.is_empty() {
+                // 批量删除（SQLite 的 IN 子句最多支持 999 个参数，分批）
+                for chunk in urls_to_delete.chunks(500) {
+                    let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+                    let sql = format!("DELETE FROM image_cache WHERE url IN ({})", placeholders);
+                    let params: Vec<&dyn rusqlite::ToSql> =
+                        chunk.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+                    conn.execute(&sql, params.as_slice())?;
+                }
+            }
         }
 
         // 3. 检查缓存条目数

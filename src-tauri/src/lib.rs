@@ -62,8 +62,12 @@ pub fn run() {
             app.manage(commands::search::FilterResultCache::new());
             app.manage(commands::recommendation::RecommendationEngine::new());
             app.manage(commands::analytics::AnalyticsEngine::new());
+
+            // 只打开一次数据库连接，所有管理器共享（避免多连接并发写导致 SQLITE_BUSY）
             let conn = db_init::init_db(app.handle());
-            let db = db_client::Db::new(conn);
+            let shared_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
+
+            let db = db_client::Db::from_shared(shared_conn.clone());
             if let Err(error) =
                 commands::config::initialize_source_storage(&app.state::<StorageManager>(), &db)
             {
@@ -85,17 +89,15 @@ pub fn run() {
 
             app.manage(db);
 
-            // 初始化图片缓存管理器
-            let cache_conn = db_init::init_db(app.handle());
-            let image_cache_manager = ImageCacheManager::new(cache_conn);
+            // 初始化图片缓存管理器（共享连接）
+            let image_cache_manager = ImageCacheManager::from_shared(shared_conn.clone());
             image_cache_manager
                 .init_table()
                 .expect("failed to init image cache table");
             app.manage(image_cache_manager);
 
-            // 初始化页面缓存管理器
-            let page_cache_conn = db_init::init_db(app.handle());
-            let page_cache_manager = PageCacheManager::new(page_cache_conn);
+            // 初始化页面缓存管理器（共享连接）
+            let page_cache_manager = PageCacheManager::from_shared(shared_conn.clone());
             page_cache_manager
                 .init_table()
                 .expect("failed to init page cache table");
