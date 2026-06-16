@@ -57,8 +57,8 @@ async function processPreloadQueue(): Promise<void> {
     preloadQueue.delete(url);
     preloadInProgress.add(url);
 
-    // 异步预加载，不阻塞
-    invoke<number[]>('proxy_image', { url })
+    // 异步预加载，不阻塞；preload_image 仅写入 SQLite 缓存，不回传字节
+    invoke('preload_image', { url })
       .then(() => {
         preloadInProgress.delete(url);
         // 继续处理队列

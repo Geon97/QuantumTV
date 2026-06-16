@@ -1586,8 +1586,47 @@ pub async fn proxy_image(
     let data = storage.get_data()?;
     validate_remote_url_against_config(&url, &data.config)?;
 
+    fetch_and_cache_image(
+        &url,
+        title.as_deref(),
+        source_name.as_deref(),
+        year.as_deref(),
+        category.as_deref(),
+        rating,
+        &cache_manager,
+    )
+    .await
+}
+
+/// 仅预热 SQLite 图片缓存，不向前端回传字节。
+/// 供 imagePreloader 使用，避免通过 IPC 传输 number[] 造成的开销。
+#[tauri::command]
+pub async fn preload_image(
+    url: String,
+    storage: State<'_, StorageManager>,
+    cache_manager: State<'_, crate::db::image_cache::ImageCacheManager>,
+) -> Result<(), String> {
+    let data = storage.get_data()?;
+    validate_remote_url_against_config(&url, &data.config)?;
+
+    fetch_and_cache_image(&url, None, None, None, None, None, &cache_manager).await?;
+    Ok(())
+}
+
+/// 图片获取与缓存的核心逻辑（不含 URL 校验，调用方负责校验）。
+/// 命中 SQLite 缓存直接返回；未命中则拉取上游、压缩为 JPEG 并写入缓存。
+/// 上游失败时回退到过期缓存，避免封面无限加载。
+pub(crate) async fn fetch_and_cache_image(
+    url: &str,
+    title: Option<&str>,
+    source_name: Option<&str>,
+    year: Option<&str>,
+    category: Option<&str>,
+    rating: Option<f64>,
+    cache_manager: &crate::db::image_cache::ImageCacheManager,
+) -> Result<Vec<u8>, String> {
     // 1. 先尝试从 SQLite 缓存获取
-    match cache_manager.get(&url) {
+    match cache_manager.get(url) {
         Ok(Some(data)) => {
             return Ok(data);
         }
@@ -1622,7 +1661,7 @@ pub async fn proxy_image(
 
     let fetch_result = async {
         let resp = client
-            .get(&url)
+            .get(url)
             .headers(headers)
             .send()
             .await
@@ -1641,7 +1680,7 @@ pub async fn proxy_image(
         Err(e) => {
             // 上游 URL 已失效（例如豆瓣签名过期）。回退到过期但仍存在的缓存数据，
             // 避免历史记录/推荐位封面陷入无限加载。
-            if let Ok(Some(stale)) = cache_manager.get_stale(&url) {
+            if let Ok(Some(stale)) = cache_manager.get_stale(url) {
                 eprintln!("Image fetch failed ({}), serving stale cache for {}", e, url);
                 return Ok(stale);
             }
@@ -1677,7 +1716,7 @@ pub async fn proxy_image(
     let compressed_bytes = match process_result {
         Ok(buf) => buf,
         Err(e) => {
-            if let Ok(Some(stale)) = cache_manager.get_stale(&url) {
+            if let Ok(Some(stale)) = cache_manager.get_stale(url) {
                 eprintln!("Image decode failed ({}), serving stale cache for {}", e, url);
                 return Ok(stale);
             }
@@ -1687,18 +1726,102 @@ pub async fn proxy_image(
 
     // 4. 保存到 SQLite 缓存（带元数据）
     if let Err(e) = cache_manager.set_with_metadata(
-        &url,
+        url,
         &compressed_bytes,
-        title.as_deref(),
-        source_name.as_deref(),
-        year.as_deref(),
-        category.as_deref(),
+        title,
+        source_name,
+        year,
+        category,
         rating,
     ) {
         eprintln!("Failed to save image to cache: {}", e);
     }
 
     Ok(compressed_bytes)
+}
+
+/// 自定义协议 `imgcache://` 的请求处理。
+/// 从 query 解析原始图片 URL 及元数据，经校验后由缓存/上游返回 JPEG 字节，
+/// 由 WebView 直接以 `<img>` 加载——绕开 IPC number[] 传输与 data/blob URL。
+pub async fn serve_cached_image<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    query: String,
+) -> tauri::http::Response<Vec<u8>> {
+    use tauri::http::StatusCode;
+
+    // 解析 query 参数（form_urlencoded 自动处理百分号解码）
+    let mut url = String::new();
+    let mut title: Option<String> = None;
+    let mut source_name: Option<String> = None;
+    let mut year: Option<String> = None;
+    let mut category: Option<String> = None;
+    let mut rating: Option<f64> = None;
+    for (k, v) in url::form_urlencoded::parse(query.as_bytes()) {
+        match k.as_ref() {
+            "url" => url = v.into_owned(),
+            "title" => title = Some(v.into_owned()),
+            "source_name" => source_name = Some(v.into_owned()),
+            "year" => year = Some(v.into_owned()),
+            "category" => category = Some(v.into_owned()),
+            "rating" => rating = v.parse::<f64>().ok(),
+            _ => {}
+        }
+    }
+
+    if url.is_empty() {
+        return image_error_response(StatusCode::BAD_REQUEST, "missing url param");
+    }
+
+    // 校验并取出配置（克隆出 Value，避免 State 借用跨越 await）
+    let config = match app.try_state::<StorageManager>() {
+        Some(storage) => match storage.get_data() {
+            Ok(d) => d.config,
+            Err(e) => return image_error_response(StatusCode::INTERNAL_SERVER_ERROR, &e),
+        },
+        None => return image_error_response(StatusCode::SERVICE_UNAVAILABLE, "storage not ready"),
+    };
+    if let Err(e) = validate_remote_url_against_config(&url, &config) {
+        return image_error_response(StatusCode::FORBIDDEN, &e);
+    }
+
+    // ImageCacheManager 是 Arc 包裹的，clone 后由 future 独立持有
+    let cache_manager = match app.try_state::<crate::db::image_cache::ImageCacheManager>() {
+        Some(cm) => cm.inner().clone(),
+        None => return image_error_response(StatusCode::SERVICE_UNAVAILABLE, "cache not ready"),
+    };
+
+    match fetch_and_cache_image(
+        &url,
+        title.as_deref(),
+        source_name.as_deref(),
+        year.as_deref(),
+        category.as_deref(),
+        rating,
+        &cache_manager,
+    )
+    .await
+    {
+        Ok(bytes) => tauri::http::Response::builder()
+            .status(StatusCode::OK)
+            .header(tauri::http::header::CONTENT_TYPE, "image/jpeg")
+            .header(tauri::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .header(tauri::http::header::CACHE_CONTROL, "public, max-age=604800")
+            .body(bytes)
+            .unwrap_or_else(|_| tauri::http::Response::new(Vec::new())),
+        Err(e) => image_error_response(StatusCode::BAD_GATEWAY, &e),
+    }
+}
+
+fn image_error_response(
+    status: tauri::http::StatusCode,
+    msg: &str,
+) -> tauri::http::Response<Vec<u8>> {
+    tauri::http::Response::builder()
+        .status(status)
+        .header(tauri::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .header(tauri::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")
+        .body(msg.as_bytes().to_vec())
+        .unwrap_or_else(|_| tauri::http::Response::new(Vec::new()))
 }
 
 // 带重试和指数退避的请求 重试3次

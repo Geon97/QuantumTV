@@ -22,6 +22,16 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
+        // 自定义协议：图片由 WebView 直接通过 imgcache:// 加载，
+        // 绕开 IPC number[] 传输；WebView 自带的每域名并发上限天然抑制了恢复时的重载风暴。
+        .register_asynchronous_uri_scheme_protocol("imgcache", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            let query = request.uri().query().unwrap_or("").to_string();
+            tauri::async_runtime::spawn(async move {
+                let response = commands::video::serve_cached_image(app, query).await;
+                responder.respond(response);
+            });
+        })
         .setup(|app| {
             // 注册老板键
             #[cfg(desktop)]
@@ -157,6 +167,7 @@ pub fn run() {
             commands::video::initialize_player_view,
             commands::video::get_cache_stats,
             commands::video::proxy_image,
+            commands::video::preload_image,
             commands::video::fetch_binary,
             commands::video::fetch_m3u8,
             commands::video::get_douban_data,

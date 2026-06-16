@@ -3,12 +3,11 @@
 import { useEffect, useRef } from 'react';
 
 import { resetPreloadState } from '@/lib/imagePreloader';
-import { clearPendingRequests } from '@/hooks/useProxyImage';
 
-// 只有在隐藏超过该阈值后再次可见,才视为真正的"恢复",避免桌面端
-// 短暂最小化/被其他窗口遮挡时触发 app-resumed,导致全站图片重新加载并卡住。
-// 移动端降低阈值以确保快速切换时也能清理缓存
-const RESUME_THRESHOLD_MS = 5_000; // 5秒，移动端更敏感
+// 仅在隐藏超过该阈值后再次可见才视为真正的"恢复"，避免桌面端短暂遮挡误触发。
+// 图片已改为自定义协议直载（WebView 自行管理重取），恢复时不再强制重载全站图片；
+// 这里只清理预加载队列，避免后台被中断的预载长期占用并发额度。
+const RESUME_THRESHOLD_MS = 5_000;
 
 export function AppLifecycleWatcher() {
   const hiddenAtRef = useRef<number | null>(null);
@@ -25,16 +24,9 @@ export function AppLifecycleWatcher() {
       const hiddenAt = hiddenAtRef.current;
       hiddenAtRef.current = null;
 
-      // 仅在长时间隐藏后才认为是真正的恢复(主要针对 Android WebView 场景)
-      const shouldClearCache = hiddenAt !== null && Date.now() - hiddenAt >= RESUME_THRESHOLD_MS;
-
-      if (shouldClearCache) {
-        clearPendingRequests();
+      if (hiddenAt !== null && Date.now() - hiddenAt >= RESUME_THRESHOLD_MS) {
         resetPreloadState();
       }
-
-      // 总是发送事件，让各组件决定如何响应
-      window.dispatchEvent(new CustomEvent('app-resumed'));
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
