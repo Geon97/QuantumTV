@@ -78,23 +78,53 @@ fn normalize_bangumi_data(data: &mut Vec<BangumiCalendarData>) {
 }
 
 async fn bangumi_calendar_data() -> Result<Vec<BangumiCalendarData>, String> {
-    let response = reqwest::get("https://api.bgm.tv/calendar")
-        .await
-        .map_err(|e| format!("Failed to fetch Bangumi data: {}", e))?;
-    if !response.status().is_success() {
-        return Ok(vec![]);
+    let urls = [
+        "https://api.bgm.tv/calendar",
+        "https://api.bgm.rdd.moe/calendar",
+        "https://bgmapi.anibt.net/calendar",
+    ];
+
+    let mut errors = Vec::new();
+
+    // 依次尝试每个节点
+    for &url in &urls {
+        match reqwest::get(url).await {
+            Ok(response) => {
+                // 如果状态码不成功，记录错误并尝试下一个节点
+                if !response.status().is_success() {
+                    errors.push(format!("{}: HTTP status {}", url, response.status()));
+                    continue;
+                }
+
+                // 尝试解析 JSON 数据
+                match response.json::<serde_json::Value>().await {
+                    Ok(data) => {
+                        let calendar_data = if let Some(array) = data.as_array() {
+                            serde_json::from_value(serde_json::Value::Array(array.clone()))
+                                .unwrap_or_default()
+                        } else {
+                            vec![]
+                        };
+                        // 成功获取并解析数据，直接返回
+                        return Ok(calendar_data);
+                    }
+                    Err(e) => {
+                        errors.push(format!("{}: JSON parse error: {}", url, e));
+                    }
+                }
+            }
+            Err(e) => {
+                // 网络连接失败，记录错误并尝试下一个节点
+                errors.push(format!("{}: Network error: {}", url, e));
+            }
+        }
     }
-    let data: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to fetch Bangumi data: {}", e))?;
-    // 如果为数组
-    let calendar_data = if let Some(array) = data.as_array() {
-        serde_json::from_value(serde_json::Value::Array(array.clone())).unwrap_or_default()
-    } else {
-        vec![]
-    };
-    Ok(calendar_data)
+
+    // 如果所有节点都尝试失败，返回汇总的错误信息
+    Err(format!(
+        "Failed to fetch Bangumi data from all endpoints. Details:\n{}",
+        errors.join("\n")
+    ))
 }
 
 #[tauri::command]

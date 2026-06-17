@@ -3197,7 +3197,7 @@ dependencies = [
 
 [[package]]
 name = "quantumtv"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "env_logger",
  "image",
@@ -3223,7 +3223,7 @@ dependencies = [
 
 [[package]]
 name = "quantumtv-core"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "image",
  "moka",

@@ -49,6 +49,7 @@ pub struct Db {
 
 impl Db {
     /// 从已有连接创建（旧接口，用于测试）
+    #[allow(dead_code)]
     pub fn new(conn: Connection) -> Self {
         Self {
             conn: Arc::new(Mutex::new(conn)),
