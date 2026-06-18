@@ -17,9 +17,7 @@ use tauri::{Emitter, Manager};
 
 /// Spawn all background interval tasks. Call once from `.setup()`.
 pub fn start_background_tasks(app: tauri::AppHandle) {
-    eprintln!(
-        "[调度器] 已启动: 配置订阅(24h), 图像缓存(7*24h), 页面缓存(3*24h), 推荐预热(24h)"
-    );
+    eprintln!("[调度器] 已启动: 配置订阅(24h), 图像缓存(7*24h), 页面缓存(3*24h), 推荐预热(24h)");
 
     spawn_subscription_auto_update(app.clone());
     spawn_image_cache_cleanup(app.clone());

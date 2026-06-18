@@ -25,6 +25,27 @@
 > ⚖️ 本项目仅用于 Rust / Tauri / 现代 Web 技术的学习与研究,**不提供任何影视内容**,所有播放源由用户自行配置。使用前请阅读 [安全与隐私](#-安全与隐私) 与 [免责声明](#-免责声明)。
 
 ---
+## 📸 界面截图
+
+<details>
+<summary>点击展开查看界面截图</summary>
+<br>
+
+<table align="center" style="border: none; border-collapse: collapse;">
+  <tr style="border: none;">
+    <td align="center" style="border: none; width: 65%; padding: 10px;">
+      <strong>💻 桌面端</strong><br/><br/>
+      <img src="public/desktop.png" alt="Desktop Version" width="100%" style="border-radius: 6px;" />
+    </td>
+    <td align="center" style="border: none; width: 35%; padding: 10px;">
+      <strong>📱 移动端</strong><br/><br/>
+      <img src="public/android.png" alt="Android Version" width="85%" style="border-radius: 6px;" />
+    </td>
+  </tr>
+</table>
+
+</details>
+
 
 ## 为什么是 QuantumTV?
 

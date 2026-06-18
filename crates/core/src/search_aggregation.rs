@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use crate::types::SearchResult;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// 聚合后的分组统计信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,7 +62,8 @@ pub fn aggregate_search_results(
     let norm_query_no_space = norm_query_lower.replace(" ", "");
 
     // 过滤相关结果
-    let relevant_results: Vec<SearchResult> = results.into_iter()
+    let relevant_results: Vec<SearchResult> = results
+        .into_iter()
         .filter(|item| {
             let title_lower = item.title.to_lowercase();
             let title_no_space = title_lower.replace(" ", "");
@@ -71,7 +72,8 @@ pub fn aggregate_search_results(
             if title_lower.contains(&query_lower)
                 || title_no_space.contains(&query_no_space)
                 || title_lower.contains(&norm_query_lower)
-                || title_no_space.contains(&norm_query_no_space) {
+                || title_no_space.contains(&norm_query_no_space)
+            {
                 return true;
             }
 
@@ -81,7 +83,9 @@ pub fn aggregate_search_results(
             }
 
             // 顺序包含关键词的所有字符 (转换后的词)
-            if norm_query != &query_lower && subsequence_match(&title_no_space, &norm_query_no_space) {
+            if norm_query != &query_lower
+                && subsequence_match(&title_no_space, &norm_query_no_space)
+            {
                 return true;
             }
 
@@ -94,14 +98,13 @@ pub fn aggregate_search_results(
     let mut key_order: Vec<String> = Vec::new();
 
     for item in relevant_results {
-        let item_type = if item.episodes.len() == 1 { "movie" } else { "tv" };
+        let item_type = if item.episodes.len() == 1 {
+            "movie"
+        } else {
+            "tv"
+        };
         let year_str = item.year.as_deref().unwrap_or("unknown");
-        let key = format!(
-            "{}-{}-{}",
-            item.title.replace(" ", ""),
-            year_str,
-            item_type
-        );
+        let key = format!("{}-{}-{}", item.title.replace(" ", ""), year_str, item_type);
 
         let is_new_key = !map.contains_key(&key);
         map.entry(key.clone()).or_insert_with(Vec::new).push(item);
@@ -112,7 +115,8 @@ pub fn aggregate_search_results(
     }
 
     // 按出现顺序返回
-    key_order.into_iter()
+    key_order
+        .into_iter()
         .filter_map(|key| map.remove(&key).map(|group| (key, group)))
         .collect()
 }
@@ -160,7 +164,8 @@ fn calculate_most_common_episodes(group: &[SearchResult]) -> usize {
         }
     }
 
-    count_map.into_iter()
+    count_map
+        .into_iter()
         .max_by_key(|(_, count)| *count)
         .map(|(episodes, _)| episodes)
         .unwrap_or(0)
@@ -168,7 +173,8 @@ fn calculate_most_common_episodes(group: &[SearchResult]) -> usize {
 
 /// 提取唯一的来源名称列表
 fn extract_unique_source_names(group: &[SearchResult]) -> Vec<String> {
-    let mut source_names: Vec<String> = group.iter()
+    let mut source_names: Vec<String> = group
+        .iter()
         .filter_map(|r| {
             if !r.source_name.is_empty() {
                 Some(r.source_name.clone())
@@ -195,14 +201,16 @@ fn calculate_most_common_douban_id(group: &[SearchResult]) -> Option<i32> {
         }
     }
 
-    count_map.into_iter()
+    count_map
+        .into_iter()
         .max_by_key(|(_, count)| *count)
         .map(|(douban_id, _)| douban_id)
 }
 
 /// 应用过滤器
 pub fn apply_filter(results: Vec<SearchResult>, filter: &SearchFilter) -> Vec<SearchResult> {
-    results.into_iter()
+    results
+        .into_iter()
         .filter(|item| {
             // 过滤来源
             if filter.source != "all" && item.source != filter.source {
@@ -318,14 +326,29 @@ mod tests {
     fn test_compare_year() {
         use std::cmp::Ordering;
 
-        assert_eq!(compare_year("2024", "2023", &YearOrder::Desc), Ordering::Less);
-        assert_eq!(compare_year("2023", "2024", &YearOrder::Asc), Ordering::Less);
-        assert_eq!(compare_year("unknown", "2024", &YearOrder::Asc), Ordering::Greater);
+        assert_eq!(
+            compare_year("2024", "2023", &YearOrder::Desc),
+            Ordering::Less
+        );
+        assert_eq!(
+            compare_year("2023", "2024", &YearOrder::Asc),
+            Ordering::Less
+        );
+        assert_eq!(
+            compare_year("unknown", "2024", &YearOrder::Asc),
+            Ordering::Greater
+        );
 
         // 边界情况
         assert_eq!(compare_year("", "", &YearOrder::Asc), Ordering::Equal);
-        assert_eq!(compare_year("unknown", "unknown", &YearOrder::Desc), Ordering::Equal);
-        assert_eq!(compare_year("2024", "2024", &YearOrder::Asc), Ordering::Equal);
+        assert_eq!(
+            compare_year("unknown", "unknown", &YearOrder::Desc),
+            Ordering::Equal
+        );
+        assert_eq!(
+            compare_year("2024", "2024", &YearOrder::Asc),
+            Ordering::Equal
+        );
     }
 
     #[test]

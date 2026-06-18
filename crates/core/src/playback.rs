@@ -40,11 +40,7 @@ impl SkipDetection {
     /// 检查当前时间是否应该触发跳过动作
     ///
     /// 返回 SkipAction 表示应该执行的动作
-    pub fn check_skip_action(
-        &self,
-        current_time: f64,
-        total_duration: f64,
-    ) -> SkipAction {
+    pub fn check_skip_action(&self, current_time: f64, total_duration: f64) -> SkipAction {
         if let Some(target_time) = self.should_skip_intro(current_time) {
             return SkipAction::SkipIntro(target_time);
         }

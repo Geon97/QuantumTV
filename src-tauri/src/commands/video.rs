@@ -1642,7 +1642,10 @@ pub async fn proxy_image(
             // 上游 URL 已失效（例如豆瓣签名过期）。回退到过期但仍存在的缓存数据，
             // 避免历史记录/推荐位封面陷入无限加载。
             if let Ok(Some(stale)) = cache_manager.get_stale(&url) {
-                eprintln!("Image fetch failed ({}), serving stale cache for {}", e, url);
+                eprintln!(
+                    "Image fetch failed ({}), serving stale cache for {}",
+                    e, url
+                );
                 return Ok(stale);
             }
             return Err(e);
@@ -1678,7 +1681,10 @@ pub async fn proxy_image(
         Ok(buf) => buf,
         Err(e) => {
             if let Ok(Some(stale)) = cache_manager.get_stale(&url) {
-                eprintln!("Image decode failed ({}), serving stale cache for {}", e, url);
+                eprintln!(
+                    "Image decode failed ({}), serving stale cache for {}",
+                    e, url
+                );
                 return Ok(stale);
             }
             return Err(e);

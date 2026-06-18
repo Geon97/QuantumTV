@@ -54,7 +54,9 @@ fn normalize_admin_config_object(map: &Map<String, Value>) -> Result<Value, Stri
     let mut config = default_admin_config_value();
     let default_config = config.clone();
 
-    if let Some(config_file) = get_value(map, &["ConfigFile", "config_file"]).and_then(|v| v.as_str()) {
+    if let Some(config_file) =
+        get_value(map, &["ConfigFile", "config_file"]).and_then(|v| v.as_str())
+    {
         set_string(&mut config, "ConfigFile", config_file);
     }
 
@@ -192,7 +194,10 @@ fn normalize_source_config_item(
         .unwrap_or(default_from)
         .to_string();
 
-    let disabled = obj.get("disabled").and_then(|v| v.as_bool()).unwrap_or(false);
+    let disabled = obj
+        .get("disabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let existing_adult = obj
         .get("is_adult")
         .and_then(|v| v.as_bool())
@@ -240,7 +245,10 @@ fn normalize_api_site_object(api_site: &Map<String, Value>) -> Vec<Value> {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let disabled = value.get("disabled").and_then(|v| v.as_bool()).unwrap_or(false);
+        let disabled = value
+            .get("disabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let existing_adult = value
             .get("is_adult")
             .and_then(|v| v.as_bool())
@@ -445,7 +453,12 @@ mod tests {
         let source = sources[0].as_object().unwrap();
         assert_eq!(source.get("from").unwrap(), "custom");
         assert_eq!(source.get("api").unwrap(), "http://example.com/api");
-        assert!(source.get("key").unwrap().as_str().unwrap().starts_with("test_source"));
+        assert!(source
+            .get("key")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .starts_with("test_source"));
     }
 
     #[test]
@@ -548,7 +561,11 @@ mod tests {
         let result = parse_admin_config(&input).unwrap();
         let prefs = result.get("UserPreferences").unwrap().as_object().unwrap();
         assert_eq!(prefs.get("site_name").unwrap(), "QuantumTV");
-        let sub = result.get("ConfigSubscribtion").unwrap().as_object().unwrap();
+        let sub = result
+            .get("ConfigSubscribtion")
+            .unwrap()
+            .as_object()
+            .unwrap();
         assert_eq!(sub.get("URL").unwrap(), "http://example.com");
         assert_eq!(sub.get("AutoUpdate").unwrap(), false);
     }
@@ -568,7 +585,7 @@ mod tests {
         assert_eq!(obj.get("is_adult").unwrap(), true);
         assert_eq!(obj.get("from").unwrap(), "custom");
     }
-    
+
     #[test]
     fn merge_preserves_extra_top_level_fields() {
         let input = json!({
@@ -588,7 +605,11 @@ mod tests {
         });
 
         let merged = merge_admin_config_with_defaults(&input);
-        let sub = merged.get("ConfigSubscribtion").unwrap().as_object().unwrap();
+        let sub = merged
+            .get("ConfigSubscribtion")
+            .unwrap()
+            .as_object()
+            .unwrap();
         assert_eq!(sub.get("URL").unwrap(), "http://example.com");
         assert_eq!(sub.get("AutoUpdate").unwrap(), false);
         assert_eq!(sub.get("LastCheck").unwrap(), "");
