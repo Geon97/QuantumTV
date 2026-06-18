@@ -14,7 +14,7 @@ impl PageCacheManager {
     pub fn from_shared(conn: Arc<std::sync::Mutex<Connection>>) -> Self {
         Self {
             conn,
-            ttl_seconds: 24 * 3600,
+            ttl_seconds: 24 * 3600 * 7,
         }
     }
 
