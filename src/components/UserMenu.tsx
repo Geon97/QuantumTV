@@ -35,6 +35,8 @@ interface VersionCheckResult {
 
 interface SettingsBootstrapResponse {
   userPreferences: {
+    bangumi_proxy_type: string;
+    bangumi_proxy_url: string;
     disable_yellow_filter: boolean;
     douban_data_source: string;
     douban_proxy_url: string;
@@ -99,6 +101,18 @@ export const UserMenu: React.FC = () => {
   const [isDoubanDropdownOpen, setIsDoubanDropdownOpen] = useState(false);
   const [isDoubanImageProxyDropdownOpen, setIsDoubanImageProxyDropdownOpen] =
     useState(false);
+  const [bangumiProxyType, setBangumiProxyType] = useState('');
+  const [bangumiProxyUrl, setBangumiProxyUrl] = useState('');
+  const [isBangumiProxyDropdownOpen, setIsBangumiProxyDropdownOpen] =
+    useState(false);
+
+  // 番剧代理选项
+  const bangumiProxyTypeOptions = [
+    { value: 'https://api.bgm.tv/calendar', label: '默认 Bgm.tv 官方' },
+    { value: 'https://api.bangumi.one/calendar', label: 'Bangumi.one 代理' },
+    { value: 'https://bgmapi.anibt.net/calendar', label: 'Anibt 代理' },
+    { value: 'custom', label: '自定义代理' },
+  ];
 
   // 豆瓣数据源选项
   const doubanDataSourceOptions = [
@@ -153,6 +167,20 @@ export const UserMenu: React.FC = () => {
         setDoubanProxyUrl(prefs.douban_proxy_url);
         setDoubanImageProxyType(prefs.douban_image_proxy_type);
         setDoubanImageProxyUrl(prefs.douban_image_proxy_url);
+
+        // 番剧代理：根据 bangumi_proxy_url 的值来设置 bangumiProxyType
+        // 如果 bangumi_proxy_type 是 'custom'，使用它；否则使用 bangumi_proxy_url 作为类型
+        if (prefs.bangumi_proxy_type === 'custom') {
+          setBangumiProxyType('custom');
+          setBangumiProxyUrl(prefs.bangumi_proxy_url || '');
+        } else if (prefs.bangumi_proxy_url) {
+          setBangumiProxyType(prefs.bangumi_proxy_url);
+          setBangumiProxyUrl(prefs.bangumi_proxy_url);
+        } else {
+          setBangumiProxyType('');
+          setBangumiProxyUrl('');
+        }
+
         setEnableOptimization(prefs.enable_optimization);
         setFluidSearch(prefs.fluid_search);
         // disable_yellow_filter=false 表示开启过滤，所以需要反转
@@ -297,6 +325,8 @@ export const UserMenu: React.FC = () => {
   // 统一保存用户偏好配置到 Rust
   const saveUserPreferences = async (
     updates: Partial<{
+      bangumi_proxy_type: string;
+      bangumi_proxy_url: string;
       douban_data_source: string;
       douban_proxy_url: string;
       douban_image_proxy_type: string;
@@ -351,6 +381,22 @@ export const UserMenu: React.FC = () => {
     saveUserPreferences({ douban_image_proxy_url: value });
   };
 
+  const handleBangumiProxyTypeChange = (value: string) => {
+    setBangumiProxyType(value);
+    // 如果选择的是预设选项（完整URL），保存到 bangumi_proxy_url
+    // 如果选择的是 custom，则保存类型标识符到 bangumi_proxy_type
+    if (value === 'custom') {
+      saveUserPreferences({ bangumi_proxy_type: value, bangumi_proxy_url: '' });
+    } else {
+      saveUserPreferences({ bangumi_proxy_type: '', bangumi_proxy_url: value });
+    }
+  };
+
+  const handleBangumiProxyUrlChange = (value: string) => {
+    setBangumiProxyUrl(value);
+    saveUserPreferences({ bangumi_proxy_url: value });
+  };
+
   // 获取感谢信息
   const getThanksInfo = (dataSource: string) => {
     switch (dataSource) {
@@ -392,6 +438,8 @@ export const UserMenu: React.FC = () => {
     setDoubanImageProxyType(defaultDoubanImageProxyType);
     setDoubanImageProxyUrl(defaultDoubanImageProxyUrl);
     setPlayerBufferMode('standard');
+    setBangumiProxyType('');
+    setBangumiProxyUrl('');
 
     // 保存所有配置到 Rust
     await saveUserPreferences({
@@ -403,6 +451,8 @@ export const UserMenu: React.FC = () => {
       douban_image_proxy_type: defaultDoubanImageProxyType,
       douban_image_proxy_url: defaultDoubanImageProxyUrl,
       player_buffer_mode: 'standard',
+      bangumi_proxy_type: '',
+      bangumi_proxy_url: '',
     });
   };
 
@@ -591,27 +641,6 @@ export const UserMenu: React.FC = () => {
                   </div>
                 )}
               </div>
-
-              {/* 感谢信息 */}
-              {getThanksInfo(doubanDataSource) && (
-                <div className='mt-3'>
-                  <button
-                    type='button'
-                    onClick={() =>
-                      window.open(
-                        getThanksInfo(doubanDataSource)!.url,
-                        '_blank',
-                      )
-                    }
-                    className='flex items-center justify-center gap-1.5 w-full px-3 text-xs text-gray-500 dark:text-gray-400 cursor-pointer'
-                  >
-                    <span className='font-medium'>
-                      {getThanksInfo(doubanDataSource)!.text}
-                    </span>
-                    <ExternalLink className='w-3.5 opacity-70' />
-                  </button>
-                </div>
-              )}
             </div>
 
             {/* 豆瓣代理地址设置 - 仅在选择自定义代理时显示 */}
@@ -634,9 +663,6 @@ export const UserMenu: React.FC = () => {
                 />
               </div>
             )}
-
-            {/* 分割线 */}
-            <div className='border-t border-gray-200 dark:border-gray-700'></div>
 
             {/* 豆瓣图片代理设置 */}
             <div className='space-y-3'>
@@ -743,6 +769,95 @@ export const UserMenu: React.FC = () => {
                   onChange={(e) =>
                     handleDoubanImageProxyUrlChange(e.target.value)
                   }
+                />
+              </div>
+            )}
+
+            {/* 分割线 */}
+            <div className='border-t border-gray-200 dark:border-gray-700'></div>
+
+            {/* 番剧资源代理设置 */}
+            <div className='space-y-3'>
+              <div>
+                <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                  番剧资源代理
+                </h4>
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                  选择获取番剧资源代理的方式
+                </p>
+              </div>
+              <div className='relative' data-dropdown='bangumi-proxy'>
+                {/* 自定义下拉选择框 */}
+                <button
+                  type='button'
+                  onClick={() =>
+                    setIsBangumiProxyDropdownOpen(
+                      !isBangumiProxyDropdownOpen,
+                    )
+                  }
+                  className='w-full px-3 py-2.5 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm hover:border-gray-400 dark:hover:border-gray-500 text-left'
+                >
+                  {
+                    bangumiProxyTypeOptions.find(
+                      (option) => option.value === bangumiProxyType,
+                    )?.label
+                  }
+                </button>
+
+                {/* 下拉箭头 */}
+                <div className='absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none'>
+                  <ChevronDown
+                    className={`w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform duration-200 ${
+                      isBangumiProxyDropdownOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                </div>
+
+                {/* 下拉选项列表 */}
+                {isBangumiProxyDropdownOpen && (
+                  <div className='absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-auto'>
+                    {bangumiProxyTypeOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type='button'
+                        onClick={() => {
+                          handleBangumiProxyTypeChange(option.value);
+                          setIsBangumiProxyDropdownOpen(false);
+                        }}
+                        className={`w-full px-3 py-2.5 text-left text-sm transition-colors duration-150 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 ${
+                          bangumiProxyType === option.value
+                            ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
+                            : 'text-gray-900 dark:text-gray-100'
+                        }`}
+                      >
+                        <span className='truncate'>{option.label}</span>
+                        {bangumiProxyType === option.value && (
+                          <Check className='w-4 h-4 text-green-600 dark:text-green-400 shrink-0 ml-2' />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 番剧代理地址设置 - 仅在选择自定义代理时显示 */}
+            {bangumiProxyType === 'custom' && (
+              <div className='space-y-3'>
+                <div>
+                  <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                    番剧代理地址
+                  </h4>
+                  <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                    自定义番剧代理服务器地址
+                  </p>
+                </div>
+                <input
+                  type='text'
+                  className='w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 shadow-sm hover:border-gray-400 dark:hover:border-gray-500'
+                  placeholder='例如: https://api.example.com/calendar'
+                  value={bangumiProxyUrl}
+                  onChange={(e) => handleBangumiProxyUrlChange(e.target.value)}
                 />
               </div>
             )}
@@ -885,7 +1000,7 @@ export const UserMenu: React.FC = () => {
               </div>
 
               <p className='text-xs text-gray-500 dark:text-gray-400'>
-                缓存有效期 24 小时，包含首页、电影、剧集、动漫、综艺等页面数据
+                缓存有效期 7 天，包含首页、电影、剧集、动漫、综艺等页面数据
               </p>
             </div>
           </div>
