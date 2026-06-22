@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Weekday {
@@ -33,6 +34,25 @@ pub struct Items {
 pub struct BangumiCalendarData {
     pub weekday: Option<Weekday>,
     pub items: Option<Vec<Items>>,
+}
+
+/// 全局番剧代理配置
+static BANGUMI_PROXY_URL: Mutex<String> = Mutex::new(String::new());
+
+/// 设置番剧代理配置
+pub fn set_bangumi_proxy_url(url: &str) {
+    if let Ok(mut guard) = BANGUMI_PROXY_URL.lock() {
+        *guard = url.to_string();
+    }
+}
+
+/// 获取番剧代理配置
+fn get_bangumi_proxy_url() -> String {
+    if let Ok(guard) = BANGUMI_PROXY_URL.lock() {
+        guard.clone()
+    } else {
+        String::new()
+    }
 }
 
 fn normalize_image_url(url: Option<String>) -> Option<String> {
@@ -77,82 +97,39 @@ fn normalize_bangumi_data(data: &mut Vec<BangumiCalendarData>) {
     }
 }
 
-/// 测速单个节点，返回响应时间（毫秒）
-async fn ping_endpoint(url: String) -> Option<(String, u128)> {
-    let start = std::time::Instant::now();
+/// 根据代理配置获取要使用的 URL 列表
+fn get_bangumi_urls() -> Vec<String> {
+    let proxy_url = get_bangumi_proxy_url();
 
-    match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(3))
-        .build()
-        .ok()?
-        .head(&url)
-        .send()
-        .await
-    {
-        Ok(response) if response.status().is_success() => {
-            let latency = start.elapsed().as_millis();
-            Some((url, latency))
-        }
-        _ => None,
-    }
-}
-
-/// 并发测速所有节点，返回按响应时间排序的 URL 列表
-async fn speed_test_endpoints(urls: &[&str]) -> Vec<String> {
-    let mut handles = Vec::new();
-
-    // 为每个 URL 创建并发任务
-    for &url in urls {
-        let handle = tokio::spawn(ping_endpoint(url.to_string()));
-        handles.push(handle);
-    }
-
-    // 等待所有任务完成并收集成功的结果
-    let mut successful = Vec::new();
-    for handle in handles {
-        if let Ok(Some((url, latency))) = handle.await {
-            successful.push((url, latency));
-        }
-    }
-
-    // 按延迟排序
-    successful.sort_by_key(|(_, latency)| *latency);
-
-    // 返回排序后的 URL
-    let sorted_urls: Vec<String> = successful.into_iter().map(|(url, _)| url).collect();
-
-    // 如果没有任何节点响应，回退到原始顺序
-    if sorted_urls.is_empty() {
-        urls.iter().map(|&s| s.to_string()).collect()
+    if !proxy_url.is_empty() {
+        // 用户设置了自定义代理，优先使用，失败时回退到备选端点
+        vec![
+            proxy_url,
+            "https://api.bangumi.one/calendar".to_string(),
+            "https://bgmapi.anibt.net/calendar".to_string(),
+        ]
     } else {
-        sorted_urls
+        // 未设置代理，使用默认端点列表（按可靠性排序）
+        vec![
+            "https://api.bgm.tv/calendar".to_string(),
+            "https://api.bangumi.one/calendar".to_string(),
+            "https://bgmapi.anibt.net/calendar".to_string(),
+        ]
     }
 }
 
 async fn bangumi_calendar_data() -> Result<Vec<BangumiCalendarData>, String> {
-    let urls = [
-        "https://api.bgm.tv/calendar",
-        "https://api.bangumi.one/calendar",
-        // "https://api.bgm.rdd.moe/calendar",
-        "https://bgmapi.anibt.net/calendar",
-    ];
-
-    // 先测速，获取按响应时间排序的节点列表
-    let sorted_urls = speed_test_endpoints(&urls).await;
-
+    let urls = get_bangumi_urls();
     let mut errors = Vec::new();
 
-    // 按测速结果依次尝试每个节点
-    for url in sorted_urls {
+    for url in urls {
         match reqwest::get(&url).await {
             Ok(response) => {
-                // 如果状态码不成功，记录错误并尝试下一个节点
                 if !response.status().is_success() {
                     errors.push(format!("{}: HTTP status {}", url, response.status()));
                     continue;
                 }
 
-                // 尝试解析 JSON 数据
                 match response.json::<serde_json::Value>().await {
                     Ok(data) => {
                         let calendar_data = if let Some(array) = data.as_array() {
@@ -161,7 +138,6 @@ async fn bangumi_calendar_data() -> Result<Vec<BangumiCalendarData>, String> {
                         } else {
                             vec![]
                         };
-                        // 成功获取并解析数据，直接返回
                         return Ok(calendar_data);
                     }
                     Err(e) => {
@@ -170,13 +146,11 @@ async fn bangumi_calendar_data() -> Result<Vec<BangumiCalendarData>, String> {
                 }
             }
             Err(e) => {
-                // 网络连接失败，记录错误并尝试下一个节点
                 errors.push(format!("{}: Network error: {}", url, e));
             }
         }
     }
 
-    // 如果所有节点都尝试失败，返回汇总的错误信息
     Err(format!(
         "Failed to fetch Bangumi data from all endpoints. Details:\n{}",
         errors.join("\n")
@@ -193,47 +167,6 @@ pub async fn get_bangumi_calendar_data() -> Result<Vec<BangumiCalendarData>, Str
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[tokio::test]
-    async fn test_speed_test_endpoints() {
-        let urls = [
-            "https://api.bgm.tv/calendar",
-            "https://api.bgm.rdd.moe/calendar",
-            "https://bgmapi.anibt.net/calendar",
-        ];
-
-        let sorted = speed_test_endpoints(&urls).await;
-
-        // 应该返回非空列表
-        assert!(!sorted.is_empty());
-        // 返回的数量应该 <= 原始数量（某些节点可能测速失败）
-        assert!(sorted.len() <= urls.len());
-    }
-
-    #[tokio::test]
-    async fn test_speed_test_all_unreachable() {
-        // 使用不可达的 URL
-        let urls = [
-            "https://unreachable1.invalid/calendar",
-            "https://unreachable2.invalid/calendar",
-        ];
-
-        let sorted = speed_test_endpoints(&urls).await;
-
-        // 应该回退到原始顺序
-        assert_eq!(sorted.len(), 2);
-        assert_eq!(sorted[0], urls[0]);
-        assert_eq!(sorted[1], urls[1]);
-    }
-
-    #[tokio::test]
-    async fn test_ping_endpoint_timeout() {
-        // 测试超时机制（使用一个慢速响应的服务）
-        let result = ping_endpoint("https://httpstat.us/200?sleep=5000".to_string()).await;
-
-        // 3秒超时，所以应该返回 None
-        assert!(result.is_none());
-    }
 
     #[test]
     fn test_normalize_bangumi_data() {
@@ -259,7 +192,6 @@ mod tests {
 
         normalize_bangumi_data(&mut data);
 
-        // 验证图片 URL 已被规范化
         let items = data[0].items.as_ref().unwrap();
         let image_url = &items[0].images.as_ref().unwrap().large;
         assert!(image_url.as_ref().unwrap().starts_with("https://"));
@@ -267,19 +199,36 @@ mod tests {
 
     #[test]
     fn test_normalize_image_url() {
-        // HTTP 转 HTTPS
         assert_eq!(
             normalize_image_url(Some("http://example.com/image.jpg".to_string())),
             Some("https://example.com/image.jpg".to_string())
         );
 
-        // 已经是 HTTPS 的不变
         assert_eq!(
             normalize_image_url(Some("https://example.com/image.jpg".to_string())),
             Some("https://example.com/image.jpg".to_string())
         );
 
-        // None 返回 None
         assert_eq!(normalize_image_url(None), None);
+    }
+
+    #[test]
+    fn test_get_bangumi_urls_with_proxy() {
+        set_bangumi_proxy_url("https://custom.bangumi.com/calendar");
+        let urls = get_bangumi_urls();
+        assert_eq!(urls.len(), 3);
+        assert_eq!(urls[0], "https://custom.bangumi.com/calendar");
+        assert_eq!(urls[1], "https://api.bangumi.one/calendar");
+        assert_eq!(urls[2], "https://bgmapi.anibt.net/calendar");
+    }
+
+    #[test]
+    fn test_get_bangumi_urls_without_proxy() {
+        set_bangumi_proxy_url("");
+        let urls = get_bangumi_urls();
+        assert_eq!(urls.len(), 3);
+        assert_eq!(urls[0], "https://api.bgm.tv/calendar");
+        assert_eq!(urls[1], "https://api.bangumi.one/calendar");
+        assert_eq!(urls[2], "https://bgmapi.anibt.net/calendar");
     }
 }

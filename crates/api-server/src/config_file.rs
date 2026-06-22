@@ -78,6 +78,8 @@ pub struct UserPreferences {
     pub search_downstream_max_page: u32,
     pub site_interface_cache_time: u32,
     pub site_name: String,
+    pub bangumi_proxy_type: String,
+    pub bangumi_proxy_url: String,
 }
 
 pub static PARSES_FILE: LazyLock<String> = LazyLock::new(|| {

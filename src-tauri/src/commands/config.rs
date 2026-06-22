@@ -1,4 +1,5 @@
 use crate::commands::source_intelligence::SourceIntelligenceManager;
+use crate::commands::bangumi::set_bangumi_proxy_url;
 use crate::db::db_client::Db;
 use crate::storage::StorageManager;
 use quantumtv_core::adult;
@@ -1264,6 +1265,10 @@ pub struct UserPreferences {
     pub player_buffer_mode: String,
     /// 已查看的公告内容
     pub has_seen_announcement: String,
+    /// 番剧代理类型
+    pub bangumi_proxy_type: String,
+    /// 番剧代理URL
+    pub bangumi_proxy_url: String,
 }
 
 impl Default for UserPreferences {
@@ -1287,6 +1292,8 @@ impl Default for UserPreferences {
             fluid_search: true,
             player_buffer_mode: "standard".to_string(),
             has_seen_announcement: String::new(),
+            bangumi_proxy_type: String::new(),
+            bangumi_proxy_url: String::new(),
         }
     }
 }
@@ -1305,6 +1312,8 @@ pub struct UserPreferencesPatch {
     pub fluid_search: Option<bool>,
     pub player_buffer_mode: Option<String>,
     pub has_seen_announcement: Option<String>,
+    pub bangumi_proxy_type: Option<String>,
+    pub bangumi_proxy_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -1459,6 +1468,12 @@ fn apply_user_preferences_patch(
     if let Some(value) = patch.has_seen_announcement {
         preferences.has_seen_announcement = value;
     }
+    if let Some(value) = patch.bangumi_proxy_type {
+        preferences.bangumi_proxy_type = value;
+    }
+    if let Some(value) = patch.bangumi_proxy_url {
+        preferences.bangumi_proxy_url = value;
+    }
     preferences
 }
 
@@ -1551,6 +1566,13 @@ pub async fn set_user_preferences(
 
     let config_obj = data.config.as_object_mut().unwrap();
 
+    // 同步 bangumi 代理配置
+    if !preferences.bangumi_proxy_url.is_empty() {
+        set_bangumi_proxy_url(&preferences.bangumi_proxy_url);
+    } else {
+        set_bangumi_proxy_url("");
+    }
+
     // 保存用户偏好配置
     config_obj.insert(
         "UserPreferences".to_string(),
@@ -1579,6 +1601,13 @@ pub async fn update_user_preferences(
         "UserPreferences".to_string(),
         serde_json::to_value(updated.clone()).map_err(|e| e.to_string())?,
     );
+
+    // 同步 bangumi 代理配置
+    if !updated.bangumi_proxy_url.is_empty() {
+        set_bangumi_proxy_url(&updated.bangumi_proxy_url);
+    } else {
+        set_bangumi_proxy_url("");
+    }
 
     state.update_config(data.config)?;
     Ok(updated)

@@ -9,7 +9,6 @@ export interface CacheStats {
 
 /**
  * 页面缓存 Hook
- * 缓存有效期：24 小时
  */
 export function usePageCache() {
   /**
