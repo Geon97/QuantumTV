@@ -16,6 +16,24 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+/// 浏览器内部页面的 scheme。
+///
+/// WebView2 / WKWebView 等内嵌运行时不带浏览器 UI，这类地址无法渲染。
+/// 一旦被导航过去，应用界面会被"无法访问此页面"顶掉且无法返回
+/// （例如 WebView2 画中画小窗的原生齿轮按钮会跳 edge://settings/...）。
+const BLOCKED_SCHEMES: &[&str] = &[
+    "edge", "chrome", "about", "devtools", "view-source", "res", "browser",
+];
+
+fn is_blocked_navigation(url: &tauri::Url) -> bool {
+    let scheme = url.scheme().to_ascii_lowercase();
+    // about:blank 是 window.open 的常规中间态，放行以免误伤
+    if scheme == "about" && url.path().eq_ignore_ascii_case("blank") {
+        return false;
+    }
+    BLOCKED_SCHEMES.iter().any(|blocked| scheme == *blocked)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
@@ -23,6 +41,28 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // 主窗口在 tauri.conf.json 中声明为 create:false，
+            // 在此重建以挂载导航守卫（配置本身仍从 conf 读取，尺寸/标题不变）。
+            {
+                let window_config = app
+                    .config()
+                    .app
+                    .windows
+                    .first()
+                    .cloned()
+                    .expect("tauri.conf.json 缺少主窗口配置");
+
+                tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
+                    .on_navigation(|url| {
+                        if is_blocked_navigation(url) {
+                            log::warn!("已拦截浏览器内部页面导航: {}", url);
+                            return false;
+                        }
+                        true
+                    })
+                    .build()?;
+            }
+
             // 注册老板键
             #[cfg(desktop)]
             {

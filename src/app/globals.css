@@ -2796,6 +2796,15 @@ html.dark .tooltip {
   width: var(--qt-control-size);
 }
 
+/* 页面全屏按钮：沿用原画中画按钮的位置（order 100） */
+.quantum-plyr-shell
+  .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
+  .plyr__controls
+  .plyr__controls__item.quantum-plyr-item-page-fullscreen {
+  order: 100;
+  width: var(--qt-control-size);
+}
+
 .quantum-plyr-shell
   .plyr:not(.plyr--fullscreen-active):not(.plyr--fullscreen-fallback)
   .plyr__controls
@@ -3169,6 +3178,46 @@ html.dark .tooltip {
   .plyr--fullscreen-active .plyr__controls {
     padding-top: max(env(safe-area-inset-top), 16px) !important;
     padding-bottom: calc(12px + max(env(safe-area-inset-bottom), 16px)) !important;
+    padding-left: calc(12px + env(safe-area-inset-left)) !important;
+    padding-right: calc(12px + env(safe-area-inset-right)) !important;
+  }
+}
+
+/* ===========================================================================
+   页面全屏（网页全屏）
+   播放器铺满应用窗口但不进入系统全屏，替代画中画。
+   z-index 需高于移动端头部(85)与底部导航(75)，但低于设置面板(9999)，
+   以免挡住"跳过设置"等弹窗。
+   =========================================================================== */
+.quantum-page-fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 90;
+  margin: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+  height: 100% !important;
+  max-height: none !important;
+  /* 覆盖 aspect-video：全屏时由窗口尺寸决定 */
+  aspect-ratio: auto !important;
+  border-radius: 0 !important;
+}
+
+/* 让视频以完整比例居中显示，两侧留黑边而非裁切 */
+.quantum-page-fullscreen .quantum-plyr-shell .plyr,
+.quantum-page-fullscreen .quantum-plyr-shell .plyr__video-wrapper {
+  height: 100%;
+}
+
+.quantum-page-fullscreen .quantum-plyr-shell video {
+  height: 100%;
+  object-fit: contain;
+}
+
+/* 安全区内边距，避免刘海/圆角遮挡控制栏 */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .quantum-page-fullscreen .plyr__controls {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom)) !important;
     padding-left: calc(12px + env(safe-area-inset-left)) !important;
     padding-right: calc(12px + env(safe-area-inset-right)) !important;
   }

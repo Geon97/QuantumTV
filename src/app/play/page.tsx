@@ -181,6 +181,33 @@ function PlayPageClient() {
   // 跳过片头片尾设置面板状态
   const [isSkipConfigPanelOpen, setIsSkipConfigPanelOpen] = useState(false);
 
+  // 页面全屏（网页全屏）：播放器铺满应用窗口，但不进入系统全屏。
+  // 用于替代画中画——WebView2 的 PiP 小窗带原生齿轮，点击会跳 edge:// 错误页。
+  const [isPageFullscreen, setIsPageFullscreen] = useState(false);
+  const isPageFullscreenRef = useRef(isPageFullscreen);
+  useEffect(() => {
+    isPageFullscreenRef.current = isPageFullscreen;
+  }, [isPageFullscreen]);
+
+  // 页面全屏时锁定滚动（与 UserMenu 一致：只改 overflow，避免布局跳动）
+  useEffect(() => {
+    if (!isPageFullscreen) return;
+    if (typeof document === 'undefined') return;
+
+    const body = document.body;
+    const html = document.documentElement;
+    const originalBodyOverflow = body.style.overflow;
+    const originalHtmlOverflow = html.style.overflow;
+
+    body.style.overflow = 'hidden';
+    html.style.overflow = 'hidden';
+
+    return () => {
+      body.style.overflow = originalBodyOverflow;
+      html.style.overflow = originalHtmlOverflow;
+    };
+  }, [isPageFullscreen]);
+
   // Toast 通知状态
   const [toast, setToast] = useState<{
     show: boolean;
@@ -212,6 +239,12 @@ function PlayPageClient() {
   } | null>(null);
   const [swipeSeekOverlayPortalHost, setSwipeSeekOverlayPortalHost] =
     useState<HTMLElement | null>(null);
+  // 全屏时的弹窗挂载点。全屏元素（原生 top-layer 或 Plyr fallback 的
+  // z-index:10000000）会盖住普通 DOM 里的面板，必须把面板挂进全屏元素内部。
+  // 与 swipeSeekOverlayPortalHost 分开维护：后者仅在触屏设备上生效。
+  const [modalPortalHost, setModalPortalHost] = useState<HTMLElement | null>(
+    null,
+  );
 
   // 播放进度保存相关
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -468,7 +501,10 @@ function PlayPageClient() {
       }
     }
 
-    return null;
+    // Plyr 的 fallback 全屏不走 Fullscreen API：它给 .plyr 加
+    // .plyr--fullscreen-fallback（position:fixed; z-index:10000000）。
+    // 此时 document.fullscreenElement 为 null，但覆盖层仍需挂到该节点内。
+    return container.querySelector<HTMLElement>('.plyr--fullscreen-fallback');
   };
 
   // 使用 Tauri fetch_binary 的 HLS.js Loader（带缓存和预取）
@@ -874,6 +910,42 @@ function PlayPageClient() {
       document.removeEventListener('keydown', handleKeyboardShortcuts);
     };
   }, []);
+
+  // ---------------------------------------------------------------------------
+  // 全屏弹窗挂载点跟踪（所有设备，含桌面端）
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (loading) return;
+
+    const container = playerContainerRef.current;
+    if (!container || typeof document === 'undefined') return;
+
+    const syncModalHost = () => {
+      const next = resolvePlayerFullscreenElement();
+      setModalPortalHost((prev) => (prev === next ? prev : next));
+    };
+
+    syncModalHost();
+
+    // fallback 全屏只改 class、不触发 fullscreenchange，故需 MutationObserver 兜底
+    const observer = new MutationObserver(syncModalHost);
+    observer.observe(container, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+
+    document.addEventListener('fullscreenchange', syncModalHost);
+    document.addEventListener('webkitfullscreenchange', syncModalHost);
+
+    return () => {
+      observer.disconnect();
+      document.removeEventListener('fullscreenchange', syncModalHost);
+      document.removeEventListener('webkitfullscreenchange', syncModalHost);
+      setModalPortalHost(null);
+    };
+  }, [loading]);
 
   // ---------------------------------------------------------------------------
   // 移动端手势
@@ -1302,6 +1374,22 @@ function PlayPageClient() {
     });
   };
 
+  // 页面全屏切换。与系统全屏互斥：进入页面全屏前先退出系统全屏，
+  // 否则两层"全屏"叠加会导致控制栏错位。
+  const togglePageFullscreen = () => {
+    setIsPageFullscreen((prev) => {
+      const next = !prev;
+      if (next && plyrRef.current?.fullscreen?.active) {
+        try {
+          plyrRef.current.fullscreen.exit();
+        } catch (err) {
+          console.warn('退出系统全屏失败:', err);
+        }
+      }
+      return next;
+    });
+  };
+
   const enhancePlyrUi = () => {
     const container = playerContainerRef.current;
     if (!container) return;
@@ -1378,6 +1466,38 @@ function PlayPageClient() {
     nextBtn.disabled = !hasNext;
     nextBtn.title = hasNext ? '播放下一集' : '已是最后一集';
 
+    // 页面全屏按钮：插在原生全屏按钮之前（原画中画按钮的位置）
+    let pageFsBtn = controlsEl.querySelector<HTMLButtonElement>(
+      '.plyr__control--page-fullscreen',
+    );
+    if (!pageFsBtn) {
+      pageFsBtn = document.createElement('button');
+      pageFsBtn.type = 'button';
+      pageFsBtn.className =
+        'plyr__controls__item plyr__control plyr__control--page-fullscreen';
+
+      const nativeFsBtn = controlsEl.querySelector<HTMLButtonElement>(
+        '.plyr__control[data-plyr="fullscreen"]',
+      );
+      if (nativeFsBtn?.parentElement) {
+        nativeFsBtn.parentElement.insertBefore(pageFsBtn, nativeFsBtn);
+      } else {
+        controlsEl.appendChild(pageFsBtn);
+      }
+    }
+
+    const pageFsActive = isPageFullscreenRef.current;
+    // 未激活：四角向外的展开图标；激活：四角向内的收起图标
+    pageFsBtn.innerHTML = pageFsActive
+      ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+      : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    pageFsBtn.title = pageFsActive ? '退出页面全屏' : '页面全屏';
+    pageFsBtn.setAttribute('aria-label', pageFsBtn.title);
+    pageFsBtn.setAttribute('aria-pressed', pageFsActive ? 'true' : 'false');
+    pageFsBtn.onclick = () => {
+      togglePageFullscreen();
+    };
+
     const settingsBtn = controlsEl.querySelector<HTMLButtonElement>(
       '.plyr__control[data-plyr="settings"]',
     );
@@ -1406,6 +1526,10 @@ function PlayPageClient() {
     markControlsItem(
       '.plyr__control[data-plyr="pip"]',
       'quantum-plyr-item-pip',
+    );
+    markControlsItem(
+      '.plyr__control--page-fullscreen',
+      'quantum-plyr-item-page-fullscreen',
     );
     markControlsItem(
       '.plyr__control[data-plyr="airplay"]',
@@ -1529,6 +1653,7 @@ function PlayPageClient() {
     skipConfig.outro_time,
     currentEpisodeIndex,
     detail,
+    isPageFullscreen,
   ]);
 
   // ---------------------------------------------------------------------------
@@ -1542,6 +1667,13 @@ function PlayPageClient() {
       (e.target as HTMLElement).tagName === 'TEXTAREA'
     )
       return;
+
+    // ESC = 退出页面全屏（系统全屏由浏览器自己处理 ESC）
+    if (e.key === 'Escape' && isPageFullscreenRef.current) {
+      setIsPageFullscreen(false);
+      e.preventDefault();
+      return;
+    }
 
     // Alt + 左箭头 = 上一集
     if (e.altKey && e.key === 'ArrowLeft') {
@@ -1946,7 +2078,9 @@ function PlayPageClient() {
               'mute',
               'volume',
               'settings',
-              'pip',
+              // 不启用 'pip'：WebView2 的画中画小窗自带原生齿轮按钮，
+              // 点击会跳转 edge://settings/...（WebView2 无浏览器内部页面），
+              // 导致"无法访问此页面"顶掉应用 UI。改用下方自建的"页面全屏"。
               'airplay',
               'fullscreen',
             ],
@@ -2469,6 +2603,8 @@ function PlayPageClient() {
                   'aspect-video',
                   // lg+ 改为高度驱动，宽度由比例算出
                   'lg:mx-0 lg:h-full lg:w-auto lg:max-w-full lg:max-h-full',
+                  // 页面全屏：铺满窗口（样式在 globals.css，用 !important 覆盖上面的响应式类）
+                  isPageFullscreen && 'quantum-page-fullscreen',
                 )}
               >
                 <div
@@ -2627,25 +2763,37 @@ function PlayPageClient() {
         swipeSeekOverlayNode &&
         createPortal(swipeSeekOverlayNode, swipeSeekOverlayPortalHost)}
 
-      {/* 跳过片头片尾设置面板 */}
-      <SkipConfigPanel
-        isOpen={isSkipConfigPanelOpen}
-        onClose={() => setIsSkipConfigPanelOpen(false)}
-        config={skipConfig}
-        onChange={handleSkipConfigChange}
-        videoDuration={plyrRef.current?.duration || 0}
-        currentTime={plyrRef.current?.currentTime || 0}
-      />
+      {/* 跳过片头片尾设置面板 + Toast
+          全屏时挂进全屏元素内部，否则会被 Plyr 的 z-index:10000000 盖住
+          （原生全屏更彻底：top-layer 之外的节点根本不渲染） */}
+      {(() => {
+        const overlays = (
+          <>
+            <SkipConfigPanel
+              isOpen={isSkipConfigPanelOpen}
+              onClose={() => setIsSkipConfigPanelOpen(false)}
+              config={skipConfig}
+              onChange={handleSkipConfigChange}
+              videoDuration={plyrRef.current?.duration || 0}
+              currentTime={plyrRef.current?.currentTime || 0}
+            />
+            {toast.show && (
+              <Toast
+                message={toast.message}
+                type={toast.type}
+                duration={3000}
+                onClose={() =>
+                  setToast({ show: false, message: '', type: 'info' })
+                }
+              />
+            )}
+          </>
+        );
 
-      {/* Toast 通知 */}
-      {toast.show && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          duration={3000}
-          onClose={() => setToast({ show: false, message: '', type: 'info' })}
-        />
-      )}
+        return modalPortalHost
+          ? createPortal(overlays, modalPortalHost)
+          : overlays;
+      })()}
     </PageLayout>
   );
 }
