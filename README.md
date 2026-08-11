@@ -233,10 +233,6 @@ cd src-tauri && cargo test
 - [Zwei](https://github.com/bestzwei) · [CMLiussss](https://github.com/cmliu) —— 豆瓣数据服务
 - 所有为学习与研究目的提供公开数据接口的站点与社区
 
-## 📈 Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=Geon97/QuantumTV&type=date&legend=top-left)](https://www.star-history.com/#Geon97/QuantumTV&type=date&legend=top-left)
-
 ---
 
 <div align="center">
