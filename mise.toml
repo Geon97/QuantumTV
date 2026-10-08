@@ -1,0 +1,12 @@
+[tools]
+node = "22.22.0"
+pnpm = "10.18.1"
+java = "21.0.8"
+ninja = "1.13.2"
+cmake = "4.2.1"
+
+[env]
+ANDROID_HOME = "D:/ProgramData/Android"
+ANDROID_SDK_ROOT = "D:/ProgramData/Android"
+ANDROID_NDK_ROOT = "D:/ProgramData/Android/ndk/26.1.10909125"
+ANDROID_NDK = "D:/ProgramData/Android/ndk/26.1.10909125"
