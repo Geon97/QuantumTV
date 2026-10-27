@@ -1,6 +1,6 @@
 [package]
 name = "quantumtv-core"
-version = "0.7.6"
+version = "0.7.7"
 edition = "2021"
 description = "QuantumTV 核心业务逻辑库"
 

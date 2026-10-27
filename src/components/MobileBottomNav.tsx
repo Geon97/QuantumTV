@@ -80,7 +80,47 @@ const MobileBottomNav = memo(function MobileBottomNav({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const itemRefs = useRef<(HTMLElement | null)[]>([]);
+  // Android Tauri：确保底部菜单避开系统导航栏
+  useEffect(() => {
+    const isAndroidTauri =
+      typeof window !== 'undefined' &&
+      '__TAURI__' in window &&
+      /Android/i.test(navigator.userAgent);
 
+    if (!isAndroidTauri) return;
+
+    // 读取 WebView 实际提供的安全区域高度
+    const probe = document.createElement('div');
+
+    probe.style.cssText = `
+    position: fixed;
+    visibility: hidden;
+    pointer-events: none;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  `;
+
+    document.body.appendChild(probe);
+
+    const inset =
+      Number.parseFloat(getComputedStyle(probe).paddingBottom) || 0;
+
+    probe.remove();
+
+    // WebView 返回 0 时，为三键导航栏提供备用空间
+    // 48px 是初始参考值，可根据模拟器实际效果调整
+    const safeBottom = inset > 0 ? inset : 48;
+
+    document.documentElement.style.setProperty(
+      '--app-safe-bottom',
+      `${safeBottom}px`,
+    );
+
+    return () => {
+      document.documentElement.style.removeProperty(
+        '--app-safe-bottom',
+      );
+    };
+  }, []);
   const navItems = useMemo(() => {
     const runtimeConfig =
       typeof window !== 'undefined' ? (window as any).RUNTIME_CONFIG : null;
@@ -164,7 +204,7 @@ const MobileBottomNav = memo(function MobileBottomNav({
         isPending && 'opacity-75',
       )}
       style={{
-        bottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
+        bottom: 'calc(0.75rem + var(--app-safe-bottom, env(safe-area-inset-bottom, 0px)))',
       }}
     >
       <div className='absolute inset-0 rounded-2xl border border-white/35 bg-white/75 shadow-xl shadow-black/10 backdrop-blur-2xl dark:border-white/10 dark:bg-gray-950/75 dark:shadow-black/35' />
