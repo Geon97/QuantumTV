@@ -71,56 +71,74 @@ const BASE_NAV_ITEMS: NavItem[] = [
 ];
 
 interface MobileBottomNavProps {
-  activePath?: string;
+    activePath?: string;
 }
 
 const MobileBottomNav = memo(function MobileBottomNav({
-  activePath = '/',
-}: MobileBottomNavProps) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const itemRefs = useRef<(HTMLElement | null)[]>([]);
-  // Android Tauri：确保底部菜单避开系统导航栏
-  useEffect(() => {
-    const isAndroidTauri =
-      typeof window !== 'undefined' &&
-      '__TAURI__' in window &&
-      /Android/i.test(navigator.userAgent);
+                                                          activePath = '/',
+                                                      }: MobileBottomNavProps) {
+    const router = useRouter();
+    const [isPending, startTransition] = useTransition();
+    const itemRefs = useRef<(HTMLElement | null)[]>([]);
 
-    if (!isAndroidTauri) return;
+    // 修复：自适应读取原生安全高度（含轮询与动态监听）
+    useEffect(() => {
+        const updateInset = () => {
+            const bridge = (window as any).AndroidInsets;
+            if (typeof bridge?.getBottomInset === 'function') {
+                const inset = Number(bridge.getBottomInset());
+                if (Number.isFinite(inset)) {
+                    const safeBottom = Math.max(0, inset);
+                    document.documentElement.style.setProperty(
+                        '--app-safe-bottom',
+                        `${safeBottom}px`,
+                    );
+                    return true;
+                }
+            }
+            return false;
+        };
 
-    // 读取 WebView 实际提供的安全区域高度
-    const probe = document.createElement('div');
+        // 1. 尝试立即获取
+        if (!updateInset()) {
+            // 若原生注入略有延迟，快速轮询重试
+            const timer = setInterval(() => {
+                if (updateInset()) {
+                    clearInterval(timer);
+                }
+            }, 50);
+            const timeout = setTimeout(() => clearInterval(timer), 2000);
 
-    probe.style.cssText = `
-    position: fixed;
-    visibility: hidden;
-    pointer-events: none;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  `;
+            // 2. 监听原生实时推送的导航栏变化（如切横屏、键盘弹起、虚拟按键隐藏等）
+            const onInsetChange = (e: any) => {
+                const inset = Number(e.detail) || 0;
+                document.documentElement.style.setProperty(
+                    '--app-safe-bottom',
+                    `${Math.max(0, inset)}px`,
+                );
+            };
+            window.addEventListener('safeBottomInsetChange', onInsetChange);
 
-    document.body.appendChild(probe);
+            return () => {
+                clearInterval(timer);
+                clearTimeout(timeout);
+                window.removeEventListener('safeBottomInsetChange', onInsetChange);
+            };
+        }
 
-    const inset =
-      Number.parseFloat(getComputedStyle(probe).paddingBottom) || 0;
+        const onInsetChange = (e: any) => {
+            const inset = Number(e.detail) || 0;
+            document.documentElement.style.setProperty(
+                '--app-safe-bottom',
+                `${Math.max(0, inset)}px`,
+            );
+        };
+        window.addEventListener('safeBottomInsetChange', onInsetChange);
+        return () => {
+            window.removeEventListener('safeBottomInsetChange', onInsetChange);
+        };
+    }, []);
 
-    probe.remove();
-
-    // WebView 返回 0 时，为三键导航栏提供备用空间
-    // 48px 是初始参考值，可根据模拟器实际效果调整
-    const safeBottom = inset > 0 ? inset : 48;
-
-    document.documentElement.style.setProperty(
-      '--app-safe-bottom',
-      `${safeBottom}px`,
-    );
-
-    return () => {
-      document.documentElement.style.removeProperty(
-        '--app-safe-bottom',
-      );
-    };
-  }, []);
   const navItems = useMemo(() => {
     const runtimeConfig =
       typeof window !== 'undefined' ? (window as any).RUNTIME_CONFIG : null;
@@ -197,57 +215,58 @@ const MobileBottomNav = memo(function MobileBottomNav({
     return () => clearTimeout(timer);
   }, [activePath, navItems, isActive]);
 
-  return (
-    <nav
-      className={cn(
-        'fixed left-1/2 z-[75] w-auto max-w-[96vw] -translate-x-1/2 lg:hidden min-[834px]:max-w-[90vw]',
-        isPending && 'opacity-75',
-      )}
-      style={{
-        bottom: 'calc(0.75rem + var(--app-safe-bottom, env(safe-area-inset-bottom, 0px)))',
-      }}
-    >
-      <div className='absolute inset-0 rounded-2xl border border-white/35 bg-white/75 shadow-xl shadow-black/10 backdrop-blur-2xl dark:border-white/10 dark:bg-gray-950/75 dark:shadow-black/35' />
-      <div className='absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-purple-500/35 to-transparent' />
+    return (
+        <nav
+            className={cn(
+                'fixed left-1/2 z-[75] w-auto max-w-[96vw] -translate-x-1/2 lg:hidden min-[834px]:max-w-[90vw]',
+                isPending && 'opacity-75',
+            )}
+            style={{
+                // 关键：在导航栏高度基础上额外加 0.5rem (8px) 的浮动间距
+                bottom: 'calc(0.5rem + var(--app-safe-bottom, env(safe-area-inset-bottom, 0px)))',
+            }}
+        >
+            <div className='absolute inset-0 rounded-2xl border border-white/35 bg-white/75 shadow-xl shadow-black/10 backdrop-blur-2xl dark:border-white/10 dark:bg-gray-950/75 dark:shadow-black/35' />
+            <div className='absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-purple-500/35 to-transparent' />
 
-      <div
-        className='relative flex items-center gap-1 overflow-x-auto px-2 py-2 scrollbar-hide max-[375px]:px-1.5 min-[834px]:gap-1.5 min-[834px]:px-3.5'
-        style={{
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
-          WebkitOverflowScrolling: 'touch',
-        }}
-      >
-        {navItems.map((item, index) => {
-          const active = isActive(item.href);
-          const Icon = item.icon;
-
-          return (
-            <a
-              key={item.href}
-              href={item.href}
-              ref={(el) => {
-                itemRefs.current[index] = el;
-              }}
-              onClick={(e) => handleNavigation(e, item.href)}
-              className={cn(
-                'tap-target inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition-all duration-200 max-[375px]:px-2 min-[834px]:px-4 min-[834px]:text-sm',
-                'focus:outline-none active:scale-95',
-                active &&
-                  `bg-gradient-to-r ${item.activeGradient} text-white shadow-md ${item.glowColor}`,
-                !active &&
-                  'text-gray-700 hover:bg-black/5 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/8 dark:hover:text-white',
-              )}
-              aria-current={active ? 'page' : undefined}
+            <div
+                className='relative flex items-center gap-1 overflow-x-auto px-2 py-2 scrollbar-hide max-[375px]:px-1.5 min-[834px]:gap-1.5 min-[834px]:px-3.5'
+                style={{
+                    scrollbarWidth: 'none',
+                    msOverflowStyle: 'none',
+                    WebkitOverflowScrolling: 'touch',
+                }}
             >
-              <Icon className='h-4 w-4 shrink-0' />
-              <span className='whitespace-nowrap'>{item.label}</span>
-            </a>
-          );
-        })}
-      </div>
-    </nav>
-  );
+                {navItems.map((item, index) => {
+                    const active = isActive(item.href);
+                    const Icon = item.icon;
+
+                    return (
+                        <a
+                            key={item.href}
+                            href={item.href}
+                            ref={(el) => {
+                                itemRefs.current[index] = el;
+                            }}
+                            onClick={(e) => handleNavigation(e, item.href)}
+                            className={cn(
+                                'tap-target inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition-all duration-200 max-[375px]:px-2 min-[834px]:px-4 min-[834px]:text-sm',
+                                'focus:outline-none active:scale-95',
+                                active &&
+                                `bg-gradient-to-r ${item.activeGradient} text-white shadow-md ${item.glowColor}`,
+                                !active &&
+                                'text-gray-700 hover:bg-black/5 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/8 dark:hover:text-white',
+                            )}
+                            aria-current={active ? 'page' : undefined}
+                        >
+                            <Icon className='h-4 w-4 shrink-0' />
+                            <span className='whitespace-nowrap'>{item.label}</span>
+                        </a>
+                    );
+                })}
+            </div>
+        </nav>
+    );
 });
 
 export default MobileBottomNav;

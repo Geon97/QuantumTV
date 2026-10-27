@@ -31,18 +31,18 @@ const spaceGrotesk = Space_Grotesk({
 const getRuntimeConfigFallback = (): RuntimeConfigResponse => ({
   storage_type: process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage',
   use_local_source_config:
-    (process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage') ===
-    'localstorage',
+      (process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage') ===
+      'localstorage',
   site_name: process.env.NEXT_PUBLIC_SITE_NAME || 'QuantumTV',
   announcement:
-    process.env.ANNOUNCEMENT ||
-    '本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。',
+      process.env.ANNOUNCEMENT ||
+      '本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。',
   douban_proxy_type:
-    process.env.NEXT_PUBLIC_DOUBAN_PROXY_TYPE || 'cmliussss-cdn-tencent',
+      process.env.NEXT_PUBLIC_DOUBAN_PROXY_TYPE || 'cmliussss-cdn-tencent',
   douban_proxy: process.env.NEXT_PUBLIC_DOUBAN_PROXY || '',
   douban_image_proxy_type:
-    process.env.NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE ||
-    'cmliussss-cdn-tencent',
+      process.env.NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE ||
+      'cmliussss-cdn-tencent',
   douban_image_proxy: process.env.NEXT_PUBLIC_DOUBAN_IMAGE_PROXY || '',
   disable_yellow_filter: process.env.NEXT_PUBLIC_DISABLE_YELLOW_FILTER === 'true',
   fluid_search: process.env.NEXT_PUBLIC_FLUID_SEARCH !== 'false',
@@ -65,13 +65,18 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+// 规范化 Viewport，确保全屏沉浸与刘海/按键区正确延伸
 export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: 'cover',
 };
 
 export default async function RootLayout({
-  children,
-}: {
+                                           children,
+                                         }: {
   children: React.ReactNode;
 }) {
   const runtimeConfig = await getRuntimeConfig();
@@ -91,23 +96,41 @@ export default async function RootLayout({
   };
 
   return (
-    <html lang='zh-CN' suppressHydrationWarning>
+      <html lang='zh-CN' suppressHydrationWarning>
       <head>
-        <meta
-          name='viewport'
-          content='width=device-width, initial-scale=1.0, viewport-fit=cover'
-        />
         <link rel='apple-touch-icon' href='/icons/icon-192x192.png' />
+        {/* 在首屏绘制前同步执行：即时设置安全距离与事件监听，避免页面路由刷新闪烁 */}
         <script
-          dangerouslySetInnerHTML={{
-            __html: `window.RUNTIME_CONFIG = ${JSON.stringify(injectedRuntimeConfig)};`,
-          }}
+            dangerouslySetInnerHTML={{
+              __html: `
+              window.RUNTIME_CONFIG = ${JSON.stringify(injectedRuntimeConfig)};
+              (function() {
+                try {
+                  function applyBottomInset() {
+                    var bridge = window.AndroidInsets;
+                    if (bridge && typeof bridge.getBottomInset === 'function') {
+                      var inset = bridge.getBottomInset();
+                      if (typeof inset === 'number' && inset >= 0) {
+                        document.documentElement.style.setProperty('--app-safe-bottom', inset + 'px');
+                      }
+                    }
+                  }
+                  applyBottomInset();
+                  window.addEventListener('safeBottomInsetChange', function(e) {
+                    if (e && typeof e.detail === 'number') {
+                      document.documentElement.style.setProperty('--app-safe-bottom', e.detail + 'px');
+                    }
+                  });
+                } catch(e) {}
+              })();
+            `,
+            }}
         />
       </head>
       <body
-        className={`${dmSans.variable} ${spaceGrotesk.variable} font-sans min-h-screen text-gray-900 dark:text-gray-100 bg-aurora`}
+          className={`${dmSans.variable} ${spaceGrotesk.variable} font-sans min-h-screen text-gray-900 dark:text-gray-100 bg-aurora flex flex-col`}
       >
-        <NextTopLoader
+      <NextTopLoader
           color='#a855f7'
           initialPosition={0.08}
           crawlSpeed={200}
@@ -117,24 +140,34 @@ export default async function RootLayout({
           easing='ease'
           speed={200}
           shadow='0 0 10px #a855f7,0 0 5px #a855f7'
-        />
-        <ThemeProvider
+      />
+      <ThemeProvider
           attribute='class'
           defaultTheme='system'
           enableSystem
           disableTransitionOnChange
-        >
-          <SiteProvider siteName={siteName} announcement={announcement}>
-            <ParticleBackground />
-            <NavbarGate>
-              <TopNavbar />
-            </NavbarGate>
+      >
+        <SiteProvider siteName={siteName} announcement={announcement}>
+          <ParticleBackground />
+          <NavbarGate>
+            <TopNavbar />
+          </NavbarGate>
+
+          <main
+              className='flex-1 w-full'
+              style={{
+                paddingBottom:
+                    'calc(5.5rem + var(--app-safe-bottom, env(safe-area-inset-bottom, 0px)))',
+              }}
+          >
             {children}
-            <GlobalErrorIndicator />
-            <AppLifecycleWatcher />
-          </SiteProvider>
-        </ThemeProvider>
+          </main>
+
+          <GlobalErrorIndicator />
+          <AppLifecycleWatcher />
+        </SiteProvider>
+      </ThemeProvider>
       </body>
-    </html>
+      </html>
   );
 }
