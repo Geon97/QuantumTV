@@ -22,11 +22,11 @@ pub struct VersionCheckResult {
 }
 
 const REMOTE_VERSION_URLS: &[&str] = &[
-    "https://cdn.jsdelivr.net/gh/Geon97/QuantumTV@main/VERSION.txt",
-    "https://fastly.jsdelivr.net/gh/Geon97/QuantumTV@main/VERSION.txt",
-    "https://raw.githubusercontent.com/Geon97/QuantumTV/main/VERSION.txt",
-    "https://ghproxy.net/https://raw.githubusercontent.com/Geon97/QuantumTV/main/VERSION.txt",
-    "https://mirror.ghproxy.com/https://raw.githubusercontent.com/Geon97/QuantumTV/main/VERSION.txt",
+    "https://cdn.jsdelivr.net/gh/Geonaris/QuantumTV@main/VERSION.txt",
+    "https://fastly.jsdelivr.net/gh/Geonaris/QuantumTV@main/VERSION.txt",
+    "https://raw.githubusercontent.com/Geonaris/QuantumTV/main/VERSION.txt",
+    "https://ghproxy.net/https://raw.githubusercontent.com/Geonaris/QuantumTV/main/VERSION.txt",
+    "https://mirror.ghproxy.com/https://raw.githubusercontent.com/Geonaris/QuantumTV/main/VERSION.txt",
 ];
 
 // 编译时嵌入本地版本时间戳

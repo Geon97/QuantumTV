@@ -7,7 +7,7 @@
   <p>用 Rust + Tauri 打造,装机即用,数据只在你自己电脑里。</p>
 
   <p>
-    <a href="https://github.com/Geon97/QuantumTV/releases/latest">下载最新版</a> ·
+    <a href="https://github.com/Geonaris/QuantumTV/releases/latest">下载最新版</a> ·
     <a href="#-快速开始">快速开始</a> ·
     <a href="#-功能特性">功能特性</a> ·
     <a href="#-tvbox-配置">TVBox</a> ·
@@ -78,7 +78,7 @@
 
 ### 普通用户:下载预编译版本
 
-直接到 [Releases 页面](https://github.com/Geon97/QuantumTV/releases/latest) 下载对应平台的安装包:
+直接到 [Releases 页面](https://github.com/Geonaris/QuantumTV/releases/latest) 下载对应平台的安装包:
 
 | 平台                  | 推荐文件                                   |
 | --------------------- | ------------------------------------------ |
@@ -94,7 +94,7 @@
 
 ```bash
 # 依赖: Node.js 20+, Rust 1.90+, 平台对应的 Tauri 系统依赖
-git clone https://github.com/Geon97/QuantumTV.git
+git clone https://github.com/Geonaris/QuantumTV.git
 cd QuantumTV
 
 npm install
@@ -151,7 +151,7 @@ docker compose up -d
 ```yaml
 services:
   api:
-    image: ghcr.io/geon97/quantumtv:latest
+    image: ghcr.io/Geonaris/quantumtv:latest
     container_name: quantumtv-api
     ports: ['3086:3000']
     environment:
@@ -237,5 +237,5 @@ cd src-tauri && cargo test
 
 <div align="center">
   <p><strong>🌟 如果对你有帮助,点个 Star 让我知道 🌟</strong></p>
-  <p><sub>Made with ❤️ by <a href="https://github.com/Geon97">Geon97</a> and <a href="https://github.com/Geon97/QuantumTV/graphs/contributors">Contributors</a></sub></p>
+  <p><sub>Made with ❤️ by <a href="https://github.com/Geon97">Geon97</a> and <a href="https://github.com/Geonaris/QuantumTV/graphs/contributors">Contributors</a></sub></p>
 </div>

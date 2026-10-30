@@ -80,7 +80,7 @@ export const VersionPanel: React.FC<VersionPanelProps> = ({
   const [versionCheckResult, setVersionCheckResult] = useState<VersionCheckResult | null>(null);
   const [remoteVersionInfo, setRemoteVersionInfo] = useState<RemoteVersionInfo | null>(null);
   const [isCheckingVersion, setIsCheckingVersion] = useState(false);
-  const UPDATE_REPO = process.env.NEXT_PUBLIC_UPDATE_REPO || 'Geon97/QuantumTV';
+  const UPDATE_REPO = process.env.NEXT_PUBLIC_UPDATE_REPO || 'Geonaris/QuantumTV';
   const REPO_URL = process.env.NEXT_PUBLIC_REPO_URL || `https://github.com/${UPDATE_REPO}`;
 
   // 确保组件已挂载

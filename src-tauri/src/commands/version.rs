@@ -3,13 +3,13 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 const VERSION_SOURCE_URLS: [&str; 4] = [
-    "https://raw.githubusercontent.com/Geon97/QuantumTV/main/VERSION.txt",
-    "https://cdn.jsdelivr.net/gh/Geon97/QuantumTV@main/VERSION.txt",
-    "https://fastly.jsdelivr.net/gh/Geon97/QuantumTV@main/VERSION.txt",
-    "https://ghproxy.net/https://raw.githubusercontent.com/Geon97/QuantumTV/main/VERSION.txt",
+    "https://raw.githubusercontent.com/Geonaris/QuantumTV/main/VERSION.txt",
+    "https://cdn.jsdelivr.net/gh/Geonaris/QuantumTV@main/VERSION.txt",
+    "https://fastly.jsdelivr.net/gh/Geonaris/QuantumTV@main/VERSION.txt",
+    "https://ghproxy.net/https://raw.githubusercontent.com/Geonaris/QuantumTV/main/VERSION.txt",
 ];
 
-const RELEASE_URL: &str = "https://github.com/Geon97/QuantumTV/releases";
+const RELEASE_URL: &str = "https://github.com/Geonaris/QuantumTV/releases";
 
 // 编译时嵌入的版本信息
 const BUILD_TIMESTAMP: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../VERSION.txt"));
@@ -31,10 +31,10 @@ pub struct PackageJson {
 
 async fn fetch_latest_github_release(client: &Client) -> Option<String> {
     let urls = [
-        "https://raw.githubusercontent.com/Geon97/QuantumTV/main/package.json",
-        "https://cdn.jsdelivr.net/gh/Geon97/QuantumTV@main/package.json",
-        "https://fastly.jsdelivr.net/gh/Geon97/QuantumTV@main/package.json",
-        "https://ghproxy.net/https://raw.githubusercontent.com/Geon97/QuantumTV/main/package.json",
+        "https://raw.githubusercontent.com/Geonaris/QuantumTV/main/package.json",
+        "https://cdn.jsdelivr.net/gh/Geonaris/QuantumTV@main/package.json",
+        "https://fastly.jsdelivr.net/gh/Geonaris/QuantumTV@main/package.json",
+        "https://ghproxy.net/https://raw.githubusercontent.com/Geonaris/QuantumTV/main/package.json",
     ];
 
     for url in urls {
